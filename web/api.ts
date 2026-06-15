@@ -32,9 +32,9 @@ export const api = {
   session: (id: string) => request<SessionStatus>(`/api/sessions/${id}`),
   closeSession: (id: string) => request<{ ok: boolean }>(`/api/sessions/${id}`, { method: 'DELETE' }),
 
-  rows: (id: string, offset: number, limit: number, order: 'asc' | 'desc' = 'asc') =>
+  rows: (id: string, offset: number, limit: number, order: 'asc' | 'desc' = 'asc', highlight = false) =>
     request<{ rows: RowData[]; total: number; lineCount: number }>(
-      `/api/sessions/${id}/rows?offset=${offset}&limit=${limit}&order=${order}`,
+      `/api/sessions/${id}/rows?offset=${offset}&limit=${limit}&order=${order}${highlight ? '&highlight=1' : ''}`,
     ),
   search: (id: string, query: string) =>
     request<{ total: number; durationMs: number }>(`/api/sessions/${id}/search`, {

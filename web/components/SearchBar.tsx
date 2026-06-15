@@ -11,6 +11,7 @@ import {
   useSaved,
 } from '../searches';
 import { computeSuggestions, tokenBounds, type Suggestion } from '../querySuggest';
+import BookmarksMenu from './BookmarksMenu';
 import type { SessionStatus } from '../types';
 
 const SYNTAX_EXAMPLES: [string, string][] = [
@@ -43,6 +44,11 @@ export default function SearchBar({
   onToggleHistogram,
   facetsOpen,
   onToggleFacets,
+  highlightMode,
+  onToggleHighlight,
+  file,
+  onJumpToLine,
+  onGoToLine,
   fieldNames,
   levelCounts,
 }: {
@@ -62,6 +68,11 @@ export default function SearchBar({
   onToggleHistogram: () => void;
   facetsOpen: boolean;
   onToggleFacets: () => void;
+  highlightMode: boolean;
+  onToggleHighlight: () => void;
+  file: string;
+  onJumpToLine: (lineNo: number) => void;
+  onGoToLine: () => void;
   fieldNames: { key: string; count: number }[];
   levelCounts: Record<string, number>;
 }) {
@@ -408,6 +419,23 @@ export default function SearchBar({
             <path d="M3 18h6" />
           </svg>
         </button>
+
+        <button
+          onClick={onToggleHighlight}
+          className={`rounded-lg border border-edge px-2.5 py-1.5 text-sm ${
+            highlightMode ? 'bg-surface-3 text-amber-300' : 'bg-surface-2 text-gray-400 hover:text-gray-100'
+          }`}
+          title="Highlight matches in place instead of filtering"
+        >
+          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="m9 11-6 6v3h3l6-6" />
+            <path d="m17 7 3-3 1 1-3 3" />
+            <path d="m13 7 4 4" />
+            <path d="M14 6l4 4" />
+          </svg>
+        </button>
+
+        <BookmarksMenu file={file} onJump={onJumpToLine} onGoToLine={onGoToLine} />
 
         <button
           onClick={() => setOrder(order === 'asc' ? 'desc' : 'asc')}

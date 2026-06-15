@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { api, formatTs } from '../api';
 import { useOrder, useTz, type Tz } from '../settings';
+import { useBookmarks, toggleBookmark } from '../bookmarks';
 import type { RowData } from '../types';
 
 const BLOCK = 256;
@@ -29,6 +30,7 @@ interface Block {
 
 export default function LogList({
   sessionId,
+  file,
   epoch,
   total,
   followTail,
@@ -36,12 +38,14 @@ export default function LogList({
   onSelect,
   onContext,
   showContext,
+  highlight,
   scrollTo,
   highlightTerms,
   onUserScroll,
   onScrolledToEnd,
 }: {
   sessionId: string;
+  file: string;
   epoch: number;
   total: number;
   followTail: boolean;
@@ -49,6 +53,7 @@ export default function LogList({
   onSelect: (lineNo: number) => void;
   onContext: (lineNo: number) => void;
   showContext: boolean;
+  highlight: boolean;
   scrollTo: { lineNo: number; nonce: number } | null;
   highlightTerms: string[];
   onUserScroll: () => void;
@@ -61,6 +66,8 @@ export default function LogList({
   const epochRef = useRef(epoch);
   const order = useOrder();
   const tz = useTz();
+  const bookmarks = useBookmarks(file);
+  const bookmarkSet = useMemo(() => new Set(bookmarks), [bookmarks]);
   const orderRef = useRef(order);
 
   // changing the global order remaps every display position — drop all blocks
@@ -96,7 +103,7 @@ export default function LogList({
       const requestEpoch = epochRef.current;
       const requestOrder = orderRef.current;
       void api
-        .rows(sessionId, blockIdx * BLOCK, BLOCK, requestOrder)
+        .rows(sessionId, blockIdx * BLOCK, BLOCK, requestOrder, highlight)
         .then((r) => {
           if (epochRef.current !== requestEpoch || orderRef.current !== requestOrder) return; // stale
           blocksRef.current.set(blockIdx, { epoch: requestEpoch, rows: r.rows });
@@ -104,7 +111,7 @@ export default function LogList({
         })
         .finally(() => loadingRef.current.delete(blockIdx));
     },
-    [sessionId],
+    [sessionId, highlight],
   );
 
   const items = virtualizer.getVirtualItems();
@@ -231,9 +238,12 @@ export default function LogList({
                   <Row
                     row={row}
                     selected={selected === row.lineNo}
+                    bookmarked={bookmarkSet.has(row.lineNo)}
                     onSelect={onSelect}
                     onContext={onContext}
+                    onToggleBookmark={() => toggleBookmark(file, row.lineNo)}
                     showContext={showContext}
+                    highlight={highlight}
                     highlightRegex={highlightRegex}
                     gutterWidth={gutterWidth}
                     tz={tz}
@@ -255,24 +265,31 @@ export default function LogList({
 const Row = memo(function Row({
   row,
   selected,
+  bookmarked,
   onSelect,
   onContext,
+  onToggleBookmark,
   showContext,
+  highlight,
   highlightRegex,
   gutterWidth,
   tz,
 }: {
   row: RowData;
   selected: boolean;
+  bookmarked: boolean;
   onSelect: (lineNo: number) => void;
   onContext: (lineNo: number) => void;
+  onToggleBookmark: () => void;
   showContext: boolean;
+  highlight: boolean;
   highlightRegex: RegExp | null;
   gutterWidth: number;
   tz: Tz;
 }) {
   const levelClass = row.level ? (LEVEL_STYLES[row.level] ?? 'bg-slate-800 text-slate-300') : '';
   const bar = row.level ? LEVEL_BAR[row.level] : undefined;
+  const isMatch = highlight && row.match === true;
 
   let content: React.ReactNode = row.text;
   if (highlightRegex && row.text) {
@@ -288,9 +305,25 @@ const Row = memo(function Row({
       className={`group row-text relative flex h-full cursor-pointer items-center gap-2 border-l-2 pr-3 font-mono text-[13px] leading-6 ${
         selected
           ? 'border-sky-400 bg-sky-950/60'
-          : `${bar ? `border-transparent` : 'border-transparent'} hover:bg-surface-1`
+          : isMatch
+            ? 'border-amber-500/70 bg-amber-950/25 hover:bg-amber-950/40'
+            : 'border-transparent hover:bg-surface-1'
       }`}
     >
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggleBookmark();
+        }}
+        title={bookmarked ? 'Remove bookmark' : 'Bookmark this line'}
+        className={`w-4 shrink-0 select-none text-center text-[11px] leading-6 ${
+          bookmarked
+            ? 'text-amber-400'
+            : 'text-gray-700 opacity-0 hover:text-amber-300 group-hover:opacity-100'
+        }`}
+      >
+        {bookmarked ? '⚑' : '⚐'}
+      </button>
       <span
         className="shrink-0 select-none text-right text-[11px] text-gray-600"
         style={{ width: `${gutterWidth}ch` }}

@@ -14,6 +14,13 @@ date and start a fresh `Unreleased` section.
 
 ### Added
 
+- Bookmarks: click the flag on any line to mark it; marks persist per file and
+  are listed in a new toolbar menu for one-click jumping between them.
+- Go to line: jump to any line number with Ctrl/Cmd+G (or from the bookmarks
+  menu).
+- Highlight without filtering: a toolbar toggle that marks the lines matching
+  the active search in place — showing the whole file with hits flagged —
+  instead of hiding the non-matching lines.
 - Field breakdown (faceting): a new "Fields" sidebar (toolbar toggle) lists the
   structured fields detected in the file; expanding one shows its top values
   with counts and share bars for the current view. Counts respect the active

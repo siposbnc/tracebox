@@ -218,6 +218,30 @@ test('descending order returns rows newest-first (whole file and within a search
   assert.deepEqual((await s.getRows(0, 3, 'desc')).map((r) => r.lineNo), [46, 40, 34]);
 });
 
+test('highlight mode returns the whole file with search hits flagged', async () => {
+  const file = makeLogFile('highlight.log', appLogLines(50));
+  const s = await openAndIndex(file);
+  s.setSearch('level:ERROR'); // hits at line_no 4, 10, 16, 22, 28, 34, 40, 46
+
+  // filtered (default) shows only the matching lines
+  const filtered = await s.getRows(0, 5);
+  assert.deepEqual(filtered.map((r) => r.lineNo), [4, 10, 16, 22, 28]);
+  assert.ok(filtered.every((r) => r.match === undefined));
+
+  // highlight shows the whole file in order, flagging which lines match
+  const hl = await s.getRows(0, 6, 'asc', true);
+  assert.deepEqual(hl.map((r) => r.lineNo), [0, 1, 2, 3, 4, 5]);
+  assert.deepEqual(hl.map((r) => r.match), [false, false, false, false, true, false]);
+
+  // newest-first highlight mirrors the range and still flags correctly
+  const desc = await s.getRows(0, 4, 'desc', true);
+  assert.deepEqual(desc.map((r) => r.lineNo), [49, 48, 47, 46]);
+  assert.deepEqual(desc.map((r) => r.match), [false, false, false, true]);
+
+  // the match count is unchanged; the route, not getRows, decides the displayed total
+  assert.equal(s.viewTotal, 8);
+});
+
 test('context returns surrounding lines and marks the hits in the window', async () => {
   const file = makeLogFile('context.log', appLogLines(50));
   const s = await openAndIndex(file);

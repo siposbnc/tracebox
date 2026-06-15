@@ -109,8 +109,11 @@ export function createApp(distDir: string): TraceBoxApp {
     const offset = Math.max(0, Number(query.get('offset') ?? 0));
     const limit = Math.min(1000, Math.max(1, Number(query.get('limit') ?? 200)));
     const order = query.get('order') === 'desc' ? 'desc' : 'asc';
-    const rows = await s.getRows(offset, limit, order);
-    sendJson(res, 200, { rows, total: s.viewTotal, lineCount: s.lineCount });
+    const highlight = query.get('highlight') === '1';
+    const rows = await s.getRows(offset, limit, order, highlight);
+    // In highlight mode the list spans the whole file (matches are flagged, not filtered).
+    const total = highlight && s.hasSearch ? s.lineCount : s.viewTotal;
+    sendJson(res, 200, { rows, total, lineCount: s.lineCount });
   });
 
   router.add('POST', '/api/sessions/:id/search', async (req, res, params) => {

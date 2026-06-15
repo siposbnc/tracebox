@@ -4,6 +4,8 @@ export interface RowData {
   ts: number | null;
   level: string | null;
   truncated: boolean;
+  /** In highlight mode, whether this (unfiltered) line matches the active query. */
+  match?: boolean;
 }
 
 export interface SessionStatus {

@@ -20,6 +20,8 @@ export interface RowData {
   ts: number | null;
   level: string | null;
   truncated: boolean;
+  /** Set in highlight mode: whether this (unfiltered) line is a search hit. */
+  match?: boolean;
 }
 
 export interface SessionStatus {
@@ -278,22 +280,31 @@ export class LogSession extends EventEmitter {
   // ---------------------------------------------------------------------------
   // Row fetching
 
-  async getRows(offset: number, limit: number, order: 'asc' | 'desc' = 'asc'): Promise<RowData[]> {
+  async getRows(
+    offset: number,
+    limit: number,
+    order: 'asc' | 'desc' = 'asc',
+    highlight = false,
+  ): Promise<RowData[]> {
     limit = Math.min(Math.max(limit, 0), 2000);
     offset = Math.max(0, offset);
-    const total = this.viewTotal;
+    // Highlight mode shows the whole file (unfiltered) and flags which lines are
+    // search hits, instead of hiding the non-matching ones.
+    const filtered = this.hasSearch && !highlight;
+    const total = filtered ? this.searchTotal : this.index.lineCount;
     const count = Math.min(limit, Math.max(0, total - offset));
     if (count === 0) return [];
     // For newest-first display we read the mirrored ascending range (cheap,
     // contiguous file reads) and reverse it — the file is never reordered.
     const fetchOffset = order === 'desc' ? total - offset - count : offset;
-    let lineNos: number[];
-    if (this.hasSearch) {
-      lineNos = this.store.resultPage(fetchOffset, count);
-    } else {
-      lineNos = Array.from({ length: count }, (_, i) => fetchOffset + i);
-    }
+    const lineNos = filtered
+      ? this.store.resultPage(fetchOffset, count)
+      : Array.from({ length: count }, (_, i) => fetchOffset + i);
     const rows = await this.readRows(lineNos);
+    if (highlight && this.hasSearch) {
+      const hits = this.store.matchingLines(lineNos);
+      for (const row of rows) row.match = hits.has(row.lineNo);
+    }
     if (order === 'desc') rows.reverse();
     return rows;
   }

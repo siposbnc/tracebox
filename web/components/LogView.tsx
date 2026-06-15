@@ -6,6 +6,7 @@ import LogList from './LogList';
 import DetailPanel from './DetailPanel';
 import FacetPanel from './FacetPanel';
 import ContextPeek from './ContextPeek';
+import GoToLine from './GoToLine';
 import Histogram from './Histogram';
 import StatusBar from './StatusBar';
 
@@ -30,6 +31,8 @@ export default function LogView({
   const [histogram, setHistogram] = useState<HistogramData | null>(null);
   const [histogramOpen, setHistogramOpen] = useState(true);
   const [facetsOpen, setFacetsOpen] = useState(false);
+  const [highlightMode, setHighlightMode] = useState(false);
+  const [gotoOpen, setGotoOpen] = useState(false);
   const [followTail, setFollowTail] = useState(initial.tail);
   const statusRef = useRef(status);
   statusRef.current = status;
@@ -150,20 +153,34 @@ export default function LogView({
     }
   }, [id, refreshHistogram]);
 
-  // jump to a line in the full, unfiltered view (from the context peek): clear
-  // any active filter, select the line, and scroll the list to it.
+  // jump to an absolute line (context peek, bookmarks, go-to-line): select it and
+  // scroll the list to it. When a filter is active the list is the result set, so
+  // we clear it first — except in highlight mode, where the list already spans the
+  // whole file and the line is reachable directly.
   const jumpToLine = useCallback(
     async (lineNo: number) => {
       setContextLine(null);
-      if (statusRef.current.search) {
+      if (statusRef.current.search && !highlightMode) {
         setQuery('');
         await runSearch('');
       }
       setSelected(lineNo);
       setPendingJump({ lineNo, nonce: Date.now() });
     },
-    [runSearch],
+    [runSearch, highlightMode],
   );
+
+  // Ctrl/Cmd+G opens the go-to-line prompt
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'g' || e.key === 'G')) {
+        e.preventDefault();
+        setGotoOpen(true);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   // highlight terms extracted from the active query
   const highlightTerms = useMemo(() => {
@@ -187,6 +204,10 @@ export default function LogView({
     return terms.filter((t) => t.length >= 2);
   }, [status.search?.query]);
 
+  // Highlight mode only takes effect when there is an active search to mark.
+  const highlightActive = highlightMode && status.search !== null;
+  const listTotal = highlightActive ? status.lineCount : total;
+
   return (
     <div className="flex h-full flex-col">
       <SearchBar
@@ -206,6 +227,14 @@ export default function LogView({
         onToggleHistogram={() => setHistogramOpen((v) => !v)}
         facetsOpen={facetsOpen}
         onToggleFacets={() => setFacetsOpen((v) => !v)}
+        highlightMode={highlightMode}
+        onToggleHighlight={() => {
+          setHighlightMode((v) => !v);
+          setEpoch((e) => e + 1);
+        }}
+        file={status.file}
+        onJumpToLine={(lineNo) => void jumpToLine(lineNo)}
+        onGoToLine={() => setGotoOpen(true)}
         fieldNames={status.fieldNames}
         levelCounts={status.levelCounts}
       />
@@ -227,14 +256,17 @@ export default function LogView({
         )}
         <div className="min-w-0 flex-1">
           <LogList
+            key={highlightActive ? `hl:${status.search?.query ?? ''}` : 'flt'}
             sessionId={id}
+            file={status.file}
             epoch={epoch}
-            total={total}
+            total={listTotal}
             followTail={status.tail && followTail}
             selected={selected}
             onSelect={setSelected}
             onContext={setContextLine}
             showContext={status.search !== null}
+            highlight={highlightActive}
             scrollTo={pendingJump}
             highlightTerms={highlightTerms}
             onUserScroll={() => setFollowTail(false)}
@@ -260,6 +292,14 @@ export default function LogView({
           highlightTerms={highlightTerms}
           onClose={() => setContextLine(null)}
           onJumpToLine={(lineNo) => void jumpToLine(lineNo)}
+        />
+      )}
+
+      {gotoOpen && (
+        <GoToLine
+          lineCount={status.lineCount}
+          onGo={(lineNo) => void jumpToLine(lineNo)}
+          onClose={() => setGotoOpen(false)}
         />
       )}
     </div>
