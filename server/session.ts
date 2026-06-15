@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { LineIndex, LineScanner, type LineSpan } from './lineIndex.ts';
 import { LineReader } from './reader.ts';
-import { detectFormat, RawParser, type LogParser } from './parsers.ts';
+import { detectFormat, RawParser, templateOf, type LogParser } from './parsers.ts';
 import { IndexStore } from './indexer.ts';
 import { parseQuery, type QueryNode } from './queryParser.ts';
 
@@ -79,6 +79,10 @@ export class LogSession extends EventEmitter {
   /** Head (record-start) line number of the record currently being extended. */
   private lastHead = 0;
 
+  /** Log templates (clustering): pattern → id + occurrence count, over head lines. */
+  private templates = new Map<string, { id: number; count: number }>();
+  private lastTemplateId = 0;
+
   // search state
   private searchQuery = '';
   private searchAst: QueryNode | null = null;
@@ -86,6 +90,8 @@ export class LogSession extends EventEmitter {
   private searchDurationMs = 0;
   /** Whether the materialized result set holds record heads (grouped) or physical lines. */
   private searchGrouped = false;
+  /** Active cluster drill-down (a template id), ANDed with any text query. */
+  private templateId: number | null = null;
   /** Lines below this number have been through the current search. */
   private searchedUpTo = 0;
 
@@ -150,6 +156,9 @@ export class LogSession extends EventEmitter {
     const partial = this.store.getMeta('partialTail');
     this.partialTail = partial ? JSON.parse(partial) : null;
     this.lastHead = Number(this.store.getMeta('lastHead') ?? 0);
+    const tpls = this.store.loadTemplates();
+    this.templates = new Map(tpls.map((t) => [t.pattern, { id: t.id, count: t.count }]));
+    this.lastTemplateId = tpls.reduce((max, t) => Math.max(max, t.id), 0);
     // re-detect the parser on a sample (detection is deterministic; avoids
     // having to serialize regexes into the index database)
     const sample = await this.reader.readLines(0, Math.min(100, lineCount));
@@ -221,6 +230,7 @@ export class LogSession extends EventEmitter {
       await new Promise((r) => setImmediate(r)); // let the progress event flush
       this.store.createIndexes();
       this.store.buildRecords(0, this.index.lineCount);
+      this.persistTemplates();
       this.persistMeta(pos);
       this.phase = 'ready';
       this.emit('done');
@@ -234,8 +244,13 @@ export class LogSession extends EventEmitter {
     // the first line always starts a record; otherwise the parser decides whether
     // this line begins a new record or continues the previous one (stack frames etc.)
     const head = lineNo === 0 || this.parser.startsRecord(text) ? lineNo : this.lastHead;
-    if (head === lineNo) this.lastHead = lineNo;
-    this.store.addLine(lineNo, text, parsed, head);
+    // only head lines get a cluster template (continuation lines would be noise)
+    let tmpl: number | null = null;
+    if (head === lineNo) {
+      this.lastHead = lineNo;
+      tmpl = this.templateIdFor(text);
+    }
+    this.store.addLine(lineNo, text, parsed, head, tmpl);
     const lv = parsed.level ?? 'NONE';
     this.levelCounts[lv] = (this.levelCounts[lv] ?? 0) + 1;
     if (parsed.fields) {
@@ -243,6 +258,33 @@ export class LogSession extends EventEmitter {
         this.fieldCounts.set(key, (this.fieldCounts.get(key) ?? 0) + 1);
       }
     }
+  }
+
+  /** Map a line to its template id, registering a new pattern on first sight. */
+  private templateIdFor(text: string): number {
+    const pattern = templateOf(text);
+    let entry = this.templates.get(pattern);
+    if (!entry) {
+      entry = { id: ++this.lastTemplateId, count: 0 };
+      this.templates.set(pattern, entry);
+    }
+    entry.count++;
+    return entry.id;
+  }
+
+  private decrementTemplate(id: number): void {
+    for (const entry of this.templates.values()) {
+      if (entry.id === id) {
+        entry.count = Math.max(0, entry.count - 1);
+        return;
+      }
+    }
+  }
+
+  private persistTemplates(): void {
+    this.store.saveTemplates(
+      [...this.templates.entries()].map(([pattern, e]) => ({ id: e.id, pattern, count: e.count })),
+    );
   }
 
   private persistMeta(sizeAtIndex: number): void {
@@ -264,24 +306,25 @@ export class LogSession extends EventEmitter {
   // ---------------------------------------------------------------------------
   // Search
 
-  setSearch(query: string, grouped = false): { total: number; durationMs: number } {
+  setSearch(query: string, grouped = false, templateId: number | null = null): { total: number; durationMs: number } {
     const trimmed = query.trim();
-    if (trimmed === '') {
+    this.searchGrouped = grouped;
+    this.templateId = templateId;
+    if (trimmed === '' && templateId === null) {
       this.searchQuery = '';
       this.searchAst = null;
       this.searchTotal = 0;
       this.searchDurationMs = 0;
-      this.searchGrouped = grouped;
       return { total: grouped ? this.store.recordCount() : this.index.lineCount, durationMs: 0 };
     }
-    const ast = parseQuery(trimmed);
+    // a template-only filter still needs an AST; "all" matches every line
+    const ast: QueryNode = trimmed === '' ? { type: 'all' } : parseQuery(trimmed);
     const t0 = performance.now();
-    const total = this.store.runSearch(ast, grouped);
+    const total = this.store.runSearch(ast, grouped, undefined, templateId);
     this.searchDurationMs = Math.round(performance.now() - t0);
     this.searchQuery = trimmed;
     this.searchAst = ast;
     this.searchTotal = total;
-    this.searchGrouped = grouped;
     this.searchedUpTo = this.index.lineCount;
     return { total, durationMs: this.searchDurationMs };
   }
@@ -434,6 +477,11 @@ export class LogSession extends EventEmitter {
     return this.store.facet(field, this.hasSearch, limit);
   }
 
+  /** Top log patterns (clusters) over the current view (search results, or the whole file). */
+  clusters(limit?: number): ReturnType<IndexStore['clusters']> {
+    return this.store.clusters(this.hasSearch, limit);
+  }
+
   /**
    * Next/previous matching line relative to `after` (for "find next" in highlight
    * mode), plus its zero-based position in the current browse view so the UI can
@@ -514,6 +562,9 @@ export class LogSession extends EventEmitter {
       // re-indexed line is re-grouped from scratch
       this.lastHead =
         this.partialTail.lineNo > 0 ? this.store.headOf(this.partialTail.lineNo - 1) : 0;
+      // undo the template count for the line we're about to re-index
+      const oldTmpl = this.store.tmplOf(this.partialTail.lineNo);
+      if (oldTmpl !== null) this.decrementTemplate(oldTmpl);
       this.index.removeLastLine();
       this.store.removeLine(this.partialTail.lineNo);
       this.partialTail = null;
@@ -570,6 +621,7 @@ export class LogSession extends EventEmitter {
 
       // refresh the records table for the tail region affected by the append
       this.store.buildRecords(rebuildFrom, this.index.lineCount);
+      this.persistTemplates();
 
       // extend the active search over the new lines. A grouped search keys off the
       // record head, so re-run it from the rebuilt region's head to catch records
@@ -577,7 +629,7 @@ export class LogSession extends EventEmitter {
       if (this.searchAst !== null && this.index.lineCount > firstNewLine) {
         const from = this.searchGrouped ? Math.min(firstNewLine, rebuildFrom) : firstNewLine;
         this.store.pruneResultsFrom(from);
-        this.searchTotal = this.store.runSearch(this.searchAst, this.searchGrouped, from);
+        this.searchTotal = this.store.runSearch(this.searchAst, this.searchGrouped, from, this.templateId);
         this.searchedUpTo = this.index.lineCount;
       }
       this.persistMeta(st.size);

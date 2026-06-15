@@ -9,6 +9,7 @@ import {
   looksLikeContinuation,
   normalizeLevel,
   parseTimestamp,
+  templateOf,
 } from './parsers.ts';
 
 test('normalizeLevel maps common variants', () => {
@@ -111,6 +112,20 @@ test('looksLikeContinuation flags wrapped / stack-trace lines', () => {
   assert.equal(looksLikeContinuation('... 26 more'), true);
   assert.equal(looksLikeContinuation(''), true);
   assert.equal(looksLikeContinuation('a normal unindented message'), false);
+});
+
+test('templateOf masks variable tokens so similar lines share a pattern', () => {
+  const a = templateOf('2024-01-01 00:00:01 [INFO] GET /api/users/42 200 in 13ms');
+  const b = templateOf('2024-01-01 09:15:33 [INFO] GET /api/users/9001 200 in 5ms');
+  assert.equal(a, b); // same shape despite different ids/times/durations
+  assert.match(a, /\[INFO\] GET/);
+  assert.match(a, /<\*>/);
+
+  // different status / message shape → different template
+  assert.notEqual(templateOf('[ERROR] connection failed to db-1'), a);
+
+  // runs of variable tokens collapse to a single placeholder
+  assert.equal(templateOf('id 1 2 3 done'), 'id <*> done');
 });
 
 test('startsRecord distinguishes record heads from continuations', () => {

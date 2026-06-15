@@ -4,7 +4,7 @@ import { type QueryNode } from './queryParser.ts';
 import { compileQuery } from './queryCompiler.ts';
 
 /** Bumped when the on-disk schema changes so stale cached indexes are rebuilt. */
-export const SCHEMA_VERSION = '3';
+export const SCHEMA_VERSION = '4';
 
 export interface LineMeta {
   lineNo: number;
@@ -41,6 +41,15 @@ export interface Facet {
   /** Distinct values for the field across the current scope. */
   distinctCount: number;
   /** Lines in the current scope that have this field at all. */
+  covered: number;
+}
+
+export interface Clusters {
+  /** Top patterns by count (descending), capped at the requested limit. */
+  patterns: { id: number; pattern: string; count: number }[];
+  /** Distinct patterns across the current scope. */
+  distinctCount: number;
+  /** Records (head lines) counted. */
   covered: number;
 }
 
@@ -96,12 +105,13 @@ export class IndexStore {
       DROP TABLE IF EXISTS records;
       DROP TABLE IF EXISTS checkpoints;
       CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT);
-      CREATE TABLE lines(line_no INTEGER PRIMARY KEY, ts INTEGER, level TEXT, head INTEGER, is_head INTEGER);
+      CREATE TABLE lines(line_no INTEGER PRIMARY KEY, ts INTEGER, level TEXT, head INTEGER, is_head INTEGER, tmpl INTEGER);
       CREATE TABLE fields(line_no INTEGER NOT NULL, key TEXT NOT NULL, value TEXT COLLATE NOCASE, num REAL);
       CREATE VIRTUAL TABLE fts USING fts5(content, content='', contentless_delete=1);
       CREATE TABLE results(seq INTEGER PRIMARY KEY AUTOINCREMENT, line_no INTEGER NOT NULL);
       CREATE INDEX idx_results_line ON results(line_no);
       CREATE TABLE records(rec_no INTEGER PRIMARY KEY AUTOINCREMENT, head INTEGER NOT NULL, span INTEGER NOT NULL);
+      CREATE TABLE templates(id INTEGER PRIMARY KEY, pattern TEXT NOT NULL, count INTEGER NOT NULL);
       CREATE TABLE checkpoints(block INTEGER PRIMARY KEY, data BLOB NOT NULL);
     `);
     this.setMeta('schemaVersion', SCHEMA_VERSION);
@@ -117,13 +127,14 @@ export class IndexStore {
       CREATE INDEX IF NOT EXISTS idx_lines_ts ON lines(ts, level) WHERE ts IS NOT NULL;
       CREATE INDEX IF NOT EXISTS idx_lines_level ON lines(level) WHERE level IS NOT NULL;
       CREATE INDEX IF NOT EXISTS idx_lines_heads ON lines(line_no) WHERE is_head = 1;
+      CREATE INDEX IF NOT EXISTS idx_lines_tmpl ON lines(tmpl) WHERE tmpl IS NOT NULL;
       CREATE INDEX IF NOT EXISTS idx_records_head ON records(head);
     `);
   }
 
   private prepareInserts(): void {
     this.insLine = this.db.prepare(
-      `INSERT OR REPLACE INTO lines(line_no, ts, level, head, is_head) VALUES (?, ?, ?, ?, ?)`,
+      `INSERT OR REPLACE INTO lines(line_no, ts, level, head, is_head, tmpl) VALUES (?, ?, ?, ?, ?, ?)`,
     );
     this.insFts = this.db.prepare(`INSERT INTO fts(rowid, content) VALUES (?, ?)`);
     this.insField = this.db.prepare(`INSERT INTO fields(line_no, key, value, num) VALUES (?, ?, ?, ?)`);
@@ -148,8 +159,8 @@ export class IndexStore {
     }
   }
 
-  addLine(lineNo: number, raw: string, parsed: ParsedLine, head: number): void {
-    this.insLine.run(lineNo, parsed.ts, parsed.level, head, head === lineNo ? 1 : 0);
+  addLine(lineNo: number, raw: string, parsed: ParsedLine, head: number, tmpl: number | null): void {
+    this.insLine.run(lineNo, parsed.ts, parsed.level, head, head === lineNo ? 1 : 0, tmpl);
     this.insFts.run(lineNo, raw);
     if (parsed.fields) {
       for (const [key, value] of Object.entries(parsed.fields)) {
@@ -164,6 +175,14 @@ export class IndexStore {
     this.db.prepare(`DELETE FROM lines WHERE line_no = ?`).run(lineNo);
     this.db.prepare(`DELETE FROM fields WHERE line_no = ?`).run(lineNo);
     this.db.prepare(`DELETE FROM fts WHERE rowid = ?`).run(lineNo);
+  }
+
+  /** The template id of a line, or null (continuation lines and unset lines have none). */
+  tmplOf(lineNo: number): number | null {
+    const row = this.db.prepare(`SELECT tmpl FROM lines WHERE line_no = ?`).get(lineNo) as
+      | { tmpl: number | null }
+      | undefined;
+    return row?.tmpl ?? null;
   }
 
   /** The head (record-start) line number that a given line belongs to. */
@@ -233,24 +252,34 @@ export class IndexStore {
    * When `fromLineNo` is given, appends matches among lines >= fromLineNo to
    * the existing result set (incremental tail search) instead of resetting.
    */
-  runSearch(node: QueryNode, grouped = false, fromLineNo?: number): number {
+  runSearch(node: QueryNode, grouped = false, fromLineNo?: number, templateId: number | null = null): number {
     const { where, params } = compileQuery(node);
     // Grouped search materializes matching *records* (distinct heads), so a hit
     // anywhere in a record — including a stack-trace continuation line — surfaces
     // the record once. Ungrouped search materializes matching physical lines.
-    const select = grouped
-      ? `SELECT DISTINCT l.head FROM lines l WHERE`
-      : `SELECT l.line_no FROM lines l WHERE`;
-    const orderBy = grouped ? `ORDER BY l.head` : `ORDER BY l.line_no`;
-    const col = grouped ? 'l.head' : 'l.line_no';
+    // A templateId narrows to one cluster (its head lines).
+    const selectCol = grouped ? 'DISTINCT l.head' : 'l.line_no';
+    const orderCol = grouped ? 'l.head' : 'l.line_no';
+    const conds: string[] = [];
+    const p: (string | number)[] = [];
+    if (fromLineNo !== undefined) {
+      conds.push(`${orderCol} >= ?`);
+      p.push(fromLineNo);
+    }
+    if (templateId !== null) {
+      conds.push('l.tmpl = ?');
+      p.push(templateId);
+    }
+    conds.push(`(${where})`);
+    p.push(...params);
     if (fromLineNo === undefined) {
       this.db.exec(`DELETE FROM results; DELETE FROM sqlite_sequence WHERE name = 'results';`);
-      this.db.prepare(`INSERT INTO results(line_no) ${select} ${where} ${orderBy}`).run(...params);
-    } else {
-      this.db
-        .prepare(`INSERT INTO results(line_no) ${select} ${col} >= ? AND ${where} ${orderBy}`)
-        .run(fromLineNo, ...params);
     }
+    this.db
+      .prepare(
+        `INSERT INTO results(line_no) SELECT ${selectCol} FROM lines l WHERE ${conds.join(' AND ')} ORDER BY ${orderCol}`,
+      )
+      .run(...p);
     return this.resultCount();
   }
 
@@ -452,6 +481,56 @@ export class IndexStore {
     ).get(field) as { distinctCount: number; covered: number };
 
     return { field, values, distinctCount: agg.distinctCount, covered: agg.covered };
+  }
+
+  /**
+   * Top log patterns (templates) by count, optionally restricted to the current
+   * result set. Whole-file uses the precomputed templates table; filtered counts
+   * the head lines in the result set grouped by template.
+   */
+  clusters(filtered: boolean, limit = 50): Clusters {
+    limit = Math.min(Math.max(limit, 1), 1000);
+    if (filtered) {
+      const patterns = this.db
+        .prepare(
+          `SELECT t.id AS id, t.pattern AS pattern, COUNT(*) AS count
+           FROM results r JOIN lines l ON l.line_no = r.line_no JOIN templates t ON t.id = l.tmpl
+           GROUP BY l.tmpl ORDER BY count DESC, t.id LIMIT ?`,
+        )
+        .all(limit) as { id: number; pattern: string; count: number }[];
+      const agg = this.db
+        .prepare(
+          `SELECT COUNT(DISTINCT l.tmpl) AS distinctCount, COUNT(l.tmpl) AS covered
+           FROM results r JOIN lines l ON l.line_no = r.line_no WHERE l.tmpl IS NOT NULL`,
+        )
+        .get() as { distinctCount: number; covered: number };
+      return { patterns, distinctCount: agg.distinctCount, covered: agg.covered };
+    }
+    const patterns = this.db
+      .prepare(`SELECT id, pattern, count FROM templates ORDER BY count DESC, id LIMIT ?`)
+      .all(limit) as { id: number; pattern: string; count: number }[];
+    const agg = this.db
+      .prepare(`SELECT COUNT(*) AS distinctCount, COALESCE(SUM(count), 0) AS covered FROM templates`)
+      .get() as { distinctCount: number; covered: number };
+    return { patterns, distinctCount: agg.distinctCount, covered: agg.covered };
+  }
+
+  /** Replace the templates table from the in-memory pattern catalogue. */
+  saveTemplates(entries: { id: number; pattern: string; count: number }[]): void {
+    this.db.exec('DELETE FROM templates');
+    const ins = this.db.prepare(`INSERT INTO templates(id, pattern, count) VALUES (?, ?, ?)`);
+    this.db.exec('BEGIN');
+    for (const e of entries) ins.run(e.id, e.pattern, e.count);
+    this.db.exec('COMMIT');
+  }
+
+  /** Load the template catalogue (for resuming a cached index). */
+  loadTemplates(): { id: number; pattern: string; count: number }[] {
+    return this.db.prepare(`SELECT id, pattern, count FROM templates`).all() as {
+      id: number;
+      pattern: string;
+      count: number;
+    }[];
   }
 
   /** Per-level counts over the whole file. */

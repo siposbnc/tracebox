@@ -120,9 +120,9 @@ export function createApp(distDir: string): TraceBoxApp {
 
   router.add('POST', '/api/sessions/:id/search', async (req, res, params) => {
     const s = getSession(params.id);
-    const body = (await readJsonBody(req)) as { query?: string; grouped?: boolean };
+    const body = (await readJsonBody(req)) as { query?: string; grouped?: boolean; templateId?: number | null };
     try {
-      const result = s.setSearch(body.query ?? '', Boolean(body.grouped));
+      const result = s.setSearch(body.query ?? '', Boolean(body.grouped), body.templateId ?? null);
       sendJson(res, 200, result);
     } catch (err) {
       if (err instanceof QuerySyntaxError) {
@@ -155,6 +155,11 @@ export function createApp(distDir: string): TraceBoxApp {
     }
     const limit = Number(query.get('limit') ?? 25);
     sendJson(res, 200, getSession(params.id).facet(field, limit));
+  });
+
+  router.add('GET', '/api/sessions/:id/clusters', (_req, res, params, query) => {
+    const limit = Number(query.get('limit') ?? 50);
+    sendJson(res, 200, getSession(params.id).clusters(limit));
   });
 
   router.add('GET', '/api/sessions/:id/next-match', (_req, res, params, query) => {

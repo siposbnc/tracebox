@@ -311,6 +311,47 @@ export class RawParser implements LogParser {
 }
 
 // ---------------------------------------------------------------------------
+// Log templating (clustering): reduce a line to a pattern by masking the tokens
+// that vary between otherwise-identical lines (numbers, ids, timestamps, hex),
+// so near-identical lines collapse to one template.
+
+const TPL_MAX_CHARS = 4096;
+const TPL_MAX_TOKENS = 80;
+const TPL_PLACEHOLDER = '<*>';
+
+/** True if a whitespace-delimited token looks like a variable value. */
+function isVariableToken(t: string): boolean {
+  if (/\d/.test(t)) return true; // numbers, timestamps, ids, sizes, durations…
+  if (/^[0-9a-f]{12,}$/i.test(t)) return true; // long hex (hashes), even without digits
+  return false;
+}
+
+/**
+ * Collapse a line to its template by masking variable tokens. Consecutive masked
+ * tokens are merged so "GET /a/1 200 5ms" and "GET /a/2 404 9ms" share one
+ * template. Bounded in length and token count for very long lines.
+ */
+export function templateOf(raw: string): string {
+  const s = raw.length > TPL_MAX_CHARS ? raw.slice(0, TPL_MAX_CHARS) : raw;
+  const out: string[] = [];
+  let count = 0;
+  let lastMasked = false;
+  for (const t of s.split(/\s+/)) {
+    if (t === '') continue;
+    if (count >= TPL_MAX_TOKENS) {
+      out.push('…');
+      break;
+    }
+    const masked = isVariableToken(t);
+    if (masked && lastMasked) continue; // merge runs of variables
+    out.push(masked ? TPL_PLACEHOLDER : t);
+    lastMasked = masked;
+    count++;
+  }
+  return out.join(' ');
+}
+
+// ---------------------------------------------------------------------------
 // Format detection: score each candidate on a sample of lines.
 
 export function detectFormat(sampleLines: string[]): LogParser {

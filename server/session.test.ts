@@ -284,6 +284,37 @@ test('multi-line grouping folds stack traces into one record', async () => {
   assert.match(detail.record.text, /Caused by/);
 });
 
+test('clustering groups lines into templates and drills into one', async () => {
+  // 30 access-style GETs (one template), 10 connection failures (another),
+  // 5 OOM lines (a third) — interleaved
+  const lines: string[] = [];
+  for (let i = 0; i < 30; i++) lines.push(`2024-01-01 00:00:${String(i % 60).padStart(2, '0')} [INFO] GET /api/users/${i} 200 in ${i}ms`);
+  for (let i = 0; i < 10; i++) lines.push(`2024-01-01 01:00:${String(i % 60).padStart(2, '0')} [ERROR] connection failed to db-${i}`);
+  for (let i = 0; i < 5; i++) lines.push(`2024-01-01 02:00:0${i} [FATAL] OOM killed worker ${1000 + i}`);
+  const file = makeLogFile('cluster.log', lines);
+  const s = await openAndIndex(file);
+
+  const c = s.clusters();
+  assert.equal(c.distinctCount, 3);
+  assert.equal(c.covered, 45);
+  assert.deepEqual(c.patterns.map((p) => p.count), [30, 10, 5]); // sorted by count desc
+  assert.match(c.patterns[0].pattern, /GET/);
+  assert.match(c.patterns[0].pattern, /<\*>/);
+
+  // drilling into a template filters the view to exactly that cluster
+  const topId = c.patterns[0].id;
+  assert.equal(s.setSearch('', false, topId).total, 30);
+  // and combines with a text query (AND)
+  assert.equal(s.setSearch('users', false, topId).total, 30);
+  assert.equal(s.setSearch('nomatch', false, topId).total, 0);
+
+  // clusters over a filtered view reflect only the matches
+  s.setSearch('level:ERROR');
+  const ce = s.clusters();
+  assert.equal(ce.distinctCount, 1);
+  assert.equal(ce.covered, 10);
+});
+
 test('nextMatch walks occurrences with wrap-around', async () => {
   const file = makeLogFile('nextmatch.log', appLogLines(50));
   const s = await openAndIndex(file);
