@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { formatCount } from '../api';
+import { useOrder, setOrder } from '../settings';
 import type { SessionStatus } from '../types';
 
 const SYNTAX_EXAMPLES: [string, string][] = [
@@ -23,6 +24,8 @@ export default function SearchBar({
   search,
   tail,
   onToggleTail,
+  onRefresh,
+  refreshing,
   onOpenFile,
   exportUrls,
   histogramOpen,
@@ -37,6 +40,8 @@ export default function SearchBar({
   search: SessionStatus['search'];
   tail: boolean;
   onToggleTail: () => void;
+  onRefresh: () => void;
+  refreshing: boolean;
   onOpenFile: () => void;
   exportUrls: { csv: string; json: string };
   histogramOpen: boolean;
@@ -45,6 +50,7 @@ export default function SearchBar({
 }) {
   const [helpOpen, setHelpOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const order = useOrder();
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -138,6 +144,49 @@ export default function SearchBar({
             <rect x="3" y="12" width="4" height="9" rx="1" />
             <rect x="10" y="6" width="4" height="15" rx="1" />
             <rect x="17" y="9" width="4" height="12" rx="1" />
+          </svg>
+        </button>
+
+        <button
+          onClick={() => setOrder(order === 'asc' ? 'desc' : 'asc')}
+          className="flex items-center gap-1.5 rounded-lg border border-edge bg-surface-2 px-2.5 py-1.5 text-sm text-gray-400 hover:text-gray-100"
+          title={
+            order === 'asc'
+              ? 'Oldest first — click to show newest first'
+              : 'Newest first — click to show oldest first'
+          }
+        >
+          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            {order === 'asc' ? (
+              <>
+                <path d="M12 5v14" />
+                <path d="m19 12-7 7-7-7" />
+              </>
+            ) : (
+              <>
+                <path d="M12 19V5" />
+                <path d="m5 12 7-7 7 7" />
+              </>
+            )}
+          </svg>
+          {order === 'asc' ? 'Oldest' : 'Newest'}
+        </button>
+
+        <button
+          onClick={onRefresh}
+          disabled={refreshing}
+          className="rounded-lg border border-edge bg-surface-2 px-2.5 py-1.5 text-sm text-gray-400 hover:text-gray-100 disabled:opacity-60"
+          title="Reload the file to pick up new lines"
+        >
+          <svg
+            className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`}
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
+            <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+            <path d="M21 3v6h-6" />
           </svg>
         </button>
 

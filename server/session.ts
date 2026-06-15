@@ -278,17 +278,24 @@ export class LogSession extends EventEmitter {
   // ---------------------------------------------------------------------------
   // Row fetching
 
-  async getRows(offset: number, limit: number): Promise<RowData[]> {
+  async getRows(offset: number, limit: number, order: 'asc' | 'desc' = 'asc'): Promise<RowData[]> {
     limit = Math.min(Math.max(limit, 0), 2000);
+    offset = Math.max(0, offset);
+    const total = this.viewTotal;
+    const count = Math.min(limit, Math.max(0, total - offset));
+    if (count === 0) return [];
+    // For newest-first display we read the mirrored ascending range (cheap,
+    // contiguous file reads) and reverse it — the file is never reordered.
+    const fetchOffset = order === 'desc' ? total - offset - count : offset;
     let lineNos: number[];
     if (this.hasSearch) {
-      lineNos = this.store.resultPage(offset, limit);
+      lineNos = this.store.resultPage(fetchOffset, count);
     } else {
-      const start = Math.max(0, offset);
-      const count = Math.min(limit, Math.max(0, this.index.lineCount - start));
-      lineNos = Array.from({ length: count }, (_, i) => start + i);
+      lineNos = Array.from({ length: count }, (_, i) => fetchOffset + i);
     }
-    return this.readRows(lineNos);
+    const rows = await this.readRows(lineNos);
+    if (order === 'desc') rows.reverse();
+    return rows;
   }
 
   private async readRows(lineNos: number[]): Promise<RowData[]> {
@@ -353,6 +360,12 @@ export class LogSession extends EventEmitter {
       unwatchFile(this.file, this.watchListener);
       this.watcher = null;
     }
+  }
+
+  /** Manually poll the file for appended or truncated data — the same work tail
+   * does on a watch event, triggered on demand by the refresh button. */
+  async refresh(): Promise<void> {
+    await this.checkAppend();
   }
 
   private async checkAppend(): Promise<void> {

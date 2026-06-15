@@ -12,6 +12,14 @@ date and start a fresh `Unreleased` section.
 
 ## [Unreleased]
 
+### Added
+
+- Manual refresh button to reload the active file and pick up appended lines
+  on demand (without enabling tail follow).
+- Global row order setting (oldest-first / newest-first) toggled from the
+  toolbar; the choice persists across files and sessions. Tail follow tracks the
+  live edge in either direction.
+
 ## [1.0.0] - 2026-06-15
 
 ### Added

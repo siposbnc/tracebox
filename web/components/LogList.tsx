@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { api, formatTs } from '../api';
+import { useOrder } from '../settings';
 import type { RowData } from '../types';
 
 const BLOCK = 256;
@@ -52,6 +53,15 @@ export default function LogList({
   const loadingRef = useRef(new Set<number>());
   const [, forceRender] = useState(0);
   const epochRef = useRef(epoch);
+  const order = useOrder();
+  const orderRef = useRef(order);
+
+  // changing the global order remaps every display position — drop all blocks
+  if (order !== orderRef.current) {
+    orderRef.current = order;
+    blocksRef.current.clear();
+    loadingRef.current.clear();
+  }
 
   // a new search invalidates everything; appended data only the incomplete tail blocks
   const prevTotalRef = useRef(total);
@@ -77,10 +87,11 @@ export default function LogList({
       if (blocksRef.current.has(blockIdx) || loadingRef.current.has(blockIdx)) return;
       loadingRef.current.add(blockIdx);
       const requestEpoch = epochRef.current;
+      const requestOrder = orderRef.current;
       void api
-        .rows(sessionId, blockIdx * BLOCK, BLOCK)
+        .rows(sessionId, blockIdx * BLOCK, BLOCK, requestOrder)
         .then((r) => {
-          if (epochRef.current !== requestEpoch) return; // stale
+          if (epochRef.current !== requestEpoch || orderRef.current !== requestOrder) return; // stale
           blocksRef.current.set(blockIdx, { epoch: requestEpoch, rows: r.rows });
           forceRender((n) => n + 1);
         })
@@ -96,15 +107,18 @@ export default function LogList({
     const firstBlock = Math.floor(items[0].index / BLOCK);
     const lastBlock = Math.floor(items[items.length - 1].index / BLOCK);
     for (let b = firstBlock; b <= lastBlock; b++) fetchBlock(b);
-  }, [items, fetchBlock, epoch, total]);
+  }, [items, fetchBlock, epoch, total, order]);
 
-  // follow tail: keep pinned to the bottom as data arrives
+  // follow tail: keep pinned to the live edge as data arrives. Newest lines sit
+  // at the bottom in ascending order, at the top in descending order.
   useEffect(() => {
     if (followTail && total > 0) {
-      virtualizer.scrollToIndex(total - 1, { align: 'end' });
+      virtualizer.scrollToIndex(order === 'desc' ? 0 : total - 1, {
+        align: order === 'desc' ? 'start' : 'end',
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [followTail, total, epoch]);
+  }, [followTail, total, epoch, order]);
 
   const rowAt = (index: number): RowData | null => {
     const block = blocksRef.current.get(Math.floor(index / BLOCK));
@@ -157,9 +171,13 @@ export default function LogList({
   const onScroll = useCallback(() => {
     const el = parentRef.current;
     if (!el) return;
-    const atEnd = el.scrollTop + el.clientHeight >= el.scrollHeight - ROW_HEIGHT * 2;
-    if (atEnd) onScrolledToEnd();
-  }, [onScrolledToEnd]);
+    // the "live edge" is the bottom in ascending order, the top in descending
+    const atLiveEdge =
+      order === 'desc'
+        ? el.scrollTop <= ROW_HEIGHT * 2
+        : el.scrollTop + el.clientHeight >= el.scrollHeight - ROW_HEIGHT * 2;
+    if (atLiveEdge) onScrolledToEnd();
+  }, [onScrolledToEnd, order]);
 
   const gutterWidth = Math.max(5, String(total).length) + 1;
 

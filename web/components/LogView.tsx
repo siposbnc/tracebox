@@ -129,6 +129,22 @@ export default function LogView({
     setFollowTail(next);
   }, [id]);
 
+  const [refreshing, setRefreshing] = useState(false);
+  const refresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const s = await api.refresh(id);
+      setStatus(s);
+      setTotal(s.search ? s.search.total : s.lineCount);
+      setEpoch((e) => e + 1);
+      refreshHistogram();
+    } catch {
+      // transient (e.g. file briefly missing during rotation) — ignore
+    } finally {
+      setRefreshing(false);
+    }
+  }, [id, refreshHistogram]);
+
   // highlight terms extracted from the active query
   const highlightTerms = useMemo(() => {
     const active = status.search?.query ?? '';
@@ -162,6 +178,8 @@ export default function LogView({
         search={status.search}
         tail={status.tail}
         onToggleTail={() => void toggleTail()}
+        onRefresh={() => void refresh()}
+        refreshing={refreshing}
         onOpenFile={onOpenFile}
         exportUrls={{ csv: api.exportUrl(id, 'csv'), json: api.exportUrl(id, 'json') }}
         histogramOpen={histogramOpen}

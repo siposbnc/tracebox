@@ -29,9 +29,9 @@ export const api = {
   session: (id: string) => request<SessionStatus>(`/api/sessions/${id}`),
   closeSession: (id: string) => request<{ ok: boolean }>(`/api/sessions/${id}`, { method: 'DELETE' }),
 
-  rows: (id: string, offset: number, limit: number) =>
+  rows: (id: string, offset: number, limit: number, order: 'asc' | 'desc' = 'asc') =>
     request<{ rows: RowData[]; total: number; lineCount: number }>(
-      `/api/sessions/${id}/rows?offset=${offset}&limit=${limit}`,
+      `/api/sessions/${id}/rows?offset=${offset}&limit=${limit}&order=${order}`,
     ),
   search: (id: string, query: string) =>
     request<{ total: number; durationMs: number }>(`/api/sessions/${id}/search`, {
@@ -47,6 +47,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ on }),
     }),
+  refresh: (id: string) => request<SessionStatus>(`/api/sessions/${id}/refresh`, { method: 'POST' }),
   exportUrl: (id: string, format: 'csv' | 'json') => `/api/sessions/${id}/export?format=${format}`,
 
   /** Subscribe to session events; returns an unsubscribe function. */

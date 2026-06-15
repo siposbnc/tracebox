@@ -142,6 +142,36 @@ test('file without trailing newline indexes the last line', async () => {
   assert.equal(rows[1].text, 'line two');
 });
 
+test('descending order returns rows newest-first (whole file and within a search)', async () => {
+  const file = makeLogFile('order.log', appLogLines(50));
+  const s = await openAndIndex(file);
+
+  // whole file, newest first
+  assert.deepEqual((await s.getRows(0, 5, 'desc')).map((r) => r.lineNo), [49, 48, 47, 46, 45]);
+  // the final (partial) descending page maps to the oldest lines
+  assert.deepEqual((await s.getRows(48, 5, 'desc')).map((r) => r.lineNo), [1, 0]);
+  // ascending is unchanged
+  assert.deepEqual((await s.getRows(0, 3, 'asc')).map((r) => r.lineNo), [0, 1, 2]);
+
+  // within an active search, order applies to the materialized result set
+  s.setSearch('level:ERROR'); // matches line_no 4, 10, 16, 22, 28, 34, 40, 46
+  assert.deepEqual((await s.getRows(0, 3, 'asc')).map((r) => r.lineNo), [4, 10, 16]);
+  assert.deepEqual((await s.getRows(0, 3, 'desc')).map((r) => r.lineNo), [46, 40, 34]);
+});
+
+test('manual refresh picks up appended lines without tail mode', async () => {
+  const file = makeLogFile('refresh.log', appLogLines(20));
+  const s = await openAndIndex(file);
+  assert.equal(s.lineCount, 20);
+
+  appendFileSync(file, '2024-01-01 02:00:00 [ERROR] late arrival\n');
+  await s.refresh();
+
+  assert.equal(s.lineCount, 21);
+  const rows = await s.getRows(0, 1, 'desc');
+  assert.match(rows[0].text, /late arrival/);
+});
+
 test('tail mode picks up appended lines and extends active search', async () => {
   const file = makeLogFile('tail.log', appLogLines(100));
   const s = await openAndIndex(file);

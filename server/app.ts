@@ -108,7 +108,8 @@ export function createApp(distDir: string): TraceBoxApp {
     const s = getSession(params.id);
     const offset = Math.max(0, Number(query.get('offset') ?? 0));
     const limit = Math.min(1000, Math.max(1, Number(query.get('limit') ?? 200)));
-    const rows = await s.getRows(offset, limit);
+    const order = query.get('order') === 'desc' ? 'desc' : 'asc';
+    const rows = await s.getRows(offset, limit, order);
     sendJson(res, 200, { rows, total: s.viewTotal, lineCount: s.lineCount });
   });
 
@@ -139,6 +140,12 @@ export function createApp(distDir: string): TraceBoxApp {
 
   router.add('GET', '/api/sessions/:id/histogram', (_req, res, params) => {
     sendJson(res, 200, getSession(params.id).histogram());
+  });
+
+  router.add('POST', '/api/sessions/:id/refresh', async (_req, res, params) => {
+    const s = getSession(params.id);
+    await s.refresh();
+    sendJson(res, 200, s.status());
   });
 
   router.add('POST', '/api/sessions/:id/tail', async (req, res, params) => {

@@ -19,7 +19,9 @@ WPF application, re-imagined as a local web app with a Node.js backend.
   `dot.paths`), classic timestamped app logs, Apache/nginx access logs, syslog, logfmt,
   Python logging, plus a raw fallback that still sniffs levels and timestamps.
 - **Live tail (`tail -f`)** — appended lines are indexed incrementally and an active search
-  keeps extending over them; unterminated trailing lines are handled correctly.
+  keeps extending over them; unterminated trailing lines are handled correctly. A **manual
+  refresh** button reloads the file on demand, and rows can be ordered **oldest- or
+  newest-first** via a global toggle.
 - **Persistent index cache** — reopening an unchanged file is instant (the index is fingerprinted
   by path + size + mtime and reused).
 - **Time histogram** — stacked per-level volume over time; drag a range to filter.
