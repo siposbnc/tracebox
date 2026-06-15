@@ -14,6 +14,7 @@ declare global {
       getPathForFile(file: File): string;
       onOpenPath(callback: (path: string) => void): void;
       onUpdateStatus(callback: (status: UpdateStatus) => void): void;
+      downloadUpdate(): void;
       installUpdate(): void;
     };
   }

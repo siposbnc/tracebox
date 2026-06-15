@@ -16,6 +16,8 @@ contextBridge.exposeInMainWorld('tracebox', {
   onUpdateStatus: (callback) => {
     ipcRenderer.on('tracebox:update', (_event, status) => callback(status));
   },
+  /** Start downloading an available update (download is opt-in). */
+  downloadUpdate: () => ipcRenderer.send('tracebox:download-update'),
   /** Quit and install a downloaded update. */
   installUpdate: () => ipcRenderer.send('tracebox:install-update'),
 });

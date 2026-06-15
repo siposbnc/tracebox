@@ -15,9 +15,10 @@ date and start a fresh `Unreleased` section.
 ### Added
 
 - Automatic updates (desktop app): TraceBox checks GitHub releases on launch
-  (and every 6 hours), downloads a newer version in the background, and shows an
-  in-app banner with a one-click "Restart & update" — no manual re-download or
-  reinstall. Powered by `electron-updater`.
+  (and every 6 hours) and shows an in-app banner when a new version is
+  available. The user opts in to the download, then installs it with one click
+  ("Restart & update") — no manual re-download or reinstall. Powered by
+  `electron-updater`.
 - Manual refresh button to reload the active file and pick up appended lines
   on demand (without enabling tail follow).
 - Global row order setting (oldest-first / newest-first) toggled from the

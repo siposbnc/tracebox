@@ -82,9 +82,10 @@ the shell lives entirely in `electron/`.
 ### Automatic updates
 
 The desktop app updates itself. On launch (and every 6 hours) it checks the
-GitHub releases for a newer version, downloads it in the background, and shows an
-in-app banner with a one-click **Restart & update** — users never re-download or
-reinstall manually. This is wired through `electron-updater` and the `publish`
+GitHub releases for a newer version and shows an in-app banner when one is
+available. The user clicks **Download update**, and once it finishes a one-click
+**Restart & update** installs it — users never re-download or reinstall manually.
+This is wired through `electron-updater` and the `publish`
 config in `electron-builder.yml`; each release built by the
 [release workflow](.github/workflows/release.yml) ships the `latest.yml` and
 blockmap that the updater needs.

@@ -130,7 +130,8 @@ function sendUpdateStatus(status) {
 
 function setupAutoUpdates() {
   if (!app.isPackaged) return;
-  autoUpdater.autoDownload = true;
+  // Don't use the user's bandwidth until they ask — download is opt-in.
+  autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
 
   autoUpdater.on('update-available', (info) => sendUpdateStatus({ state: 'available', version: info.version }));
@@ -142,7 +143,14 @@ function setupAutoUpdates() {
     sendUpdateStatus({ state: 'error', message });
   });
 
-  // The renderer asks to install once an update is downloaded.
+  // The renderer drives the update: download on request, then install.
+  ipcMain.on('tracebox:download-update', () => {
+    autoUpdater.downloadUpdate().catch((err) => {
+      const message = err && err.message ? err.message : String(err);
+      console.error(`[updater] download failed: ${message}`);
+      sendUpdateStatus({ state: 'error', message });
+    });
+  });
   ipcMain.on('tracebox:install-update', () => {
     app.isQuiting = true;
     autoUpdater.quitAndInstall();
