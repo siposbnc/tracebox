@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, formatTs } from '../api';
+import { useTz } from '../settings';
 import type { ContextResult } from '../types';
 
 const LEVEL_STYLES: Record<string, string> = {
@@ -36,6 +37,7 @@ export default function ContextPeek({
   const [data, setData] = useState<ContextResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const centerRef = useRef<HTMLDivElement>(null);
+  const tz = useTz();
 
   useEffect(() => {
     let cancelled = false;
@@ -163,7 +165,7 @@ export default function ContextPeek({
                 >
                   {row.lineNo + 1}
                 </span>
-                <span className="shrink-0 whitespace-nowrap text-xs text-gray-500">{formatTs(row.ts)}</span>
+                <span className="shrink-0 whitespace-nowrap text-xs text-gray-500">{formatTs(row.ts, tz)}</span>
                 {row.level && (
                   <span
                     className={`w-12 shrink-0 rounded px-1 text-center text-[10px] font-semibold leading-4 ${levelClass}`}

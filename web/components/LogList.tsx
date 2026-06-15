@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { api, formatTs } from '../api';
-import { useOrder } from '../settings';
+import { useOrder, useTz, type Tz } from '../settings';
 import type { RowData } from '../types';
 
 const BLOCK = 256;
@@ -60,6 +60,7 @@ export default function LogList({
   const [, forceRender] = useState(0);
   const epochRef = useRef(epoch);
   const order = useOrder();
+  const tz = useTz();
   const orderRef = useRef(order);
 
   // changing the global order remaps every display position — drop all blocks
@@ -235,6 +236,7 @@ export default function LogList({
                     showContext={showContext}
                     highlightRegex={highlightRegex}
                     gutterWidth={gutterWidth}
+                    tz={tz}
                   />
                 ) : (
                   <div className="flex h-full items-center px-3">
@@ -258,6 +260,7 @@ const Row = memo(function Row({
   showContext,
   highlightRegex,
   gutterWidth,
+  tz,
 }: {
   row: RowData;
   selected: boolean;
@@ -266,6 +269,7 @@ const Row = memo(function Row({
   showContext: boolean;
   highlightRegex: RegExp | null;
   gutterWidth: number;
+  tz: Tz;
 }) {
   const levelClass = row.level ? (LEVEL_STYLES[row.level] ?? 'bg-slate-800 text-slate-300') : '';
   const bar = row.level ? LEVEL_BAR[row.level] : undefined;
@@ -294,7 +298,7 @@ const Row = memo(function Row({
         {row.lineNo + 1}
       </span>
       {bar && !selected && <span className={`h-3.5 w-0.5 shrink-0 rounded ${bar}`} />}
-      <span className="shrink-0 whitespace-nowrap text-xs text-gray-500">{formatTs(row.ts)}</span>
+      <span className="shrink-0 whitespace-nowrap text-xs text-gray-500">{formatTs(row.ts, tz)}</span>
       {row.level && (
         <span
           className={`w-12 shrink-0 rounded px-1 text-center text-[10px] font-semibold leading-4 ${levelClass}`}

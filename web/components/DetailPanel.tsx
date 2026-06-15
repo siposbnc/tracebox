@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { api, formatTs } from '../api';
+import { api, formatTs, tzAbbr } from '../api';
+import { useTz } from '../settings';
 import type { LineDetail } from '../types';
 
 const LEVEL_COLORS: Record<string, string> = {
@@ -24,6 +25,7 @@ export default function DetailPanel({
 }) {
   const [detail, setDetail] = useState<LineDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const tz = useTz();
 
   useEffect(() => {
     let cancelled = false;
@@ -76,7 +78,9 @@ export default function DetailPanel({
             {detail.ts !== null && (
               <section className="mb-3">
                 <h3 className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-gray-500">Timestamp</h3>
-                <div className="font-mono text-sm text-gray-200">{formatTs(detail.ts)} UTC</div>
+                <div className="font-mono text-sm text-gray-200">
+                  {formatTs(detail.ts, tz)} <span className="text-gray-500">{tzAbbr(detail.ts, tz)}</span>
+                </div>
               </section>
             )}
 

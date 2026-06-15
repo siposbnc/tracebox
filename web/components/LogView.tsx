@@ -4,6 +4,7 @@ import type { HistogramData, SessionStatus } from '../types';
 import SearchBar from './SearchBar';
 import LogList from './LogList';
 import DetailPanel from './DetailPanel';
+import FacetPanel from './FacetPanel';
 import ContextPeek from './ContextPeek';
 import Histogram from './Histogram';
 import StatusBar from './StatusBar';
@@ -28,6 +29,7 @@ export default function LogView({
   const [pendingJump, setPendingJump] = useState<{ lineNo: number; nonce: number } | null>(null);
   const [histogram, setHistogram] = useState<HistogramData | null>(null);
   const [histogramOpen, setHistogramOpen] = useState(true);
+  const [facetsOpen, setFacetsOpen] = useState(false);
   const [followTail, setFollowTail] = useState(initial.tail);
   const statusRef = useRef(status);
   statusRef.current = status;
@@ -202,6 +204,8 @@ export default function LogView({
         exportUrls={{ csv: api.exportUrl(id, 'csv'), json: api.exportUrl(id, 'json') }}
         histogramOpen={histogramOpen}
         onToggleHistogram={() => setHistogramOpen((v) => !v)}
+        facetsOpen={facetsOpen}
+        onToggleFacets={() => setFacetsOpen((v) => !v)}
         fieldNames={status.fieldNames}
         levelCounts={status.levelCounts}
       />
@@ -211,6 +215,16 @@ export default function LogView({
       )}
 
       <div className="flex min-h-0 flex-1">
+        {facetsOpen && (
+          <FacetPanel
+            sessionId={id}
+            epoch={epoch}
+            fieldNames={status.fieldNames}
+            hasSearch={status.search !== null}
+            onAddFilter={addFilter}
+            onClose={() => setFacetsOpen(false)}
+          />
+        )}
         <div className="min-w-0 flex-1">
           <LogList
             sessionId={id}

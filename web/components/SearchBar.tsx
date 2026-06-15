@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { formatCount } from '../api';
-import { useOrder, setOrder } from '../settings';
+import { formatCount, tzAbbr } from '../api';
+import { useOrder, setOrder, useTz, setTz } from '../settings';
 import {
   recordHistory,
   clearHistory,
@@ -41,6 +41,8 @@ export default function SearchBar({
   exportUrls,
   histogramOpen,
   onToggleHistogram,
+  facetsOpen,
+  onToggleFacets,
   fieldNames,
   levelCounts,
 }: {
@@ -58,6 +60,8 @@ export default function SearchBar({
   exportUrls: { csv: string; json: string };
   histogramOpen: boolean;
   onToggleHistogram: () => void;
+  facetsOpen: boolean;
+  onToggleFacets: () => void;
   fieldNames: { key: string; count: number }[];
   levelCounts: Record<string, number>;
 }) {
@@ -66,6 +70,7 @@ export default function SearchBar({
   const [historyOpen, setHistoryOpen] = useState(false);
   const [saveName, setSaveName] = useState('');
   const order = useOrder();
+  const tz = useTz();
   const inputRef = useRef<HTMLInputElement>(null);
   const historyRef = useRef<HTMLDivElement>(null);
 
@@ -391,6 +396,20 @@ export default function SearchBar({
         </button>
 
         <button
+          onClick={onToggleFacets}
+          className={`rounded-lg border border-edge px-2.5 py-1.5 text-sm ${
+            facetsOpen ? 'bg-surface-3 text-sky-300' : 'bg-surface-2 text-gray-400 hover:text-gray-100'
+          }`}
+          title="Toggle field breakdown"
+        >
+          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M3 6h18" />
+            <path d="M3 12h12" />
+            <path d="M3 18h6" />
+          </svg>
+        </button>
+
+        <button
           onClick={() => setOrder(order === 'asc' ? 'desc' : 'asc')}
           className="flex items-center gap-1.5 rounded-lg border border-edge bg-surface-2 px-2.5 py-1.5 text-sm text-gray-400 hover:text-gray-100"
           title={
@@ -413,6 +432,22 @@ export default function SearchBar({
             )}
           </svg>
           {order === 'asc' ? 'Oldest' : 'Newest'}
+        </button>
+
+        <button
+          onClick={() => setTz(tz === 'utc' ? 'local' : 'utc')}
+          className="flex items-center gap-1.5 rounded-lg border border-edge bg-surface-2 px-2.5 py-1.5 text-sm text-gray-400 hover:text-gray-100"
+          title={
+            tz === 'utc'
+              ? 'Timestamps in UTC — click for local time'
+              : 'Timestamps in local time — click for UTC'
+          }
+        >
+          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="12" cy="12" r="9" />
+            <path d="M12 7v5l3 2" />
+          </svg>
+          {tzAbbr(Date.now(), tz)}
         </button>
 
         <button

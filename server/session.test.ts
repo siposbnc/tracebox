@@ -122,6 +122,44 @@ test('JSON logs: nested fields, comparisons, wildcards, exists', async () => {
   assert.equal(h.buckets.reduce((acc, b) => acc + b.total, 0), 100);
 });
 
+test('facet: value breakdown over the whole file and the current result set', async () => {
+  const file = makeLogFile('facet.jsonl', appLogLines(5000).map((_, i) =>
+    JSON.stringify({
+      timestamp: new Date(Date.UTC(2024, 0, 1) + i * 1000).toISOString(),
+      level: ['INFO', 'INFO', 'INFO', 'WARN', 'ERROR', 'DEBUG'][i % 6],
+      host: `web-${i % 4}`,
+    }),
+  ));
+  const s = await openAndIndex(file);
+
+  // whole file: four hosts, evenly distributed (1250 each), sorted by count
+  const all = s.facet('host');
+  assert.equal(all.field, 'host');
+  assert.equal(all.distinctCount, 4);
+  assert.equal(all.covered, 5000);
+  assert.deepEqual(all.values.map((v) => v.value).sort(), ['web-0', 'web-1', 'web-2', 'web-3']);
+  assert.ok(all.values.every((v) => v.count === 1250));
+
+  // limit caps the number of values returned (but not the distinct/covered totals)
+  const capped = s.facet('host', 2);
+  assert.equal(capped.values.length, 2);
+  assert.equal(capped.distinctCount, 4);
+  assert.equal(capped.covered, 5000);
+
+  // restricted to the active result set: only ERROR lines (every 6th from index 4)
+  s.setSearch('level:ERROR');
+  const errors = s.facet('host');
+  const errorTotal = errors.values.reduce((acc, v) => acc + v.count, 0);
+  assert.equal(errorTotal, s.viewTotal);
+  assert.equal(errors.covered, s.viewTotal);
+
+  // a field that does not exist yields an empty breakdown
+  const none = s.facet('nope');
+  assert.deepEqual(none.values, []);
+  assert.equal(none.distinctCount, 0);
+  assert.equal(none.covered, 0);
+});
+
 test('search is case-insensitive and quoted field values support wildcards with spaces', async () => {
   const file = makeLogFile('wild.jsonl', [
     JSON.stringify({ level: 'INFO', message: 'Incoming request started now', host: 'Web-01' }),

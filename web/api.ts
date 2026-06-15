@@ -1,12 +1,14 @@
 import type {
   BrowseResult,
   ContextResult,
+  FacetResult,
   HistogramData,
   LineDetail,
   RecentFile,
   RowData,
   SessionStatus,
 } from './types';
+import { getTz, type Tz } from './settings';
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init);
@@ -46,6 +48,8 @@ export const api = {
       `/api/sessions/${id}/context?line=${line}&before=${before}&after=${after}`,
     ),
   histogram: (id: string) => request<HistogramData | null>(`/api/sessions/${id}/histogram`),
+  facet: (id: string, field: string, limit = 25) =>
+    request<FacetResult>(`/api/sessions/${id}/facet?field=${encodeURIComponent(field)}&limit=${limit}`),
   setTail: (id: string, on: boolean) =>
     request<{ tail: boolean }>(`/api/sessions/${id}/tail`, {
       method: 'POST',
@@ -81,7 +85,39 @@ export function formatCount(n: number): string {
   return n.toLocaleString('en-US');
 }
 
-export function formatTs(ts: number | null): string {
+function pad(n: number, len = 2): string {
+  return String(n).padStart(len, '0');
+}
+
+/**
+ * Format an epoch-ms timestamp as `YYYY-MM-DD HH:mm:ss.SSS` in the chosen
+ * timezone (UTC by default). The zone is never embedded here — pair the value
+ * with {@link tzAbbr} wherever the zone could be ambiguous.
+ */
+export function formatTs(ts: number | null, tz: Tz = getTz()): string {
   if (ts === null) return '';
-  return new Date(ts).toISOString().replace('T', ' ').replace('Z', '');
+  const d = new Date(ts);
+  if (tz === 'utc') {
+    return d.toISOString().replace('T', ' ').replace('Z', '');
+  }
+  return (
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ` +
+    `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(d.getMilliseconds(), 3)}`
+  );
+}
+
+/**
+ * Short label for the active timezone — `UTC`, or the host's abbreviated local
+ * zone (e.g. `GMT+2`, `PST`) computed for the given instant so it respects DST.
+ */
+export function tzAbbr(ts: number | null = Date.now(), tz: Tz = getTz()): string {
+  if (tz === 'utc') return 'UTC';
+  try {
+    const parts = new Intl.DateTimeFormat(undefined, { timeZoneName: 'short' }).formatToParts(
+      new Date(ts ?? Date.now()),
+    );
+    return parts.find((p) => p.type === 'timeZoneName')?.value ?? 'Local';
+  } catch {
+    return 'Local';
+  }
 }

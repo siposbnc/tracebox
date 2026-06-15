@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import { formatCount, formatTs } from '../api';
+import { useTz } from '../settings';
 import type { HistogramData } from '../types';
 
 const LEVEL_COLORS: Record<string, string> = {
@@ -26,6 +27,7 @@ export default function Histogram({
   const containerRef = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<{ from: number; to: number } | null>(null);
   const [hover, setHover] = useState<number | null>(null);
+  const tz = useTz();
 
   const maxTotal = useMemo(() => Math.max(...data.buckets.map((b) => b.total), 1), [data]);
   const span = Math.max(1, data.maxTs - data.minTs + data.bucketMs);
@@ -119,7 +121,7 @@ export default function Histogram({
 
         {hovered && !drag && (
           <div className="pointer-events-none absolute left-1/2 top-0 z-10 -translate-x-1/2 rounded border border-edge bg-surface-2 px-2 py-1 text-[11px] text-gray-300 shadow-lg">
-            <span className="text-gray-500">{formatTs(hovered.start)}</span>
+            <span className="text-gray-500">{formatTs(hovered.start, tz)}</span>
             {' · '}
             <span className="font-semibold">{formatCount(hovered.total)} lines</span>
             {Object.entries(hovered.counts)
@@ -133,9 +135,9 @@ export default function Histogram({
         )}
       </div>
       <div className="flex justify-between font-mono text-[10px] text-gray-600">
-        <span>{formatTs(data.minTs)}</span>
+        <span>{formatTs(data.minTs, tz)}</span>
         <span className="text-gray-500">drag to filter a time range</span>
-        <span>{formatTs(data.maxTs)}</span>
+        <span>{formatTs(data.maxTs, tz)}</span>
       </div>
     </div>
   );

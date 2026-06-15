@@ -12,6 +12,18 @@ date and start a fresh `Unreleased` section.
 
 ## [Unreleased]
 
+### Added
+
+- Field breakdown (faceting): a new "Fields" sidebar (toolbar toggle) lists the
+  structured fields detected in the file; expanding one shows its top values
+  with counts and share bars for the current view. Counts respect the active
+  search, so you can pivot a result set ("which `host`s? which `status`
+  codes?"). Click a value to filter to it, or the − button to exclude it.
+- Local time toggle: a toolbar button switches all timestamps between UTC and
+  the host's local timezone (rows, detail panel, histogram, and context peek).
+  The active zone is shown explicitly (e.g. `UTC`, `GMT+2`) so a timestamp is
+  never ambiguous. The choice persists across files and sessions.
+
 ## [1.2.0] - 2026-06-15
 
 ### Added

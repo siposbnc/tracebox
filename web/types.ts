@@ -50,6 +50,13 @@ export interface ContextResult {
   matchLines: number[];
 }
 
+export interface FacetResult {
+  field: string;
+  values: { value: string; count: number }[];
+  distinctCount: number;
+  covered: number;
+}
+
 export interface LineDetail {
   lineNo: number;
   raw: string;

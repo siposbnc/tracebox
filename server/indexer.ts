@@ -24,6 +24,16 @@ export interface Histogram {
   withoutTs: number;
 }
 
+export interface Facet {
+  field: string;
+  /** Top values by count (descending), capped at the requested limit. */
+  values: { value: string; count: number }[];
+  /** Distinct values for the field across the current scope. */
+  distinctCount: number;
+  /** Lines in the current scope that have this field at all. */
+  covered: number;
+}
+
 /**
  * SQLite-backed search index for one log file. Stores per-line metadata
  * (timestamp, level), an FTS5 full-text index, and a key/value fields table.
@@ -86,6 +96,7 @@ export class IndexStore {
     this.db.exec(`
       CREATE INDEX IF NOT EXISTS idx_fields_kv ON fields(key, value);
       CREATE INDEX IF NOT EXISTS idx_fields_kn ON fields(key, num) WHERE num IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS idx_fields_line ON fields(line_no);
       CREATE INDEX IF NOT EXISTS idx_lines_ts ON lines(ts, level) WHERE ts IS NOT NULL;
       CREATE INDEX IF NOT EXISTS idx_lines_level ON lines(level) WHERE level IS NOT NULL;
     `);
@@ -296,6 +307,41 @@ export class IndexStore {
       buckets: [...buckets.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v),
       withoutTs: totalRow.n - range.n,
     };
+  }
+
+  /**
+   * Value breakdown for one field: the top values with counts, optionally
+   * restricted to the current result set. Drives off `results` (small) joined to
+   * `fields` via `idx_fields_line` when filtered, or `idx_fields_kv` over the
+   * whole file otherwise.
+   */
+  facet(field: string, filtered: boolean, limit = 25): Facet {
+    limit = Math.min(Math.max(limit, 1), 1000);
+    const values = (
+      filtered
+        ? this.db.prepare(
+            `SELECT f.value AS value, COUNT(*) AS count
+             FROM results r JOIN fields f ON f.line_no = r.line_no
+             WHERE f.key = ? GROUP BY f.value ORDER BY count DESC, value LIMIT ?`,
+          )
+        : this.db.prepare(
+            `SELECT value, COUNT(*) AS count FROM fields
+             WHERE key = ? GROUP BY value ORDER BY count DESC, value LIMIT ?`,
+          )
+    ).all(field, limit) as { value: string; count: number }[];
+
+    const agg = (
+      filtered
+        ? this.db.prepare(
+            `SELECT COUNT(DISTINCT f.value) AS distinctCount, COUNT(*) AS covered
+             FROM results r JOIN fields f ON f.line_no = r.line_no WHERE f.key = ?`,
+          )
+        : this.db.prepare(
+            `SELECT COUNT(DISTINCT value) AS distinctCount, COUNT(*) AS covered FROM fields WHERE key = ?`,
+          )
+    ).get(field) as { distinctCount: number; covered: number };
+
+    return { field, values, distinctCount: agg.distinctCount, covered: agg.covered };
   }
 
   /** Per-level counts over the whole file. */

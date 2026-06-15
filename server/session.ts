@@ -366,6 +366,11 @@ export class LogSession extends EventEmitter {
     return this.store.histogram(this.hasSearch);
   }
 
+  /** Value breakdown for one field over the current view (search results, or the whole file). */
+  facet(field: string, limit?: number): ReturnType<IndexStore['facet']> {
+    return this.store.facet(field, this.hasSearch, limit);
+  }
+
   // ---------------------------------------------------------------------------
   // Tail (follow appended data)
 
