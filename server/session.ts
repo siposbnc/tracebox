@@ -24,6 +24,8 @@ export interface RowData {
   match?: boolean;
   /** Physical lines in this record when multi-line grouping is on (1 = no continuations). */
   span?: number;
+  /** Selected field values for the columnar view (only the requested columns). */
+  cols?: Record<string, string>;
 }
 
 export interface SessionStatus {
@@ -358,6 +360,7 @@ export class LogSession extends EventEmitter {
     order: 'asc' | 'desc' = 'asc',
     highlight = false,
     grouped = false,
+    columns?: string[],
   ): Promise<RowData[]> {
     limit = Math.min(Math.max(limit, 0), 2000);
     offset = Math.max(0, offset);
@@ -391,6 +394,10 @@ export class LogSession extends EventEmitter {
     if (highlight && this.hasSearch) {
       const hits = this.store.matchingLines(rows.map((r) => r.lineNo));
       for (const row of rows) row.match = hits.has(row.lineNo);
+    }
+    if (columns && columns.length > 0) {
+      const vals = this.store.fieldValues(rows.map((r) => r.lineNo), columns);
+      for (const row of rows) row.cols = vals.get(row.lineNo) ?? {};
     }
     if (order === 'desc') rows.reverse();
     return rows;

@@ -160,6 +160,27 @@ test('facet: value breakdown over the whole file and the current result set', as
   assert.equal(none.covered, 0);
 });
 
+test('getRows returns selected field values for the columnar view', async () => {
+  const lines = Array.from({ length: 20 }, (_, i) =>
+    JSON.stringify({
+      timestamp: new Date(Date.UTC(2024, 0, 1) + i * 1000).toISOString(),
+      level: i % 2 ? 'info' : 'error',
+      http: { status: i % 2 ? 200 : 500, path: `/p/${i}` },
+    }),
+  );
+  const file = makeLogFile('cols.jsonl', lines);
+  const s = await openAndIndex(file);
+
+  const rows = await s.getRows(0, 3, 'asc', false, false, ['http.status', 'http.path']);
+  assert.equal(rows[0].cols?.['http.status'], '500');
+  assert.equal(rows[0].cols?.['http.path'], '/p/0');
+  assert.equal(rows[1].cols?.['http.status'], '200');
+
+  // without columns requested, no cols attached
+  const plain = await s.getRows(0, 1);
+  assert.equal(plain[0].cols, undefined);
+});
+
 test('search is case-insensitive and quoted field values support wildcards with spaces', async () => {
   const file = makeLogFile('wild.jsonl', [
     JSON.stringify({ level: 'INFO', message: 'Incoming request started now', host: 'Web-01' }),

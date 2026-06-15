@@ -8,6 +8,8 @@ export interface RowData {
   match?: boolean;
   /** In grouped mode, physical lines in this record (1 = no continuation lines). */
   span?: number;
+  /** Selected field values for the columnar view (only the requested columns). */
+  cols?: Record<string, string>;
 }
 
 export interface SessionStatus {

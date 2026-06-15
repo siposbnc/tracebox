@@ -111,7 +111,9 @@ export function createApp(distDir: string): TraceBoxApp {
     const order = query.get('order') === 'desc' ? 'desc' : 'asc';
     const highlight = query.get('highlight') === '1';
     const grouped = query.get('grouped') === '1';
-    const rows = await s.getRows(offset, limit, order, highlight, grouped);
+    const colsParam = query.get('cols');
+    const columns = colsParam ? colsParam.split(',').filter(Boolean) : undefined;
+    const rows = await s.getRows(offset, limit, order, highlight, grouped, columns);
     // In highlight mode the list spans the whole file (matches are flagged, not filtered).
     const total =
       highlight && s.hasSearch ? (grouped ? s.recordCount() : s.lineCount) : s.displayTotal(grouped);

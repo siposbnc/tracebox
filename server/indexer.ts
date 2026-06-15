@@ -403,6 +403,27 @@ export class IndexStore {
       .all(lineNo) as { key: string; value: string }[];
   }
 
+  /** Values of selected field keys for a set of lines (for the columnar view). */
+  fieldValues(lineNos: number[], keys: string[]): Map<number, Record<string, string>> {
+    const out = new Map<number, Record<string, string>>();
+    if (lineNos.length === 0 || keys.length === 0) return out;
+    const rows = this.db
+      .prepare(
+        `SELECT line_no, key, value FROM fields
+         WHERE line_no IN (${lineNos.map(() => '?').join(',')}) AND key IN (${keys.map(() => '?').join(',')})`,
+      )
+      .all(...lineNos, ...keys) as { line_no: number; key: string; value: string }[];
+    for (const r of rows) {
+      let m = out.get(r.line_no);
+      if (!m) {
+        m = {};
+        out.set(r.line_no, m);
+      }
+      m[r.key] = r.value;
+    }
+    return out;
+  }
+
   // -------------------------------------------------------------------------
   // Aggregations
 

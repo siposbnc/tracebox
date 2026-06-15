@@ -40,11 +40,14 @@ export const api = {
     order: 'asc' | 'desc' = 'asc',
     highlight = false,
     grouped = false,
+    columns?: string[],
   ) =>
     request<{ rows: RowData[]; total: number; lineCount: number }>(
       `/api/sessions/${id}/rows?offset=${offset}&limit=${limit}&order=${order}${
         highlight ? '&highlight=1' : ''
-      }${grouped ? '&grouped=1' : ''}`,
+      }${grouped ? '&grouped=1' : ''}${
+        columns && columns.length > 0 ? `&cols=${columns.map(encodeURIComponent).join(',')}` : ''
+      }`,
     ),
   search: (id: string, query: string, grouped = false, templateId: number | null = null) =>
     request<{ total: number; durationMs: number }>(`/api/sessions/${id}/search`, {
