@@ -16,8 +16,8 @@ export interface Command {
 export const COMMANDS: Command[] = [
   { id: 'focusSearch', label: 'Focus search', defaultChord: 'Mod+F' },
   { id: 'goToLine', label: 'Go to line', defaultChord: 'Mod+G' },
-  { id: 'gotoStart', label: 'Jump to file start', defaultChord: 'Home' },
-  { id: 'gotoEnd', label: 'Jump to file end', defaultChord: 'End' },
+  { id: 'gotoStart', label: 'Jump to top', defaultChord: 'Home' },
+  { id: 'gotoEnd', label: 'Jump to bottom', defaultChord: 'End' },
   { id: 'pageDown', label: 'Jump down a page', defaultChord: 'PageDown' },
   { id: 'pageUp', label: 'Jump up a page', defaultChord: 'PageUp' },
   { id: 'pageDownBig', label: 'Jump down a big page', defaultChord: 'Mod+PageDown' },

@@ -228,11 +228,11 @@ export default function LogList({
           break;
         case 'gotoStart':
           e.preventDefault();
-          selectAtViewIndex(orderRef.current === 'desc' ? total - 1 : 0, 'start');
+          selectAtViewIndex(0, 'start');
           break;
         case 'gotoEnd':
           e.preventDefault();
-          selectAtViewIndex(orderRef.current === 'desc' ? 0 : total - 1, 'end');
+          selectAtViewIndex(total - 1, 'end');
           break;
         case 'nextMatch':
         case 'prevMatch': {

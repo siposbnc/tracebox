@@ -16,8 +16,8 @@ date and start a fresh `Unreleased` section.
 
 - Line-jump navigation (all rebindable): Page Down / Page Up move the selection
   by a configurable number of rows (default 100), Ctrl/Cmd + Page Down / Up move
-  a bigger configurable amount (default 1000), and Home / End jump to the start /
-  end of the file and select the first / last line.
+  a bigger configurable amount (default 1000), and Home / End jump to the top /
+  bottom of the list.
 - Find next/previous match in highlight mode: F3 / Shift+F3 jump to and select
   the next / previous matching line (rebindable).
 - Multi-line grouping (toolbar toggle, on by default): stack traces and wrapped
