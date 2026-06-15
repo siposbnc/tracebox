@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, formatTs } from '../api';
-import { useTz } from '../settings';
+import { useTz, getContextLines } from '../settings';
 import type { ContextResult } from '../types';
 
 const LEVEL_STYLES: Record<string, string> = {
@@ -32,8 +32,8 @@ export default function ContextPeek({
   onClose: () => void;
   onJumpToLine: (lineNo: number) => void;
 }) {
-  const [before, setBefore] = useState(5);
-  const [after, setAfter] = useState(5);
+  const [before, setBefore] = useState(getContextLines);
+  const [after, setAfter] = useState(getContextLines);
   const [data, setData] = useState<ContextResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const centerRef = useRef<HTMLDivElement>(null);

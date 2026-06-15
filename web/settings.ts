@@ -8,9 +8,18 @@ export type Tz = 'utc' | 'local';
 
 const ORDER_KEY = 'tracebox.order';
 const TZ_KEY = 'tracebox.tz';
+const CONTEXT_KEY = 'tracebox.contextLines';
+const HISTOGRAM_KEY = 'tracebox.histogramDefault';
 
 let order: Order = localStorage.getItem(ORDER_KEY) === 'desc' ? 'desc' : 'asc';
 let tz: Tz = localStorage.getItem(TZ_KEY) === 'local' ? 'local' : 'utc';
+
+function loadContextLines(): number {
+  const n = Number(localStorage.getItem(CONTEXT_KEY));
+  return Number.isFinite(n) && n >= 0 ? Math.min(n, 1000) : 5;
+}
+let contextLines = loadContextLines();
+let histogramDefault = localStorage.getItem(HISTOGRAM_KEY) !== 'false';
 
 const listeners = new Set<() => void>();
 
@@ -53,4 +62,37 @@ export function setTz(next: Tz): void {
 /** React hook for the global timestamp timezone. Updates every open tab when changed. */
 export function useTz(): Tz {
   return useSyncExternalStore(subscribe, getTz);
+}
+
+export function getContextLines(): number {
+  return contextLines;
+}
+
+export function setContextLines(next: number): void {
+  const clamped = Math.min(Math.max(Math.round(next), 0), 1000);
+  if (clamped === contextLines) return;
+  contextLines = clamped;
+  localStorage.setItem(CONTEXT_KEY, String(clamped));
+  emit();
+}
+
+/** Default number of context lines shown before/after a line in the context peek. */
+export function useContextLines(): number {
+  return useSyncExternalStore(subscribe, getContextLines);
+}
+
+export function getHistogramDefault(): boolean {
+  return histogramDefault;
+}
+
+export function setHistogramDefault(next: boolean): void {
+  if (next === histogramDefault) return;
+  histogramDefault = next;
+  localStorage.setItem(HISTOGRAM_KEY, String(next));
+  emit();
+}
+
+/** Whether the histogram is shown by default when a file opens. */
+export function useHistogramDefault(): boolean {
+  return useSyncExternalStore(subscribe, getHistogramDefault);
 }

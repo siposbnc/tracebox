@@ -1,0 +1,147 @@
+import { useEffect } from 'react';
+import {
+  useOrder,
+  setOrder,
+  useTz,
+  setTz,
+  useContextLines,
+  setContextLines,
+  useHistogramDefault,
+  setHistogramDefault,
+} from '../settings';
+import { tzAbbr } from '../api';
+
+function Segmented<T extends string>({
+  value,
+  options,
+  onChange,
+}: {
+  value: T;
+  options: { value: T; label: string }[];
+  onChange: (v: T) => void;
+}) {
+  return (
+    <div className="flex overflow-hidden rounded-md border border-edge">
+      {options.map((o) => (
+        <button
+          key={o.value}
+          onClick={() => onChange(o.value)}
+          className={`px-3 py-1 text-xs ${
+            value === o.value ? 'bg-sky-700 text-white' : 'bg-surface-0 text-gray-400 hover:text-gray-100'
+          }`}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function Row({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-4 py-2.5">
+      <div className="min-w-0">
+        <div className="text-sm text-gray-200">{label}</div>
+        {hint && <div className="text-xs text-gray-500">{hint}</div>}
+      </div>
+      <div className="shrink-0">{children}</div>
+    </div>
+  );
+}
+
+/** Display preferences and an entry point to the keyboard shortcuts editor. */
+export default function SettingsPanel({
+  onClose,
+  onShowShortcuts,
+}: {
+  onClose: () => void;
+  onShowShortcuts: () => void;
+}) {
+  const order = useOrder();
+  const tz = useTz();
+  const contextLines = useContextLines();
+  const histogramDefault = useHistogramDefault();
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
+      <div
+        className="w-[460px] max-w-[92vw] overflow-hidden rounded-lg border border-edge bg-surface-1 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-edge px-4 py-2.5">
+          <h2 className="text-sm font-semibold text-gray-200">Settings</h2>
+          <button onClick={onClose} className="rounded px-1.5 text-gray-500 hover:bg-surface-2 hover:text-gray-200" title="Close (Esc)">
+            ×
+          </button>
+        </div>
+
+        <div className="divide-y divide-edge/50 px-4 py-2">
+          <Row label="Row order" hint="Order log rows by time">
+            <Segmented
+              value={order}
+              onChange={setOrder}
+              options={[
+                { value: 'asc', label: 'Oldest first' },
+                { value: 'desc', label: 'Newest first' },
+              ]}
+            />
+          </Row>
+
+          <Row label="Timestamps" hint={`Local time shows as ${tzAbbr(Date.now(), 'local')}`}>
+            <Segmented
+              value={tz}
+              onChange={setTz}
+              options={[
+                { value: 'utc', label: 'UTC' },
+                { value: 'local', label: 'Local' },
+              ]}
+            />
+          </Row>
+
+          <Row label="Context lines" hint="Lines shown before/after when peeking at a match">
+            <input
+              type="number"
+              min={0}
+              max={1000}
+              value={contextLines}
+              onChange={(e) => setContextLines(Number(e.target.value))}
+              className="w-20 rounded border border-edge bg-surface-0 px-2 py-1 text-right font-mono text-sm text-gray-100 outline-none focus:border-sky-600"
+            />
+          </Row>
+
+          <Row label="Histogram" hint="Show the time histogram when a file opens">
+            <button
+              role="switch"
+              aria-checked={histogramDefault}
+              onClick={() => setHistogramDefault(!histogramDefault)}
+              className={`relative h-5 w-9 rounded-full transition-colors ${histogramDefault ? 'bg-sky-600' : 'bg-surface-3'}`}
+            >
+              <span
+                className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
+                  histogramDefault ? 'translate-x-4' : 'translate-x-0.5'
+                }`}
+              />
+            </button>
+          </Row>
+
+          <Row label="Keyboard shortcuts" hint="View and rebind shortcuts">
+            <button
+              onClick={onShowShortcuts}
+              className="rounded-md border border-edge bg-surface-2 px-3 py-1 text-xs text-gray-300 hover:text-gray-100"
+            >
+              Edit shortcuts
+            </button>
+          </Row>
+        </div>
+      </div>
+    </div>
+  );
+}

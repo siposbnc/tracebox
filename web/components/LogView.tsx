@@ -10,8 +10,10 @@ import FacetPanel from './FacetPanel';
 import ContextPeek from './ContextPeek';
 import GoToLine from './GoToLine';
 import ShortcutsHelp from './ShortcutsHelp';
+import SettingsPanel from './SettingsPanel';
 import Histogram from './Histogram';
 import StatusBar from './StatusBar';
+import { getHistogramDefault } from '../settings';
 
 export default function LogView({
   initial,
@@ -32,11 +34,12 @@ export default function LogView({
   const [contextLine, setContextLine] = useState<number | null>(null);
   const [pendingJump, setPendingJump] = useState<{ lineNo: number; nonce: number } | null>(null);
   const [histogram, setHistogram] = useState<HistogramData | null>(null);
-  const [histogramOpen, setHistogramOpen] = useState(true);
+  const [histogramOpen, setHistogramOpen] = useState(getHistogramDefault);
   const [facetsOpen, setFacetsOpen] = useState(false);
   const [highlightMode, setHighlightMode] = useState(false);
   const [gotoOpen, setGotoOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [followTail, setFollowTail] = useState(initial.tail);
   const statusRef = useRef(status);
   statusRef.current = status;
@@ -288,6 +291,7 @@ export default function LogView({
         onJumpToLine={(lineNo) => void jumpToLine(lineNo)}
         onGoToLine={() => setGotoOpen(true)}
         onShowShortcuts={() => setShortcutsOpen(true)}
+        onOpenSettings={() => setSettingsOpen(true)}
         fieldNames={status.fieldNames}
         levelCounts={status.levelCounts}
       />
@@ -357,6 +361,16 @@ export default function LogView({
       )}
 
       {shortcutsOpen && <ShortcutsHelp onClose={() => setShortcutsOpen(false)} />}
+
+      {settingsOpen && (
+        <SettingsPanel
+          onClose={() => setSettingsOpen(false)}
+          onShowShortcuts={() => {
+            setSettingsOpen(false);
+            setShortcutsOpen(true);
+          }}
+        />
+      )}
     </div>
   );
 }

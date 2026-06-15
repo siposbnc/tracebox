@@ -14,6 +14,9 @@ date and start a fresh `Unreleased` section.
 
 ### Added
 
+- Settings panel (toolbar gear) consolidating display preferences: row order,
+  timestamp timezone, default context-peek lines, and whether the histogram
+  shows by default. Includes a shortcut to the keyboard-shortcuts editor.
 - Keyboard shortcuts overlay (Ctrl/Cmd+/ or the toolbar keyboard button) listing
   every shortcut. Shortcuts are now rebindable: click one and press the new keys
   (Backspace unbinds, Esc cancels); per-shortcut and "reset all" restore the
