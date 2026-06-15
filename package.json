@@ -11,8 +11,9 @@
   },
   "scripts": {
     "start": "node server/main.ts",
-    "dev": "node scripts/dev.mjs",
-    "build": "vite build",
+    "dev": "node scripts/gen-patchnotes.mjs && node scripts/dev.mjs",
+    "build": "node scripts/gen-patchnotes.mjs && vite build",
+    "genpatchnotes": "node scripts/gen-patchnotes.mjs",
     "test": "node --test \"server/**/*.test.ts\"",
     "genlog": "node scripts/genlog.mjs",
     "build:electron": "node scripts/build-electron.mjs",

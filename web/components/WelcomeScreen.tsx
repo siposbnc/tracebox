@@ -6,9 +6,11 @@ import { Logo } from './Logo';
 export default function WelcomeScreen({
   onOpen,
   onOpenPath,
+  onWhatsNew,
 }: {
   onOpen: () => void;
   onOpenPath: (path: string) => Promise<void>;
+  onWhatsNew: () => void;
 }) {
   const [recents, setRecents] = useState<RecentFile[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -27,12 +29,20 @@ export default function WelcomeScreen({
         </div>
       </div>
 
-      <button
-        onClick={onOpen}
-        className="rounded-xl bg-sky-700 px-6 py-2.5 font-medium text-white shadow-lg shadow-sky-950 hover:bg-sky-600"
-      >
-        Open a log file…
-      </button>
+      <div className="flex items-center gap-3">
+        <button
+          onClick={onOpen}
+          className="rounded-xl bg-sky-700 px-6 py-2.5 font-medium text-white shadow-lg shadow-sky-950 hover:bg-sky-600"
+        >
+          Open a log file…
+        </button>
+        <button
+          onClick={onWhatsNew}
+          className="rounded-xl border border-edge bg-surface-1 px-4 py-2.5 text-sm font-medium text-gray-300 hover:bg-surface-2 hover:text-gray-100"
+        >
+          ✨ What's new
+        </button>
+      </div>
 
       {error && <div className="text-sm text-red-400">{error}</div>}
 

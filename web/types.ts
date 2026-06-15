@@ -56,3 +56,14 @@ export interface RecentFile {
   path: string;
   openedAt: number;
 }
+
+export interface PatchNoteSection {
+  title: string;
+  items: string[];
+}
+
+export interface PatchNote {
+  version: string;
+  date: string | null;
+  sections: PatchNoteSection[];
+}

@@ -14,6 +14,9 @@ date and start a fresh `Unreleased` section.
 
 ### Added
 
+- "What's new" view that lists the changes and fixes in each release (generated
+  from this changelog). It opens automatically once on the first launch after an
+  update, and is always available from the toolbar and welcome screen.
 - Automatic updates (desktop app): TraceBox checks GitHub releases on launch
   (and every 6 hours) and shows an in-app banner when a new version is
   available. The user opts in to the download, then installs it with one click

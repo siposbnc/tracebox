@@ -70,5 +70,8 @@ Code signing is env-var driven (`CSC_LINK` / `CSC_KEY_PASSWORD`); see
 ## When you make changes
 
 - Add a `CHANGELOG.md` entry under `## [Unreleased]` for anything user-facing.
+  The in-app "What's new" view is generated from `CHANGELOG.md` into
+  `web/patchnotes.ts` by `scripts/gen-patchnotes.mjs` (run by `npm run build` and
+  `npm run dev`) — don't edit `web/patchnotes.ts` by hand.
 - Keep `server/` dependency-free and `127.0.0.1`-only (offline guarantee).
 - Run `npm test` before considering backend work done.

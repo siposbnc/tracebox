@@ -5,7 +5,12 @@ import LogView from './components/LogView';
 import OpenFileDialog from './components/OpenFileDialog';
 import WelcomeScreen from './components/WelcomeScreen';
 import UpdateBanner from './components/UpdateBanner';
+import WhatsNew from './components/WhatsNew';
 import { Logo } from './components/Logo';
+import { patchNotes } from './patchnotes';
+import { compareVersions } from './version';
+
+const LAST_SEEN_VERSION_KEY = 'tracebox.lastSeenVersion';
 
 export default function App() {
   const [sessions, setSessions] = useState<SessionStatus[]>([]);
@@ -13,6 +18,9 @@ export default function App() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [openError, setOpenError] = useState<string | null>(null);
+  const [whatsNewOpen, setWhatsNewOpen] = useState(false);
+  // the newest version the user had seen before this launch (for "New" badges)
+  const [sinceVersion] = useState<string | null>(() => localStorage.getItem(LAST_SEEN_VERSION_KEY));
 
   useEffect(() => {
     void api.sessions().then((list) => {
@@ -20,6 +28,16 @@ export default function App() {
       if (list.length > 0) setActiveId(list[0].id);
       setLoaded(true);
     });
+  }, []);
+
+  // Auto-open "What's new" once, only on the first launch of a newer version
+  // (i.e. after an update) — never on a clean install or on later launches.
+  useEffect(() => {
+    const current = patchNotes[0]?.version;
+    if (!current) return;
+    const lastSeen = localStorage.getItem(LAST_SEEN_VERSION_KEY);
+    if (lastSeen && compareVersions(current, lastSeen) > 0) setWhatsNewOpen(true);
+    localStorage.setItem(LAST_SEEN_VERSION_KEY, current);
   }, []);
 
   const openFile = useCallback(async (path: string) => {
@@ -96,7 +114,7 @@ export default function App() {
   return (
     <div className="flex h-full flex-col">
       <UpdateBanner />
-      {sessions.length > 0 && (
+      {(sessions.length > 0 || whatsNewOpen) && (
         <div className="flex items-stretch gap-1 border-b border-edge bg-surface-1 px-2 pt-1.5">
           <div className="mr-1 flex items-center gap-2 px-2 pb-1.5">
             <Logo className="h-5 w-5" />
@@ -104,12 +122,15 @@ export default function App() {
           </div>
           {sessions.map((s) => {
             const name = s.file.split(/[\\/]/).pop();
-            const isActive = s.id === activeId;
+            const isActive = s.id === activeId && !whatsNewOpen;
             return (
               <div
                 key={s.id}
                 role="tab"
-                onClick={() => setActiveId(s.id)}
+                onClick={() => {
+                  setActiveId(s.id);
+                  setWhatsNewOpen(false);
+                }}
                 className={`group flex max-w-64 cursor-pointer items-center gap-2 rounded-t-md border border-b-0 px-3 py-1.5 text-sm ${
                   isActive
                     ? 'border-edge bg-surface-0 text-gray-100'
@@ -138,6 +159,17 @@ export default function App() {
           >
             +
           </button>
+          <button
+            onClick={() => setWhatsNewOpen(true)}
+            className={`mb-1.5 ml-auto self-center rounded-md px-2.5 py-1 text-sm ${
+              whatsNewOpen
+                ? 'bg-surface-0 text-sky-300'
+                : 'text-gray-400 hover:bg-surface-2 hover:text-gray-100'
+            }`}
+            title="What's new"
+          >
+            ✨ What's new
+          </button>
         </div>
       )}
 
@@ -151,10 +183,16 @@ export default function App() {
       )}
 
       <div className="min-h-0 flex-1">
-        {active ? (
+        {whatsNewOpen ? (
+          <WhatsNew onClose={() => setWhatsNewOpen(false)} sinceVersion={sinceVersion} />
+        ) : active ? (
           <LogView key={active.id} initial={active} onOpenFile={requestOpenFile} />
         ) : (
-          <WelcomeScreen onOpen={requestOpenFile} onOpenPath={openFile} />
+          <WelcomeScreen
+            onOpen={requestOpenFile}
+            onOpenPath={openFile}
+            onWhatsNew={() => setWhatsNewOpen(true)}
+          />
         )}
       </div>
 
