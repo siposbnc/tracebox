@@ -14,7 +14,8 @@ import ShortcutsHelp from './ShortcutsHelp';
 import SettingsPanel from './SettingsPanel';
 import Histogram from './Histogram';
 import StatusBar from './StatusBar';
-import { getHistogramDefault, useWrap, getWrap, setWrap, getOrder } from '../settings';
+import { getHistogramDefault, useWrap, getWrap, setWrap, getOrder, useColumnar } from '../settings';
+import { useColumns, defaultColumns, setColumns } from '../columns';
 
 export default function LogView({
   initial,
@@ -58,6 +59,12 @@ export default function LogView({
   const groupingActiveRef = useRef(groupingActive);
   groupingActiveRef.current = groupingActive;
   const wrap = useWrap();
+  const columnar = useColumnar();
+  const storedColumns = useColumns(status.file);
+  const columns = useMemo(
+    () => (storedColumns.length > 0 ? storedColumns : defaultColumns(status.fieldNames)),
+    [storedColumns, status.fieldNames],
+  );
 
   const refreshHistogram = useCallback(() => {
     void api.histogram(id).then(setHistogram).catch(() => setHistogram(null));
@@ -344,6 +351,8 @@ export default function LogView({
         onToggleFacets={() => setFacetsOpen((v) => !v)}
         clustersOpen={clustersOpen}
         onToggleClusters={() => setClustersOpen((v) => !v)}
+        columns={columns}
+        onColumnsChange={(cols) => setColumns(status.file, cols)}
         highlightMode={highlightMode}
         onToggleHighlight={toggleHighlight}
         grouped={grouped}
@@ -384,7 +393,7 @@ export default function LogView({
         )}
         <div className="min-w-0 flex-1">
           <LogList
-            key={`${wrap ? 'w' : 'n'}:${groupingActive ? 'g' : 'u'}:${highlightActive ? `hl:${status.search?.query ?? ''}` : 'flt'}`}
+            key={`${columnar ? `c:${columns.join(',')}` : 'r'}:${wrap ? 'w' : 'n'}:${groupingActive ? 'g' : 'u'}:${highlightActive ? `hl:${status.search?.query ?? ''}` : 'flt'}`}
             sessionId={id}
             file={status.file}
             epoch={epoch}
@@ -397,6 +406,8 @@ export default function LogView({
             highlight={highlightActive}
             grouped={groupingActive}
             wrap={wrap}
+            columnar={columnar}
+            columns={columns}
             scrollTo={pendingJump}
             highlightTerms={highlightTerms}
             onUserScroll={() => setFollowTail(false)}

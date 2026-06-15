@@ -14,10 +14,12 @@ const PAGE_JUMP_KEY = 'tracebox.pageJump';
 const PAGE_JUMP_BIG_KEY = 'tracebox.pageJumpBig';
 
 const WRAP_KEY = 'tracebox.wrap';
+const COLUMNAR_KEY = 'tracebox.columnar';
 
 let order: Order = localStorage.getItem(ORDER_KEY) === 'desc' ? 'desc' : 'asc';
 let tz: Tz = localStorage.getItem(TZ_KEY) === 'local' ? 'local' : 'utc';
 let wrap = localStorage.getItem(WRAP_KEY) === 'true';
+let columnar = localStorage.getItem(COLUMNAR_KEY) === 'true';
 
 /** Read a non-negative integer setting, falling back to `fallback` when unset/invalid. */
 function loadNumber(key: string, fallback: number, min = 0, max = 1_000_000): number {
@@ -89,6 +91,22 @@ export function setWrap(next: boolean): void {
 /** Whether long log lines wrap instead of being truncated. */
 export function useWrap(): boolean {
   return useSyncExternalStore(subscribe, getWrap);
+}
+
+export function getColumnar(): boolean {
+  return columnar;
+}
+
+export function setColumnar(next: boolean): void {
+  if (next === columnar) return;
+  columnar = next;
+  localStorage.setItem(COLUMNAR_KEY, String(next));
+  emit();
+}
+
+/** Whether structured logs render as a column grid instead of raw lines. */
+export function useColumnar(): boolean {
+  return useSyncExternalStore(subscribe, getColumnar);
 }
 
 export function getContextLines(): number {

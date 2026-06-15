@@ -14,6 +14,10 @@ date and start a fresh `Unreleased` section.
 
 ### Added
 
+- Columnar view (toolbar toggle): render structured logs as a grid of chosen
+  fields instead of raw lines — line number, time, and level as fixed columns
+  plus any flattened fields you pick from the Columns menu, with a sticky header
+  and horizontal scroll. The column selection is remembered per file.
 - Word wrap (toolbar toggle / settings / Ctrl+W): long lines wrap instead of
   being truncated, with the row list re-measuring heights so scrolling stays
   smooth.

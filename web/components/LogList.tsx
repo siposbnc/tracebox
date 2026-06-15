@@ -9,6 +9,11 @@ import type { RowData } from '../types';
 const BLOCK = 256;
 const ROW_HEIGHT = 24;
 
+// columnar (grid) view fixed column widths, in px
+const TIME_W = 168;
+const LEVEL_W = 52;
+const COL_W = 190;
+
 const LEVEL_STYLES: Record<string, string> = {
   TRACE: 'bg-slate-800 text-slate-400',
   DEBUG: 'bg-slate-800 text-slate-300',
@@ -42,6 +47,8 @@ export default function LogList({
   highlight,
   grouped,
   wrap,
+  columnar,
+  columns,
   scrollTo,
   highlightTerms,
   onUserScroll,
@@ -59,6 +66,8 @@ export default function LogList({
   highlight: boolean;
   grouped: boolean;
   wrap: boolean;
+  columnar: boolean;
+  columns: string[];
   scrollTo: { lineNo: number; nonce: number } | null;
   highlightTerms: string[];
   onUserScroll: () => void;
@@ -108,7 +117,7 @@ export default function LogList({
       const requestEpoch = epochRef.current;
       const requestOrder = orderRef.current;
       void api
-        .rows(sessionId, blockIdx * BLOCK, BLOCK, requestOrder, highlight, grouped)
+        .rows(sessionId, blockIdx * BLOCK, BLOCK, requestOrder, highlight, grouped, columnar ? columns : undefined)
         .then((r) => {
           if (epochRef.current !== requestEpoch || orderRef.current !== requestOrder) return; // stale
           blocksRef.current.set(blockIdx, { epoch: requestEpoch, rows: r.rows });
@@ -116,7 +125,7 @@ export default function LogList({
         })
         .finally(() => loadingRef.current.delete(blockIdx));
     },
-    [sessionId, highlight, grouped],
+    [sessionId, highlight, grouped, columnar, columns],
   );
 
   const items = virtualizer.getVirtualItems();
@@ -282,17 +291,76 @@ export default function LogList({
 
   const gutterWidth = Math.max(5, String(total).length) + 1;
 
+  const gridMinWidth = `calc(${gutterWidth + 2}ch + ${16 + TIME_W + LEVEL_W + columns.length * COL_W}px)`;
+
   return (
     <div
       ref={parentRef}
       tabIndex={0}
       onScroll={onScroll}
       onWheel={onUserScroll}
-      className="h-full overflow-y-auto overscroll-none bg-surface-0 outline-none"
+      className={`h-full overscroll-none bg-surface-0 outline-none ${
+        columnar ? 'overflow-auto' : 'overflow-y-auto'
+      }`}
     >
       {total === 0 ? (
         <div className="flex h-full items-center justify-center text-sm text-gray-500">
           No matching log lines
+        </div>
+      ) : columnar ? (
+        <div style={{ minWidth: gridMinWidth }}>
+          <div className="sticky top-0 z-10 flex items-center gap-2 border-b border-edge bg-surface-1 pr-3 text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+            <span className="w-4 shrink-0" />
+            <span className="shrink-0 text-right" style={{ width: `${gutterWidth}ch` }}>
+              #
+            </span>
+            <span className="shrink-0" style={{ width: TIME_W }}>
+              time
+            </span>
+            <span className="shrink-0" style={{ width: LEVEL_W }}>
+              level
+            </span>
+            {columns.map((c) => (
+              <span key={c} className="shrink-0 truncate px-1 font-mono normal-case" style={{ width: COL_W }} title={c}>
+                {c}
+              </span>
+            ))}
+          </div>
+          <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
+            {items.map((item) => {
+              const row = rowAt(item.index);
+              return (
+                <div
+                  key={item.key}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: item.size,
+                    transform: `translateY(${item.start}px)`,
+                  }}
+                >
+                  {row ? (
+                    <GridRow
+                      row={row}
+                      selected={selected === row.lineNo}
+                      bookmarked={bookmarkSet.has(row.lineNo)}
+                      onSelect={onSelect}
+                      onToggleBookmark={() => toggleBookmark(file, row.lineNo)}
+                      columns={columns}
+                      gutterWidth={gutterWidth}
+                      tz={tz}
+                    />
+                  ) : (
+                    <div className="flex h-6 items-center px-3">
+                      <div className="h-2.5 w-1/3 animate-pulse-subtle rounded bg-surface-2" />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       ) : (
         <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
@@ -452,6 +520,70 @@ const Row = memo(function Row({
           ± context
         </button>
       )}
+    </div>
+  );
+});
+
+const GridRow = memo(function GridRow({
+  row,
+  selected,
+  bookmarked,
+  onSelect,
+  onToggleBookmark,
+  columns,
+  gutterWidth,
+  tz,
+}: {
+  row: RowData;
+  selected: boolean;
+  bookmarked: boolean;
+  onSelect: (lineNo: number) => void;
+  onToggleBookmark: () => void;
+  columns: string[];
+  gutterWidth: number;
+  tz: Tz;
+}) {
+  const levelClass = row.level ? (LEVEL_STYLES[row.level] ?? 'bg-slate-800 text-slate-300') : '';
+  return (
+    <div
+      onClick={() => onSelect(row.lineNo)}
+      className={`group flex h-full cursor-pointer items-center gap-2 border-l-2 pr-3 font-mono text-[13px] leading-6 ${
+        selected ? 'border-sky-400 bg-sky-950/60' : 'border-transparent hover:bg-surface-1'
+      }`}
+    >
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggleBookmark();
+        }}
+        title={bookmarked ? 'Remove bookmark' : 'Bookmark this line'}
+        className={`w-4 shrink-0 select-none text-center text-[11px] ${
+          bookmarked ? 'text-amber-400' : 'text-gray-700 opacity-0 hover:text-amber-300 group-hover:opacity-100'
+        }`}
+      >
+        {bookmarked ? '⚑' : '⚐'}
+      </button>
+      <span className="shrink-0 select-none text-right text-[11px] text-gray-600" style={{ width: `${gutterWidth}ch` }}>
+        {row.lineNo + 1}
+      </span>
+      <span className="shrink-0 whitespace-nowrap text-xs text-gray-500" style={{ width: TIME_W }}>
+        {formatTs(row.ts, tz)}
+      </span>
+      <span className="shrink-0" style={{ width: LEVEL_W }}>
+        {row.level && (
+          <span className={`rounded px-1 text-[10px] font-semibold leading-4 ${levelClass}`}>{row.level}</span>
+        )}
+      </span>
+      {columns.map((c) => (
+        <span
+          key={c}
+          className="shrink-0 truncate px-1 text-gray-300"
+          style={{ width: COL_W }}
+          title={row.cols?.[c] ?? ''}
+        >
+          {row.cols?.[c] ?? <span className="text-gray-700">—</span>}
+        </span>
+      ))}
     </div>
   );
 });

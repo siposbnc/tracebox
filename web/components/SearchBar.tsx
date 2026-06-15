@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { formatCount, tzAbbr } from '../api';
-import { useOrder, setOrder, useTz, setTz, useWrap, setWrap } from '../settings';
+import { useOrder, setOrder, useTz, setTz, useWrap, setWrap, useColumnar, setColumnar } from '../settings';
 import {
   recordHistory,
   clearHistory,
@@ -13,6 +13,7 @@ import {
 import { computeSuggestions, tokenBounds, type Suggestion } from '../querySuggest';
 import { matchCommand, formatChord, useBindings } from '../keybindings';
 import BookmarksMenu from './BookmarksMenu';
+import ColumnsMenu from './ColumnsMenu';
 import type { SessionStatus } from '../types';
 
 const SYNTAX_EXAMPLES: [string, string][] = [
@@ -48,6 +49,8 @@ export default function SearchBar({
   onToggleFacets,
   clustersOpen,
   onToggleClusters,
+  columns,
+  onColumnsChange,
   highlightMode,
   onToggleHighlight,
   grouped,
@@ -79,6 +82,8 @@ export default function SearchBar({
   onToggleFacets: () => void;
   clustersOpen: boolean;
   onToggleClusters: () => void;
+  columns: string[];
+  onColumnsChange: (cols: string[]) => void;
   highlightMode: boolean;
   onToggleHighlight: () => void;
   grouped: boolean;
@@ -99,6 +104,7 @@ export default function SearchBar({
   const order = useOrder();
   const tz = useTz();
   const wrap = useWrap();
+  const columnar = useColumnar();
   const bindings = useBindings();
   const inputRef = useRef<HTMLInputElement>(null);
   const historyRef = useRef<HTMLDivElement>(null);
@@ -522,6 +528,21 @@ export default function SearchBar({
             <path d="M3 18h4" />
           </svg>
         </button>
+
+        <button
+          onClick={() => setColumnar(!columnar)}
+          className={`rounded-lg border border-edge px-2.5 py-1.5 text-sm ${
+            columnar ? 'bg-surface-3 text-sky-300' : 'bg-surface-2 text-gray-400 hover:text-gray-100'
+          }`}
+          title="Columnar view: render structured fields as a grid"
+        >
+          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <rect x="3" y="4" width="18" height="16" rx="1" />
+            <path d="M9 4v16M15 4v16M3 10h18" />
+          </svg>
+        </button>
+
+        {columnar && <ColumnsMenu fieldNames={fieldNames} columns={columns} onChange={onColumnsChange} />}
 
         <BookmarksMenu file={file} onJump={onJumpToLine} onGoToLine={onGoToLine} bindings={bindings} />
 
