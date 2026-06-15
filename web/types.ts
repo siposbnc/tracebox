@@ -85,6 +85,22 @@ export interface RecentFile {
   openedAt: number;
 }
 
+export interface MergedRow {
+  seq: number;
+  source: number;
+  file: string;
+  lineNo: number;
+  ts: number;
+  level: string | null;
+  text: string;
+  truncated: boolean;
+}
+
+export interface MergedBuild {
+  count: number;
+  sources: { id: string; file: string }[];
+}
+
 export interface PatchNoteSection {
   title: string;
   items: string[];

@@ -20,9 +20,11 @@ const HEIGHT = 90;
 export default function Histogram({
   data,
   onSelectRange,
+  hint = 'drag to filter a time range',
 }: {
   data: HistogramData;
   onSelectRange: (startTs: number, endTs: number) => void;
+  hint?: string;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<{ from: number; to: number } | null>(null);
@@ -136,7 +138,7 @@ export default function Histogram({
       </div>
       <div className="flex justify-between font-mono text-[10px] text-gray-600">
         <span>{formatTs(data.minTs, tz)}</span>
-        <span className="text-gray-500">drag to filter a time range</span>
+        <span className="text-gray-500">{hint}</span>
         <span>{formatTs(data.maxTs, tz)}</span>
       </div>
     </div>

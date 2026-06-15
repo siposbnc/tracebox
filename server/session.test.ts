@@ -4,6 +4,7 @@ import { mkdtempSync, writeFileSync, appendFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { LogSession } from './session.ts';
+import { MergedTimeline } from './merged.ts';
 
 const dir = mkdtempSync(path.join(tmpdir(), 'tracebox-test-'));
 const openSessions: LogSession[] = [];
@@ -469,6 +470,36 @@ test('copyText returns the current view as multi-line text, capped and ordered',
   const e = await s.copyText(1000, 'asc');
   assert.equal(e.count, e.total);
   assert.ok(e.text.split('\n').every((l) => /\[ERROR\]/.test(l)));
+});
+
+test('merged timeline interleaves files by timestamp', async () => {
+  const fileA = makeLogFile('merge-a.log', [0, 2, 4].map((s) => `2024-01-01 00:00:0${s} [INFO] A event ${s}`));
+  const fileB = makeLogFile('merge-b.log', [1, 3, 5].map((s) => `2024-01-01 00:00:0${s} [ERROR] B event ${s}`));
+  const sa = await openAndIndex(fileA);
+  const sb = await openAndIndex(fileB);
+  const m = new MergedTimeline([sa, sb]);
+  try {
+    assert.equal(m.count(), 6);
+
+    const rows = await m.page(0, 10, 'asc');
+    assert.deepEqual(rows.map((r) => r.ts), [0, 1, 2, 3, 4, 5].map((s) => Date.UTC(2024, 0, 1, 0, 0, s)));
+    assert.deepEqual(rows.map((r) => r.source), [0, 1, 0, 1, 0, 1]); // A, B, A, B, …
+    assert.match(rows[0].text, /A event 0/);
+    assert.match(rows[1].text, /B event 1/);
+
+    // newest-first
+    const desc = await m.page(0, 2, 'desc');
+    assert.deepEqual(desc.map((r) => r.ts), [Date.UTC(2024, 0, 1, 0, 0, 5), Date.UTC(2024, 0, 1, 0, 0, 4)]);
+
+    // seek: 3 rows precede ts = 3s (0s, 1s, 2s)
+    assert.equal(m.seekTs(Date.UTC(2024, 0, 1, 0, 0, 3)), 3);
+
+    const h = m.histogram();
+    assert.ok(h);
+    assert.equal(h.buckets.reduce((acc, b) => acc + b.total, 0), 6);
+  } finally {
+    m.close();
+  }
 });
 
 test('export iteration covers all results in order', async () => {

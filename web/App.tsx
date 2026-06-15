@@ -6,6 +6,7 @@ import OpenFileDialog from './components/OpenFileDialog';
 import WelcomeScreen from './components/WelcomeScreen';
 import UpdateBanner from './components/UpdateBanner';
 import WhatsNew from './components/WhatsNew';
+import MergedView from './components/MergedView';
 import { Logo } from './components/Logo';
 import { patchNotes } from './patchnotes';
 import { compareVersions } from './version';
@@ -20,6 +21,9 @@ export default function App() {
   const [loaded, setLoaded] = useState(false);
   const [openError, setOpenError] = useState<string | null>(null);
   const [whatsNewOpen, setWhatsNewOpen] = useState(false);
+  const [timelineOpen, setTimelineOpen] = useState(false);
+  // pending jump from the merged timeline: open a file's tab at a specific line
+  const [jumpTarget, setJumpTarget] = useState<{ id: string; lineNo: number; nonce: number } | null>(null);
   // the newest version the user had seen before this launch (for "New" badges)
   const [sinceVersion] = useState<string | null>(() => localStorage.getItem(LAST_SEEN_VERSION_KEY));
 
@@ -55,6 +59,7 @@ export default function App() {
         return sessions[next].id;
       });
       setWhatsNewOpen(false);
+      setTimelineOpen(false);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -117,6 +122,7 @@ export default function App() {
 
   const closeSession = useCallback(
     async (id: string) => {
+      setTimelineOpen(false); // the merged timeline references open sessions
       await api.closeSession(id);
       setSessions((prev) => {
         const next = prev.filter((s) => s.id !== id);
@@ -142,7 +148,7 @@ export default function App() {
           </div>
           {sessions.map((s) => {
             const name = s.file.split(/[\\/]/).pop();
-            const isActive = s.id === activeId && !whatsNewOpen;
+            const isActive = s.id === activeId && !whatsNewOpen && !timelineOpen;
             return (
               <div
                 key={s.id}
@@ -150,6 +156,7 @@ export default function App() {
                 onClick={() => {
                   setActiveId(s.id);
                   setWhatsNewOpen(false);
+                  setTimelineOpen(false);
                 }}
                 className={`group flex max-w-64 cursor-pointer items-center gap-2 rounded-t-md border border-b-0 px-3 py-1.5 text-sm ${
                   isActive
@@ -179,9 +186,22 @@ export default function App() {
           >
             +
           </button>
+          {sessions.length >= 2 && (
+            <button
+              onClick={() => setTimelineOpen(true)}
+              className={`mb-1.5 ml-auto self-center rounded-md px-2.5 py-1 text-sm ${
+                timelineOpen ? 'bg-surface-0 text-sky-300' : 'text-gray-400 hover:bg-surface-2 hover:text-gray-100'
+              }`}
+              title="Merged timeline across all open files"
+            >
+              ⇋ Timeline
+            </button>
+          )}
           <button
             onClick={() => setWhatsNewOpen(true)}
-            className={`mb-1.5 ml-auto self-center rounded-md px-2.5 py-1 text-sm ${
+            className={`mb-1.5 self-center rounded-md px-2.5 py-1 text-sm ${
+              sessions.length >= 2 ? 'ml-1' : 'ml-auto'
+            } ${
               whatsNewOpen
                 ? 'bg-surface-0 text-sky-300'
                 : 'text-gray-400 hover:bg-surface-2 hover:text-gray-100'
@@ -203,10 +223,24 @@ export default function App() {
       )}
 
       <div className="min-h-0 flex-1">
-        {whatsNewOpen ? (
+        {timelineOpen ? (
+          <MergedView
+            sessionIds={sessions.map((s) => s.id)}
+            onJump={(sessionId, lineNo) => {
+              setActiveId(sessionId);
+              setTimelineOpen(false);
+              setJumpTarget({ id: sessionId, lineNo, nonce: Date.now() });
+            }}
+          />
+        ) : whatsNewOpen ? (
           <WhatsNew onClose={() => setWhatsNewOpen(false)} sinceVersion={sinceVersion} />
         ) : active ? (
-          <LogView key={active.id} initial={active} onOpenFile={requestOpenFile} />
+          <LogView
+            key={active.id}
+            initial={active}
+            onOpenFile={requestOpenFile}
+            jumpTo={jumpTarget && jumpTarget.id === active.id ? jumpTarget : null}
+          />
         ) : (
           <WelcomeScreen
             onOpen={requestOpenFile}

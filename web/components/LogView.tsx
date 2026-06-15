@@ -20,9 +20,11 @@ import { useColumns, defaultColumns, setColumns } from '../columns';
 export default function LogView({
   initial,
   onOpenFile,
+  jumpTo,
 }: {
   initial: SessionStatus;
   onOpenFile: () => void;
+  jumpTo?: { lineNo: number; nonce: number } | null;
 }) {
   const id = initial.id;
   const [status, setStatus] = useState<SessionStatus>(initial);
@@ -232,6 +234,15 @@ export default function LogView({
     },
     [runSearch, highlightMode],
   );
+
+  // jump requested from outside (e.g. opening a line from the merged timeline)
+  const lastJumpRef = useRef(0);
+  useEffect(() => {
+    if (jumpTo && jumpTo.nonce !== lastJumpRef.current) {
+      lastJumpRef.current = jumpTo.nonce;
+      void jumpToLine(jumpTo.lineNo);
+    }
+  }, [jumpTo, jumpToLine]);
 
   const toggleHighlight = useCallback(() => {
     setHighlightMode((v) => !v);

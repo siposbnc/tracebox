@@ -5,6 +5,8 @@ import type {
   FacetResult,
   HistogramData,
   LineDetail,
+  MergedBuild,
+  MergedRow,
   RecentFile,
   RowData,
   SessionStatus,
@@ -81,6 +83,19 @@ export const api = {
     request<{ text: string; count: number; total: number }>(
       `/api/sessions/${id}/copy?limit=${limit}&order=${order}${grouped ? '&grouped=1' : ''}`,
     ),
+
+  // merged timeline across open files
+  buildMerged: (sessionIds?: string[]) =>
+    request<MergedBuild>('/api/merged', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionIds }),
+    }),
+  mergedRows: (offset: number, limit: number, order: 'asc' | 'desc' = 'asc') =>
+    request<{ rows: MergedRow[]; total: number }>(`/api/merged/rows?offset=${offset}&limit=${limit}&order=${order}`),
+  mergedHistogram: () => request<HistogramData | null>('/api/merged/histogram'),
+  mergedSeek: (ts: number) => request<{ seq: number }>(`/api/merged/seek?ts=${ts}`),
+  closeMerged: () => request<{ ok: boolean }>('/api/merged', { method: 'DELETE' }),
 
   /** Subscribe to session events; returns an unsubscribe function. */
   events(id: string, handlers: { [event: string]: (status: SessionStatus) => void }): () => void {
