@@ -23,10 +23,10 @@ export const COMMANDS: Command[] = [
   { id: 'pageUpBig', label: 'Jump up a big page', defaultChord: 'Mod+PageUp' },
   { id: 'pageDownBig', label: 'Jump down a big page', defaultChord: 'Mod+PageDown' },
   { id: 'toggleBookmark', label: 'Toggle bookmark on selected line', defaultChord: 'Mod+B' },
-  { id: 'prevBookmark', label: 'Previous bookmark', defaultChord: 'Shift+F2' },
   { id: 'nextBookmark', label: 'Next bookmark', defaultChord: 'F2' },
-  { id: 'prevMatch', label: 'Previous match (highlight mode)', defaultChord: 'Shift+F3' },
+  { id: 'prevBookmark', label: 'Previous bookmark', defaultChord: 'Shift+F2' },
   { id: 'nextMatch', label: 'Next match (highlight mode)', defaultChord: 'F3' },
+  { id: 'prevMatch', label: 'Previous match (highlight mode)', defaultChord: 'Shift+F3' },
   { id: 'toggleHighlight', label: 'Highlight matches in place', defaultChord: 'Mod+H' },
   { id: 'showShortcuts', label: 'Show keyboard shortcuts', defaultChord: 'Mod+/' },
 ];
