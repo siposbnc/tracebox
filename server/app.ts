@@ -203,6 +203,10 @@ export function createApp(distDir: string): TraceBoxApp {
     sendJson(res, 200, merged ? merged.histogram() : null);
   });
 
+  router.add('GET', '/api/merged/seek', (_req, res, _params, query) => {
+    sendJson(res, 200, { seq: merged ? merged.seekTs(Number(query.get('ts') ?? 0)) : 0 });
+  });
+
   router.add('DELETE', '/api/merged', (_req, res) => {
     if (merged) {
       merged.close();

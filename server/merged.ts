@@ -17,6 +17,8 @@ export interface MergedRow {
   /** Index into `sources` / the originating file. */
   source: number;
   file: string;
+  /** Line number within the source file (for jump-to-source). */
+  lineNo: number;
   ts: number;
   level: string | null;
   text: string;
@@ -89,6 +91,7 @@ export class MergedTimeline {
         seq: r.seq,
         source: r.sess,
         file: this.sources[r.sess].file,
+        lineNo: r.line_no,
         ts: r.ts,
         level: r.level,
         text: rd?.text ?? '',
@@ -132,6 +135,11 @@ export class MergedTimeline {
       buckets: [...buckets.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v),
       withoutTs: 0,
     };
+  }
+
+  /** Zero-based index of the first merged row at or after `ts` (for time navigation). */
+  seekTs(ts: number): number {
+    return (this.db.prepare(`SELECT COUNT(*) AS n FROM merged WHERE ts < ?`).get(ts) as { n: number }).n;
   }
 
   /** Source files in merge order, for the UI legend. */
