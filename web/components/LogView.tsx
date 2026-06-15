@@ -14,7 +14,7 @@ import ShortcutsHelp from './ShortcutsHelp';
 import SettingsPanel from './SettingsPanel';
 import Histogram from './Histogram';
 import StatusBar from './StatusBar';
-import { getHistogramDefault, useWrap, getOrder } from '../settings';
+import { getHistogramDefault, useWrap, getWrap, setWrap, getOrder } from '../settings';
 
 export default function LogView({
   initial,
@@ -270,6 +270,10 @@ export default function LogView({
         case 'toggleHighlight':
           e.preventDefault();
           toggleHighlight();
+          break;
+        case 'toggleWrap':
+          e.preventDefault();
+          setWrap(!getWrap());
           break;
         case 'nextBookmark':
           e.preventDefault();

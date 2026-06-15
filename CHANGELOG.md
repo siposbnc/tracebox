@@ -14,8 +14,9 @@ date and start a fresh `Unreleased` section.
 
 ### Added
 
-- Word wrap (toolbar toggle / settings): long lines wrap instead of being
-  truncated, with the row list re-measuring heights so scrolling stays smooth.
+- Word wrap (toolbar toggle / settings / Ctrl+W): long lines wrap instead of
+  being truncated, with the row list re-measuring heights so scrolling stays
+  smooth.
 - Copy rows: the Export menu can copy the current view's rows (up to 10,000) to
   the clipboard as multi-line text, complementing the per-line/record copy in the
   detail panel and the full CSV/JSON export.

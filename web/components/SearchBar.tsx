@@ -511,7 +511,9 @@ export default function SearchBar({
           className={`rounded-lg border border-edge px-2.5 py-1.5 text-sm ${
             wrap ? 'bg-surface-3 text-sky-300' : 'bg-surface-2 text-gray-400 hover:text-gray-100'
           }`}
-          title={wrap ? 'Wrapping long lines — click to truncate' : 'Truncating long lines — click to wrap'}
+          title={`${wrap ? 'Wrapping long lines — click to truncate' : 'Truncating long lines — click to wrap'}${
+            bindings.toggleWrap ? ` (${formatChord(bindings.toggleWrap)})` : ''
+          }`}
         >
           <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M3 6h18" />

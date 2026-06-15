@@ -28,6 +28,7 @@ export const COMMANDS: Command[] = [
   { id: 'nextMatch', label: 'Next match (highlight mode)', defaultChord: 'F3' },
   { id: 'prevMatch', label: 'Previous match (highlight mode)', defaultChord: 'Shift+F3' },
   { id: 'toggleHighlight', label: 'Highlight matches in place', defaultChord: 'Mod+H' },
+  { id: 'toggleWrap', label: 'Toggle word wrap', defaultChord: 'Mod+W' },
   { id: 'showShortcuts', label: 'Show keyboard shortcuts', defaultChord: 'Mod+/' },
 ];
 
