@@ -242,6 +242,48 @@ test('highlight mode returns the whole file with search hits flagged', async () 
   assert.equal(s.viewTotal, 8);
 });
 
+test('multi-line grouping folds stack traces into one record', async () => {
+  const file = makeLogFile('trace.log', [
+    '2024-01-01 00:00:00 [INFO] starting up',
+    '2024-01-01 00:00:01 [ERROR] request failed: java.lang.NullPointerException',
+    '\tat com.app.Service.handle(Service.java:42)',
+    '\tat com.app.Worker.run(Worker.java:88)',
+    'Caused by: java.lang.IllegalStateException: bad state',
+    '\t... 12 more',
+    '2024-01-01 00:00:02 [INFO] recovered',
+  ]);
+  const s = await openAndIndex(file);
+  assert.equal(s.lineCount, 7);
+
+  // 3 logical records: the INFO, the ERROR + its 4 trace lines, the final INFO
+  assert.equal(s.recordCount(), 3);
+
+  const recs = await s.getRows(0, 10, 'asc', false, true);
+  assert.deepEqual(recs.map((r) => r.lineNo), [0, 1, 6]);
+  assert.deepEqual(recs.map((r) => r.span), [1, 5, 1]);
+  assert.match(recs[1].text, /request failed/);
+
+  // grouped search: matching text inside the trace surfaces the parent record once
+  assert.equal(s.setSearch('IllegalStateException', true).total, 1);
+  const hit = await s.getRows(0, 10, 'asc', false, true);
+  assert.deepEqual(hit.map((r) => r.lineNo), [1]);
+  assert.equal(hit[0].span, 5);
+
+  // the same query ungrouped matches only the physical continuation line
+  assert.equal(s.setSearch('IllegalStateException', false).total, 1);
+  const phys = await s.getRows(0, 10, 'asc', false, false);
+  assert.deepEqual(phys.map((r) => r.lineNo), [4]);
+
+  // a level filter on the head surfaces the whole record in grouped mode
+  assert.equal(s.setSearch('level:ERROR', true).total, 1);
+
+  // detail of the record head exposes the full multi-line text
+  const detail = await s.getDetail(1);
+  assert.ok(detail?.record);
+  assert.equal(detail.record.span, 5);
+  assert.match(detail.record.text, /Caused by/);
+});
+
 test('context returns surrounding lines and marks the hits in the window', async () => {
   const file = makeLogFile('context.log', appLogLines(50));
   const s = await openAndIndex(file);

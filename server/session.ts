@@ -22,6 +22,8 @@ export interface RowData {
   truncated: boolean;
   /** Set in highlight mode: whether this (unfiltered) line is a search hit. */
   match?: boolean;
+  /** Physical lines in this record when multi-line grouping is on (1 = no continuations). */
+  span?: number;
 }
 
 export interface SessionStatus {
@@ -72,11 +74,16 @@ export class LogSession extends EventEmitter {
   /** Set while the last indexed line had no trailing newline (its start offset). */
   private partialTail: { offset: number; lineNo: number } | null = null;
 
+  /** Head (record-start) line number of the record currently being extended. */
+  private lastHead = 0;
+
   // search state
   private searchQuery = '';
   private searchAst: QueryNode | null = null;
   private searchTotal = 0;
   private searchDurationMs = 0;
+  /** Whether the materialized result set holds record heads (grouped) or physical lines. */
+  private searchGrouped = false;
   /** Lines below this number have been through the current search. */
   private searchedUpTo = 0;
 
@@ -140,6 +147,7 @@ export class LogSession extends EventEmitter {
     this.fieldCounts = new Map(Object.entries(JSON.parse(this.store.getMeta('fieldCounts') ?? '{}')));
     const partial = this.store.getMeta('partialTail');
     this.partialTail = partial ? JSON.parse(partial) : null;
+    this.lastHead = Number(this.store.getMeta('lastHead') ?? 0);
     // re-detect the parser on a sample (detection is deterministic; avoids
     // having to serialize regexes into the index database)
     const sample = await this.reader.readLines(0, Math.min(100, lineCount));
@@ -210,6 +218,7 @@ export class LogSession extends EventEmitter {
       this.emit('progress');
       await new Promise((r) => setImmediate(r)); // let the progress event flush
       this.store.createIndexes();
+      this.store.buildRecords(0, this.index.lineCount);
       this.persistMeta(pos);
       this.phase = 'ready';
       this.emit('done');
@@ -220,7 +229,11 @@ export class LogSession extends EventEmitter {
 
   private ingestLine(lineNo: number, text: string): void {
     const parsed = this.parser.parse(text);
-    this.store.addLine(lineNo, text, parsed);
+    // the first line always starts a record; otherwise the parser decides whether
+    // this line begins a new record or continues the previous one (stack frames etc.)
+    const head = lineNo === 0 || this.parser.startsRecord(text) ? lineNo : this.lastHead;
+    if (head === lineNo) this.lastHead = lineNo;
+    this.store.addLine(lineNo, text, parsed, head);
     const lv = parsed.level ?? 'NONE';
     this.levelCounts[lv] = (this.levelCounts[lv] ?? 0) + 1;
     if (parsed.fields) {
@@ -241,6 +254,7 @@ export class LogSession extends EventEmitter {
     this.store.setMeta('levelCounts', JSON.stringify(this.levelCounts));
     this.store.setMeta('fieldCounts', JSON.stringify(Object.fromEntries(this.fieldCounts)));
     this.store.setMeta('partialTail', this.partialTail ? JSON.stringify(this.partialTail) : '');
+    this.store.setMeta('lastHead', String(this.lastHead));
     this.store.setMeta('complete', '1');
     this.fileSize = Math.max(this.fileSize, sizeAtIndex);
   }
@@ -248,22 +262,24 @@ export class LogSession extends EventEmitter {
   // ---------------------------------------------------------------------------
   // Search
 
-  setSearch(query: string): { total: number; durationMs: number } {
+  setSearch(query: string, grouped = false): { total: number; durationMs: number } {
     const trimmed = query.trim();
     if (trimmed === '') {
       this.searchQuery = '';
       this.searchAst = null;
       this.searchTotal = 0;
       this.searchDurationMs = 0;
-      return { total: this.index.lineCount, durationMs: 0 };
+      this.searchGrouped = grouped;
+      return { total: grouped ? this.store.recordCount() : this.index.lineCount, durationMs: 0 };
     }
     const ast = parseQuery(trimmed);
     const t0 = performance.now();
-    const total = this.store.runSearch(ast);
+    const total = this.store.runSearch(ast, grouped);
     this.searchDurationMs = Math.round(performance.now() - t0);
     this.searchQuery = trimmed;
     this.searchAst = ast;
     this.searchTotal = total;
+    this.searchGrouped = grouped;
     this.searchedUpTo = this.index.lineCount;
     return { total, durationMs: this.searchDurationMs };
   }
@@ -277,6 +293,17 @@ export class LogSession extends EventEmitter {
     return this.hasSearch ? this.searchTotal : this.index.lineCount;
   }
 
+  /** Number of logical records (multi-line groups) in the file. */
+  recordCount(): number {
+    return this.store.recordCount();
+  }
+
+  /** Rows in the current view for a given grouping mode (records vs physical lines). */
+  displayTotal(grouped: boolean): number {
+    if (this.hasSearch) return this.searchTotal;
+    return grouped ? this.store.recordCount() : this.index.lineCount;
+  }
+
   // ---------------------------------------------------------------------------
   // Row fetching
 
@@ -285,24 +312,39 @@ export class LogSession extends EventEmitter {
     limit: number,
     order: 'asc' | 'desc' = 'asc',
     highlight = false,
+    grouped = false,
   ): Promise<RowData[]> {
     limit = Math.min(Math.max(limit, 0), 2000);
     offset = Math.max(0, offset);
     // Highlight mode shows the whole file (unfiltered) and flags which lines are
     // search hits, instead of hiding the non-matching ones.
     const filtered = this.hasSearch && !highlight;
-    const total = filtered ? this.searchTotal : this.index.lineCount;
+    const total = filtered ? this.searchTotal : grouped ? this.store.recordCount() : this.index.lineCount;
     const count = Math.min(limit, Math.max(0, total - offset));
     if (count === 0) return [];
     // For newest-first display we read the mirrored ascending range (cheap,
     // contiguous file reads) and reverse it — the file is never reordered.
     const fetchOffset = order === 'desc' ? total - offset - count : offset;
-    const lineNos = filtered
-      ? this.store.resultPage(fetchOffset, count)
-      : Array.from({ length: count }, (_, i) => fetchOffset + i);
-    const rows = await this.readRows(lineNos);
+
+    let rows: RowData[];
+    if (grouped) {
+      // one row per record; the row text is the record's head line, with span
+      // telling the UI how many physical lines (continuations) it covers
+      const recs = filtered
+        ? this.store.resultRecordPage(fetchOffset, count)
+        : this.store.recordPage(fetchOffset, count);
+      rows = await this.readRows(recs.map((r) => r.head));
+      const spanByHead = new Map(recs.map((r) => [r.head, r.span]));
+      for (const row of rows) row.span = spanByHead.get(row.lineNo) ?? 1;
+    } else {
+      const lineNos = filtered
+        ? this.store.resultPage(fetchOffset, count)
+        : Array.from({ length: count }, (_, i) => fetchOffset + i);
+      rows = await this.readRows(lineNos);
+    }
+
     if (highlight && this.hasSearch) {
-      const hits = this.store.matchingLines(lineNos);
+      const hits = this.store.matchingLines(rows.map((r) => r.lineNo));
       for (const row of rows) row.match = hits.has(row.lineNo);
     }
     if (order === 'desc') rows.reverse();
@@ -342,12 +384,20 @@ export class LogSession extends EventEmitter {
     ts: number | null;
     level: string | null;
     fields: { key: string; value: string }[];
+    record?: { span: number; text: string };
   } | null> {
     if (lineNo < 0 || lineNo >= this.index.lineCount) return null;
     const raw = await this.reader.readLine(lineNo);
     const meta = this.store.lineMeta([lineNo]).get(lineNo);
     const fields = this.store.lineFields(lineNo);
-    return { lineNo, raw, ts: meta?.ts ?? null, level: meta?.level ?? null, fields };
+    // if this line heads a multi-line record, include the full record text
+    const span = this.store.spanOf(lineNo);
+    let record: { span: number; text: string } | undefined;
+    if (span > 1) {
+      const texts = await this.reader.readLines(lineNo, span);
+      record = { span, text: texts.join('\n') };
+    }
+    return { lineNo, raw, ts: meta?.ts ?? null, level: meta?.level ?? null, fields, record };
   }
 
   /**
@@ -445,10 +495,17 @@ export class LogSession extends EventEmitter {
     // a previously unterminated trailing line may have been extended: re-index it
     if (this.partialTail) {
       startOffset = this.partialTail.offset;
+      // revert the grouping head to the record before the partial line, so the
+      // re-indexed line is re-grouped from scratch
+      this.lastHead =
+        this.partialTail.lineNo > 0 ? this.store.headOf(this.partialTail.lineNo - 1) : 0;
       this.index.removeLastLine();
       this.store.removeLine(this.partialTail.lineNo);
       this.partialTail = null;
     }
+
+    // the earliest record head whose span may change once we append
+    const rebuildFrom = this.lastHead;
     if (st.size <= startOffset) {
       this.index.indexedBytes = startOffset;
       return;
@@ -496,10 +553,16 @@ export class LogSession extends EventEmitter {
       }
       this.fileSize = st.size;
 
-      // extend the active search over the new lines
+      // refresh the records table for the tail region affected by the append
+      this.store.buildRecords(rebuildFrom, this.index.lineCount);
+
+      // extend the active search over the new lines. A grouped search keys off the
+      // record head, so re-run it from the rebuilt region's head to catch records
+      // whose continuation lines just arrived; an ungrouped one resumes by line.
       if (this.searchAst !== null && this.index.lineCount > firstNewLine) {
-        this.store.pruneResultsFrom(firstNewLine);
-        this.searchTotal = this.store.runSearch(this.searchAst, firstNewLine);
+        const from = this.searchGrouped ? Math.min(firstNewLine, rebuildFrom) : firstNewLine;
+        this.store.pruneResultsFrom(from);
+        this.searchTotal = this.store.runSearch(this.searchAst, this.searchGrouped, from);
         this.searchedUpTo = this.index.lineCount;
       }
       this.persistMeta(st.size);

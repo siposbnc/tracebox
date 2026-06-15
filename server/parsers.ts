@@ -16,6 +16,22 @@ export interface ParsedLine {
 export interface LogParser {
   name: string;
   parse(raw: string): ParsedLine;
+  /**
+   * Whether this line begins a new logical record. Lines that don't (stack-trace
+   * frames, wrapped messages, pretty-printed JSON bodies) are folded into the
+   * preceding record when multi-line grouping is enabled.
+   */
+  startsRecord(raw: string): boolean;
+}
+
+/**
+ * Heuristic for unstructured / wrapped lines: a continuation is blank, indented,
+ * or a well-known JVM trace marker ("Caused by:", "... N more").
+ */
+export function looksLikeContinuation(raw: string): boolean {
+  if (raw === '') return true;
+  if (/^\s/.test(raw)) return true;
+  return /^(Caused by:|\.{3}\s*\d+\s+more\b|at\s)/.test(raw);
 }
 
 // ---------------------------------------------------------------------------
@@ -143,6 +159,11 @@ function pickKey(fields: Record<string, string>, keys: string[]): string | null 
 export class JsonParser implements LogParser {
   name = 'json';
 
+  /** A record is a fresh object; a line not opening with `{` continues a pretty-printed one. */
+  startsRecord(raw: string): boolean {
+    return raw.trimStart().startsWith('{');
+  }
+
   parse(raw: string): ParsedLine {
     const trimmed = raw.trim();
     if (!trimmed.startsWith('{')) return rawFallback(raw);
@@ -211,6 +232,11 @@ export class RegexParser implements LogParser {
     this.re = re;
   }
 
+  /** A record is a line matching the format; anything else (e.g. a stack frame) continues it. */
+  startsRecord(raw: string): boolean {
+    return this.re.test(raw);
+  }
+
   parse(raw: string): ParsedLine {
     const m = this.re.exec(raw);
     if (!m || !m.groups) return rawFallback(raw);
@@ -235,6 +261,10 @@ const LOGFMT_PAIR = /([A-Za-z_][\w.@-]*)=(?:"((?:[^"\\]|\\.)*)"|(\S*))/g;
 
 export class LogfmtParser implements LogParser {
   name = 'logfmt';
+
+  startsRecord(raw: string): boolean {
+    return !looksLikeContinuation(raw);
+  }
 
   parse(raw: string): ParsedLine {
     LOGFMT_PAIR.lastIndex = 0;
@@ -272,6 +302,9 @@ function rawFallback(raw: string): ParsedLine {
 
 export class RawParser implements LogParser {
   name = 'raw';
+  startsRecord(raw: string): boolean {
+    return !looksLikeContinuation(raw);
+  }
   parse(raw: string): ParsedLine {
     return rawFallback(raw);
   }

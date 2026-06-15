@@ -4,7 +4,9 @@ import {
   JsonParser,
   LogfmtParser,
   RawParser,
+  RegexParser,
   detectFormat,
+  looksLikeContinuation,
   normalizeLevel,
   parseTimestamp,
 } from './parsers.ts';
@@ -100,4 +102,37 @@ test('detectFormat picks syslog', () => {
 test('detectFormat falls back to raw on plain text', () => {
   const lines = Array.from({ length: 20 }, (_, i) => `free text line number ${i} with nothing special`);
   assert.equal(detectFormat(lines).name, 'raw');
+});
+
+test('looksLikeContinuation flags wrapped / stack-trace lines', () => {
+  assert.equal(looksLikeContinuation('    at com.app.Service.handle(Service.java:42)'), true);
+  assert.equal(looksLikeContinuation('\tat com.app.Worker.run(Worker.java:88)'), true);
+  assert.equal(looksLikeContinuation('Caused by: java.lang.NullPointerException'), true);
+  assert.equal(looksLikeContinuation('... 26 more'), true);
+  assert.equal(looksLikeContinuation(''), true);
+  assert.equal(looksLikeContinuation('a normal unindented message'), false);
+});
+
+test('startsRecord distinguishes record heads from continuations', () => {
+  // timestamped app log: the dated line starts a record, the stack frames continue it
+  const ts = detectFormat(['2024-01-31 13:45:01 [ERROR] boom']);
+  assert.equal(ts.name, 'timestamped');
+  assert.equal(ts.startsRecord('2024-01-31 13:45:01 [ERROR] boom'), true);
+  assert.equal(ts.startsRecord('    at com.app.Foo(Foo.java:1)'), false);
+  assert.equal(ts.startsRecord('java.lang.RuntimeException: boom'), false);
+
+  // raw parser uses indentation / markers
+  const raw = new RawParser();
+  assert.equal(raw.startsRecord('something happened'), true);
+  assert.equal(raw.startsRecord('   continued detail'), false);
+
+  // json: a fresh object starts a record; a pretty-printed body line continues it
+  const json = new JsonParser();
+  assert.equal(json.startsRecord('{"level":"info"}'), true);
+  assert.equal(json.startsRecord('  "level": "info",'), false);
+
+  // a hand-built regex parser delegates to its pattern
+  const rx = new RegexParser('t', /^\d{4}-\d{2}-\d{2}/);
+  assert.equal(rx.startsRecord('2024-01-31 hi'), true);
+  assert.equal(rx.startsRecord('  indented'), false);
 });

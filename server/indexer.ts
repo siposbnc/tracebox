@@ -3,10 +3,20 @@ import { type ParsedLine } from './parsers.ts';
 import { type QueryNode } from './queryParser.ts';
 import { compileQuery } from './queryCompiler.ts';
 
+/** Bumped when the on-disk schema changes so stale cached indexes are rebuilt. */
+export const SCHEMA_VERSION = '2';
+
 export interface LineMeta {
   lineNo: number;
   ts: number | null;
   level: string | null;
+}
+
+export interface RecordRef {
+  /** Line number of the record's first (head) physical line. */
+  head: number;
+  /** Number of physical lines in the record (1 = no continuation lines). */
+  span: number;
 }
 
 export interface HistogramBucket {
@@ -67,7 +77,10 @@ export class IndexStore {
       const done = this.db.prepare(`SELECT value FROM meta WHERE key = 'complete'`).get() as
         | { value: string }
         | undefined;
-      return row?.value === fingerprint && done?.value === '1';
+      const schema = this.db.prepare(`SELECT value FROM meta WHERE key = 'schemaVersion'`).get() as
+        | { value: string }
+        | undefined;
+      return row?.value === fingerprint && done?.value === '1' && schema?.value === SCHEMA_VERSION;
     } catch {
       return false;
     }
@@ -80,14 +93,17 @@ export class IndexStore {
       DROP TABLE IF EXISTS fields;
       DROP TABLE IF EXISTS fts;
       DROP TABLE IF EXISTS results;
+      DROP TABLE IF EXISTS records;
       DROP TABLE IF EXISTS checkpoints;
       CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT);
-      CREATE TABLE lines(line_no INTEGER PRIMARY KEY, ts INTEGER, level TEXT);
+      CREATE TABLE lines(line_no INTEGER PRIMARY KEY, ts INTEGER, level TEXT, head INTEGER, is_head INTEGER);
       CREATE TABLE fields(line_no INTEGER NOT NULL, key TEXT NOT NULL, value TEXT COLLATE NOCASE, num REAL);
       CREATE VIRTUAL TABLE fts USING fts5(content, content='', contentless_delete=1);
       CREATE TABLE results(seq INTEGER PRIMARY KEY AUTOINCREMENT, line_no INTEGER NOT NULL);
+      CREATE TABLE records(rec_no INTEGER PRIMARY KEY AUTOINCREMENT, head INTEGER NOT NULL, span INTEGER NOT NULL);
       CREATE TABLE checkpoints(block INTEGER PRIMARY KEY, data BLOB NOT NULL);
     `);
+    this.setMeta('schemaVersion', SCHEMA_VERSION);
     this.prepareInserts();
   }
 
@@ -99,11 +115,15 @@ export class IndexStore {
       CREATE INDEX IF NOT EXISTS idx_fields_line ON fields(line_no);
       CREATE INDEX IF NOT EXISTS idx_lines_ts ON lines(ts, level) WHERE ts IS NOT NULL;
       CREATE INDEX IF NOT EXISTS idx_lines_level ON lines(level) WHERE level IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS idx_lines_heads ON lines(line_no) WHERE is_head = 1;
+      CREATE INDEX IF NOT EXISTS idx_records_head ON records(head);
     `);
   }
 
   private prepareInserts(): void {
-    this.insLine = this.db.prepare(`INSERT OR REPLACE INTO lines(line_no, ts, level) VALUES (?, ?, ?)`);
+    this.insLine = this.db.prepare(
+      `INSERT OR REPLACE INTO lines(line_no, ts, level, head, is_head) VALUES (?, ?, ?, ?, ?)`,
+    );
     this.insFts = this.db.prepare(`INSERT INTO fts(rowid, content) VALUES (?, ?)`);
     this.insField = this.db.prepare(`INSERT INTO fields(line_no, key, value, num) VALUES (?, ?, ?, ?)`);
   }
@@ -127,8 +147,8 @@ export class IndexStore {
     }
   }
 
-  addLine(lineNo: number, raw: string, parsed: ParsedLine): void {
-    this.insLine.run(lineNo, parsed.ts, parsed.level);
+  addLine(lineNo: number, raw: string, parsed: ParsedLine, head: number): void {
+    this.insLine.run(lineNo, parsed.ts, parsed.level, head, head === lineNo ? 1 : 0);
     this.insFts.run(lineNo, raw);
     if (parsed.fields) {
       for (const [key, value] of Object.entries(parsed.fields)) {
@@ -143,6 +163,31 @@ export class IndexStore {
     this.db.prepare(`DELETE FROM lines WHERE line_no = ?`).run(lineNo);
     this.db.prepare(`DELETE FROM fields WHERE line_no = ?`).run(lineNo);
     this.db.prepare(`DELETE FROM fts WHERE rowid = ?`).run(lineNo);
+  }
+
+  /** The head (record-start) line number that a given line belongs to. */
+  headOf(lineNo: number): number {
+    const row = this.db.prepare(`SELECT head FROM lines WHERE line_no = ?`).get(lineNo) as
+      | { head: number }
+      | undefined;
+    return row?.head ?? lineNo;
+  }
+
+  /**
+   * (Re)build the records table for heads at or after `fromHead`. Existing record
+   * rows from that point are dropped first, so this serves both the initial build
+   * (fromHead = 0) and incremental tail updates (fromHead = the last record's head,
+   * whose span may have grown). `lineCount` bounds the final record's span.
+   */
+  buildRecords(fromHead: number, lineCount: number): void {
+    this.db.prepare(`DELETE FROM records WHERE head >= ?`).run(fromHead);
+    this.db
+      .prepare(
+        `INSERT INTO records(head, span)
+         SELECT head, LEAD(head, 1, ?) OVER (ORDER BY head) - head
+         FROM (SELECT line_no AS head FROM lines WHERE is_head = 1 AND line_no >= ? ORDER BY line_no)`,
+      )
+      .run(lineCount, fromHead);
   }
 
   setMeta(key: string, value: string): void {
@@ -187,18 +232,22 @@ export class IndexStore {
    * When `fromLineNo` is given, appends matches among lines >= fromLineNo to
    * the existing result set (incremental tail search) instead of resetting.
    */
-  runSearch(node: QueryNode, fromLineNo?: number): number {
+  runSearch(node: QueryNode, grouped = false, fromLineNo?: number): number {
     const { where, params } = compileQuery(node);
+    // Grouped search materializes matching *records* (distinct heads), so a hit
+    // anywhere in a record — including a stack-trace continuation line — surfaces
+    // the record once. Ungrouped search materializes matching physical lines.
+    const select = grouped
+      ? `SELECT DISTINCT l.head FROM lines l WHERE`
+      : `SELECT l.line_no FROM lines l WHERE`;
+    const orderBy = grouped ? `ORDER BY l.head` : `ORDER BY l.line_no`;
+    const col = grouped ? 'l.head' : 'l.line_no';
     if (fromLineNo === undefined) {
       this.db.exec(`DELETE FROM results; DELETE FROM sqlite_sequence WHERE name = 'results';`);
-      this.db
-        .prepare(`INSERT INTO results(line_no) SELECT l.line_no FROM lines l WHERE ${where} ORDER BY l.line_no`)
-        .run(...params);
+      this.db.prepare(`INSERT INTO results(line_no) ${select} ${where} ${orderBy}`).run(...params);
     } else {
       this.db
-        .prepare(
-          `INSERT INTO results(line_no) SELECT l.line_no FROM lines l WHERE l.line_no >= ? AND ${where} ORDER BY l.line_no`,
-        )
+        .prepare(`INSERT INTO results(line_no) ${select} ${col} >= ? AND ${where} ${orderBy}`)
         .run(fromLineNo, ...params);
     }
     return this.resultCount();
@@ -220,6 +269,40 @@ export class IndexStore {
       .prepare(`SELECT line_no FROM results ORDER BY seq LIMIT ? OFFSET ?`)
       .all(limit, offset) as { line_no: number }[];
     return rows.map((r) => r.line_no);
+  }
+
+  // -------------------------------------------------------------------------
+  // Records (multi-line grouping)
+
+  recordCount(): number {
+    const row = this.db.prepare(`SELECT COUNT(*) AS n FROM records`).get() as { n: number };
+    return row.n;
+  }
+
+  /** Page of records (head + span) for the whole file, in line order. */
+  recordPage(offset: number, limit: number): RecordRef[] {
+    return this.db
+      .prepare(`SELECT head, span FROM records ORDER BY rec_no LIMIT ? OFFSET ?`)
+      .all(limit, offset) as unknown as RecordRef[];
+  }
+
+  /** Page of matching records: each result head joined to its span. */
+  resultRecordPage(offset: number, limit: number): RecordRef[] {
+    return this.db
+      .prepare(
+        `SELECT r.line_no AS head, COALESCE(rec.span, 1) AS span
+         FROM results r LEFT JOIN records rec ON rec.head = r.line_no
+         ORDER BY r.seq LIMIT ? OFFSET ?`,
+      )
+      .all(limit, offset) as unknown as RecordRef[];
+  }
+
+  /** Number of physical lines in the record headed by `head` (1 if it has none/unknown). */
+  spanOf(head: number): number {
+    const row = this.db.prepare(`SELECT span FROM records WHERE head = ?`).get(head) as
+      | { span: number }
+      | undefined;
+    return row?.span ?? 1;
   }
 
   /** Iterate all result line numbers in order (for export). */
