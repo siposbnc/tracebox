@@ -2,6 +2,13 @@ appId: io.tracebox.app
 productName: TraceBox
 copyright: TraceBox
 
+# Where `npm run release` (and CI) publishes the installer.
+# Creates a draft GitHub release for the matching tag; review and publish it.
+publish:
+  provider: github
+  owner: siposbnc
+  repo: tracebox
+
 directories:
   output: release
   buildResources: build
