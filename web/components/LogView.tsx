@@ -7,6 +7,7 @@ import SearchBar from './SearchBar';
 import LogList from './LogList';
 import DetailPanel from './DetailPanel';
 import FacetPanel from './FacetPanel';
+import ClusterPanel from './ClusterPanel';
 import ContextPeek from './ContextPeek';
 import GoToLine from './GoToLine';
 import ShortcutsHelp from './ShortcutsHelp';
@@ -36,6 +37,12 @@ export default function LogView({
   const [histogram, setHistogram] = useState<HistogramData | null>(null);
   const [histogramOpen, setHistogramOpen] = useState(getHistogramDefault);
   const [facetsOpen, setFacetsOpen] = useState(false);
+  const [clustersOpen, setClustersOpen] = useState(false);
+  const [activeTemplate, setActiveTemplate] = useState<number | null>(null);
+  const templateRef = useRef<number | null>(null);
+  // bumped only when the cluster set changes (new text search / index ready), not
+  // on cluster drill-down — so the patterns panel stays stable while drilling
+  const [clusterEpoch, setClusterEpoch] = useState(0);
   const [highlightMode, setHighlightMode] = useState(false);
   const [grouped, setGrouped] = useState(true);
   const [gotoOpen, setGotoOpen] = useState(false);
@@ -75,6 +82,7 @@ export default function LogView({
       done: (s) => {
         apply(s);
         setEpoch((e) => e + 1);
+        setClusterEpoch((e) => e + 1);
         refreshHistogram();
       },
       append: (s) => {
@@ -104,7 +112,7 @@ export default function LogView({
       setSearching(true);
       setSearchError(null);
       try {
-        const r = await api.search(id, q, groupingActiveRef.current);
+        const r = await api.search(id, q, groupingActiveRef.current, templateRef.current);
         setTotal(r.total);
         setSelected(null);
         setEpoch((e) => e + 1);
@@ -123,9 +131,24 @@ export default function LogView({
   const submitQuery = useCallback(
     (q: string) => {
       setQuery(q);
+      // a new text search resets any cluster drill and refreshes the patterns
+      setActiveTemplate(null);
+      templateRef.current = null;
+      setClusterEpoch((e) => e + 1);
       void runSearch(q);
     },
     [runSearch],
+  );
+
+  // drill the view down to a single cluster (or clear it); keeps the current text
+  // query and does not refresh the patterns panel
+  const drillCluster = useCallback(
+    (templateId: number | null) => {
+      setActiveTemplate(templateId);
+      templateRef.current = templateId;
+      void runSearch(query);
+    },
+    [query, runSearch],
   );
 
   // when grouping turns on/off (toggle, or indexing finishing), re-materialize an
@@ -305,6 +328,8 @@ export default function LogView({
         onToggleHistogram={() => setHistogramOpen((v) => !v)}
         facetsOpen={facetsOpen}
         onToggleFacets={() => setFacetsOpen((v) => !v)}
+        clustersOpen={clustersOpen}
+        onToggleClusters={() => setClustersOpen((v) => !v)}
         highlightMode={highlightMode}
         onToggleHighlight={toggleHighlight}
         grouped={grouped}
@@ -331,6 +356,16 @@ export default function LogView({
             hasSearch={status.search !== null}
             onAddFilter={addFilter}
             onClose={() => setFacetsOpen(false)}
+          />
+        )}
+        {clustersOpen && (
+          <ClusterPanel
+            sessionId={id}
+            epoch={clusterEpoch}
+            activeTemplate={activeTemplate}
+            hasSearch={query.trim() !== ''}
+            onDrill={drillCluster}
+            onClose={() => setClustersOpen(false)}
           />
         )}
         <div className="min-w-0 flex-1">

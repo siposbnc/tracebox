@@ -14,6 +14,12 @@ date and start a fresh `Unreleased` section.
 
 ### Added
 
+- Log clustering (toolbar "Patterns" panel): collapses near-identical lines into
+  templates — variable tokens (numbers, ids, timestamps) masked to `<*>` — ranked
+  by count, so the distinct shapes of a log are visible at a glance. Counts
+  respect the active search; click a pattern to drill the view down to just that
+  cluster (combinable with a text query), click again to clear. Stack-trace
+  continuation lines are excluded so they don't pollute the patterns.
 - Line-jump navigation (all rebindable): Page Down / Page Up move the selection
   by a configurable number of rows (default 100), Ctrl/Cmd + Page Down / Up move
   a bigger configurable amount (default 1000), and Home / End jump to the top /

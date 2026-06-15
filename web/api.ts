@@ -1,5 +1,6 @@
 import type {
   BrowseResult,
+  ClustersResult,
   ContextResult,
   FacetResult,
   HistogramData,
@@ -45,11 +46,11 @@ export const api = {
         highlight ? '&highlight=1' : ''
       }${grouped ? '&grouped=1' : ''}`,
     ),
-  search: (id: string, query: string, grouped = false) =>
+  search: (id: string, query: string, grouped = false, templateId: number | null = null) =>
     request<{ total: number; durationMs: number }>(`/api/sessions/${id}/search`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query, grouped }),
+      body: JSON.stringify({ query, grouped, templateId }),
     }),
   detail: (id: string, lineNo: number) => request<LineDetail>(`/api/sessions/${id}/line/${lineNo}`),
   context: (id: string, line: number, before: number, after: number) =>
@@ -63,6 +64,8 @@ export const api = {
     ),
   facet: (id: string, field: string, limit = 25) =>
     request<FacetResult>(`/api/sessions/${id}/facet?field=${encodeURIComponent(field)}&limit=${limit}`),
+  clusters: (id: string, limit = 50) =>
+    request<ClustersResult>(`/api/sessions/${id}/clusters?limit=${limit}`),
   setTail: (id: string, on: boolean) =>
     request<{ tail: boolean }>(`/api/sessions/${id}/tail`, {
       method: 'POST',

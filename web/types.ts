@@ -62,6 +62,12 @@ export interface FacetResult {
   covered: number;
 }
 
+export interface ClustersResult {
+  patterns: { id: number; pattern: string; count: number }[];
+  distinctCount: number;
+  covered: number;
+}
+
 export interface LineDetail {
   lineNo: number;
   raw: string;

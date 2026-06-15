@@ -45,6 +45,8 @@ export default function SearchBar({
   onToggleHistogram,
   facetsOpen,
   onToggleFacets,
+  clustersOpen,
+  onToggleClusters,
   highlightMode,
   onToggleHighlight,
   grouped,
@@ -73,6 +75,8 @@ export default function SearchBar({
   onToggleHistogram: () => void;
   facetsOpen: boolean;
   onToggleFacets: () => void;
+  clustersOpen: boolean;
+  onToggleClusters: () => void;
   highlightMode: boolean;
   onToggleHighlight: () => void;
   grouped: boolean;
@@ -449,6 +453,21 @@ export default function SearchBar({
             <path d="M3 6h18" />
             <path d="M3 12h12" />
             <path d="M3 18h6" />
+          </svg>
+        </button>
+
+        <button
+          onClick={onToggleClusters}
+          className={`rounded-lg border border-edge px-2.5 py-1.5 text-sm ${
+            clustersOpen ? 'bg-surface-3 text-sky-300' : 'bg-surface-2 text-gray-400 hover:text-gray-100'
+          }`}
+          title="Toggle log patterns (clustering)"
+        >
+          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="6" cy="7" r="2.5" />
+            <circle cx="17" cy="7" r="2.5" />
+            <circle cx="9" cy="17" r="2.5" />
+            <path d="M8 8.5 15 8.5M7.5 9 9 14.5M15.5 9 10 15" />
           </svg>
         </button>
 
