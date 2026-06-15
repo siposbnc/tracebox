@@ -12,6 +12,8 @@ date and start a fresh `Unreleased` section.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-06-15
+
 ### Added
 
 - "What's new" view that lists the changes and fixes in each release (generated
@@ -57,5 +59,6 @@ date and start a fresh `Unreleased` section.
   double-click / drag-and-drop / native picker open, single-instance tabs.
 - 100% offline operation — the server binds to `127.0.0.1` only.
 
-[Unreleased]: https://github.com/siposbnc/tracebox/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/siposbnc/tracebox/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/siposbnc/tracebox/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/siposbnc/tracebox/releases/tag/v1.0.0

@@ -3,6 +3,21 @@ import type { PatchNote } from './types';
 
 export const patchNotes: PatchNote[] = [
   {
+    "version": "1.1.0",
+    "date": "2026-06-15",
+    "sections": [
+      {
+        "title": "Added",
+        "items": [
+          "\"What's new\" view that lists the changes and fixes in each release (generated from this changelog). It opens automatically once on the first launch after an update, and is always available from the toolbar and welcome screen.",
+          "Automatic updates (desktop app): TraceBox checks GitHub releases on launch (and every 6 hours) and shows an in-app banner when a new version is available. The user opts in to the download, then installs it with one click (\"Restart & update\") — no manual re-download or reinstall. Powered by `electron-updater`.",
+          "Manual refresh button to reload the active file and pick up appended lines on demand (without enabling tail follow).",
+          "Global row order setting (oldest-first / newest-first) toggled from the toolbar; the choice persists across files and sessions. Tail follow tracks the live edge in either direction."
+        ]
+      }
+    ]
+  },
+  {
     "version": "1.0.0",
     "date": "2026-06-15",
     "sections": [

@@ -32,7 +32,7 @@ export function createApp(distDir: string): TraceBoxApp {
   // ---------------------------------------------------------------------------
   // Filesystem browsing
 
-  router.add('GET', '/api/health', (_req, res) => sendJson(res, 200, { ok: true, version: '1.0.0' }));
+  router.add('GET', '/api/health', (_req, res) => sendJson(res, 200, { ok: true, version: '1.1.0' }));
 
   router.add('GET', '/api/roots', (_req, res) => {
     sendJson(res, 200, { roots: listRoots(), home: homedir() });
