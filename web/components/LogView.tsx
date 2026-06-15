@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api';
 import { getBookmarks, toggleBookmark } from '../bookmarks';
+import { matchCommand, eventToChord, isEditableTarget } from '../keybindings';
 import type { HistogramData, SessionStatus } from '../types';
 import SearchBar from './SearchBar';
 import LogList from './LogList';
@@ -8,6 +9,7 @@ import DetailPanel from './DetailPanel';
 import FacetPanel from './FacetPanel';
 import ContextPeek from './ContextPeek';
 import GoToLine from './GoToLine';
+import ShortcutsHelp from './ShortcutsHelp';
 import Histogram from './Histogram';
 import StatusBar from './StatusBar';
 
@@ -34,6 +36,7 @@ export default function LogView({
   const [facetsOpen, setFacetsOpen] = useState(false);
   const [highlightMode, setHighlightMode] = useState(false);
   const [gotoOpen, setGotoOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [followTail, setFollowTail] = useState(initial.tail);
   const statusRef = useRef(status);
   statusRef.current = status;
@@ -195,25 +198,39 @@ export default function LogView({
     [selected, jumpToLine],
   );
 
-  // navigation hotkeys: Ctrl/Cmd+G go to line, Ctrl/Cmd+B toggle bookmark on the
-  // selected line, F2 / Shift+F2 next/previous bookmark, Ctrl/Cmd+H highlight mode
+  // navigation hotkeys, resolved through the rebindable keybinding store
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      const mod = e.ctrlKey || e.metaKey;
-      const key = e.key.toLowerCase();
-      if (mod && key === 'g') {
-        e.preventDefault();
-        setGotoOpen(true);
-      } else if (mod && key === 'b') {
-        if (selected === null) return;
-        e.preventDefault();
-        toggleBookmark(statusRef.current.file, selected);
-      } else if (mod && key === 'h') {
-        e.preventDefault();
-        toggleHighlight();
-      } else if (e.key === 'F2') {
-        e.preventDefault();
-        jumpBookmark(e.shiftKey ? -1 : 1);
+      const cmd = matchCommand(e);
+      if (!cmd) return;
+      // don't steal plain (modifier-less, non-function) keys while typing in an input
+      if (isEditableTarget(e.target) && !/Mod|Alt|F\d/.test(eventToChord(e))) return;
+      switch (cmd) {
+        case 'goToLine':
+          e.preventDefault();
+          setGotoOpen(true);
+          break;
+        case 'toggleBookmark':
+          if (selected === null) return;
+          e.preventDefault();
+          toggleBookmark(statusRef.current.file, selected);
+          break;
+        case 'toggleHighlight':
+          e.preventDefault();
+          toggleHighlight();
+          break;
+        case 'nextBookmark':
+          e.preventDefault();
+          jumpBookmark(1);
+          break;
+        case 'prevBookmark':
+          e.preventDefault();
+          jumpBookmark(-1);
+          break;
+        case 'showShortcuts':
+          e.preventDefault();
+          setShortcutsOpen(true);
+          break;
       }
     };
     window.addEventListener('keydown', onKey);
@@ -270,6 +287,7 @@ export default function LogView({
         file={status.file}
         onJumpToLine={(lineNo) => void jumpToLine(lineNo)}
         onGoToLine={() => setGotoOpen(true)}
+        onShowShortcuts={() => setShortcutsOpen(true)}
         fieldNames={status.fieldNames}
         levelCounts={status.levelCounts}
       />
@@ -337,6 +355,8 @@ export default function LogView({
           onClose={() => setGotoOpen(false)}
         />
       )}
+
+      {shortcutsOpen && <ShortcutsHelp onClose={() => setShortcutsOpen(false)} />}
     </div>
   );
 }

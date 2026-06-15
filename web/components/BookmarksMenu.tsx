@@ -1,15 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
 import { useBookmarks, toggleBookmark, clearBookmarks } from '../bookmarks';
+import { formatChord } from '../keybindings';
 
 /** Toolbar dropdown listing the current file's bookmarks; click one to jump. */
 export default function BookmarksMenu({
   file,
   onJump,
   onGoToLine,
+  bindings,
 }: {
   file: string;
   onJump: (lineNo: number) => void;
   onGoToLine: () => void;
+  bindings: Record<string, string>;
 }) {
   const marks = useBookmarks(file);
   const [open, setOpen] = useState(false);
@@ -48,7 +51,7 @@ export default function BookmarksMenu({
             className="flex w-full items-center justify-between border-b border-edge px-2 py-1.5 text-xs text-gray-300 hover:bg-surface-3"
           >
             <span>Go to line…</span>
-            <span className="text-[10px] text-gray-500">Ctrl+G</span>
+            {bindings.goToLine && <span className="text-[10px] text-gray-500">{formatChord(bindings.goToLine)}</span>}
           </button>
           <div className="flex items-center justify-between border-b border-edge px-2 py-1.5">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
@@ -66,7 +69,8 @@ export default function BookmarksMenu({
           <div className="max-h-[50vh] overflow-y-auto p-1">
             {marks.length === 0 ? (
               <div className="px-2 py-2 text-xs text-gray-600">
-                No bookmarks yet. Click the flag on a line, or press Ctrl+B on a selected line.
+                No bookmarks yet. Click the flag on a line
+                {bindings.toggleBookmark ? `, or press ${formatChord(bindings.toggleBookmark)} on a selected line` : ''}.
               </div>
             ) : (
               marks.map((lineNo) => (
@@ -94,9 +98,11 @@ export default function BookmarksMenu({
               ))
             )}
           </div>
-          {marks.length > 0 && (
+          {marks.length > 0 && (bindings.nextBookmark || bindings.toggleBookmark) && (
             <div className="border-t border-edge/60 px-2 py-1 text-[10px] text-gray-600">
-              F2 / Shift+F2 to cycle · Ctrl+B to toggle
+              {bindings.nextBookmark && `${formatChord(bindings.nextBookmark)} / ${formatChord(bindings.prevBookmark)} to cycle`}
+              {bindings.nextBookmark && bindings.toggleBookmark && ' · '}
+              {bindings.toggleBookmark && `${formatChord(bindings.toggleBookmark)} to toggle`}
             </div>
           )}
         </div>

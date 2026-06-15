@@ -315,7 +315,7 @@ const Row = memo(function Row({
           e.stopPropagation();
           onToggleBookmark();
         }}
-        title={bookmarked ? 'Remove bookmark (Ctrl+B)' : 'Bookmark this line (Ctrl+B)'}
+        title={bookmarked ? 'Remove bookmark' : 'Bookmark this line'}
         className={`w-4 shrink-0 select-none text-center text-[11px] leading-6 ${
           bookmarked
             ? 'text-amber-400'

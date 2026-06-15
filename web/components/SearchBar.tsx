@@ -11,6 +11,7 @@ import {
   useSaved,
 } from '../searches';
 import { computeSuggestions, tokenBounds, type Suggestion } from '../querySuggest';
+import { matchCommand, formatChord, useBindings } from '../keybindings';
 import BookmarksMenu from './BookmarksMenu';
 import type { SessionStatus } from '../types';
 
@@ -49,6 +50,7 @@ export default function SearchBar({
   file,
   onJumpToLine,
   onGoToLine,
+  onShowShortcuts,
   fieldNames,
   levelCounts,
 }: {
@@ -73,6 +75,7 @@ export default function SearchBar({
   file: string;
   onJumpToLine: (lineNo: number) => void;
   onGoToLine: () => void;
+  onShowShortcuts: () => void;
   fieldNames: { key: string; count: number }[];
   levelCounts: Record<string, number>;
 }) {
@@ -82,6 +85,7 @@ export default function SearchBar({
   const [saveName, setSaveName] = useState('');
   const order = useOrder();
   const tz = useTz();
+  const bindings = useBindings();
   const inputRef = useRef<HTMLInputElement>(null);
   const historyRef = useRef<HTMLDivElement>(null);
 
@@ -135,7 +139,7 @@ export default function SearchBar({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+      if (matchCommand(e) === 'focusSearch') {
         e.preventDefault();
         inputRef.current?.focus();
         inputRef.current?.select();
@@ -393,6 +397,17 @@ export default function SearchBar({
         </button>
 
         <button
+          onClick={onShowShortcuts}
+          className="rounded-lg border border-edge bg-surface-2 px-2.5 py-1.5 text-sm text-gray-400 hover:text-gray-100"
+          title={`Keyboard shortcuts${bindings.showShortcuts ? ` (${formatChord(bindings.showShortcuts)})` : ''}`}
+        >
+          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <rect x="2" y="6" width="20" height="12" rx="2" />
+            <path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10" />
+          </svg>
+        </button>
+
+        <button
           onClick={onToggleHistogram}
           className={`rounded-lg border border-edge px-2.5 py-1.5 text-sm ${
             histogramOpen ? 'bg-surface-3 text-sky-300' : 'bg-surface-2 text-gray-400 hover:text-gray-100'
@@ -425,7 +440,9 @@ export default function SearchBar({
           className={`rounded-lg border border-edge px-2.5 py-1.5 text-sm ${
             highlightMode ? 'bg-surface-3 text-amber-300' : 'bg-surface-2 text-gray-400 hover:text-gray-100'
           }`}
-          title="Highlight matches in place instead of filtering (Ctrl+H)"
+          title={`Highlight matches in place instead of filtering${
+            bindings.toggleHighlight ? ` (${formatChord(bindings.toggleHighlight)})` : ''
+          }`}
         >
           <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="m9 11-6 6v3h3l6-6" />
@@ -435,7 +452,7 @@ export default function SearchBar({
           </svg>
         </button>
 
-        <BookmarksMenu file={file} onJump={onJumpToLine} onGoToLine={onGoToLine} />
+        <BookmarksMenu file={file} onJump={onJumpToLine} onGoToLine={onGoToLine} bindings={bindings} />
 
         <button
           onClick={() => setOrder(order === 'asc' ? 'desc' : 'asc')}

@@ -14,6 +14,11 @@ date and start a fresh `Unreleased` section.
 
 ### Added
 
+- Keyboard shortcuts overlay (Ctrl/Cmd+/ or the toolbar keyboard button) listing
+  every shortcut. Shortcuts are now rebindable: click one and press the new keys
+  (Backspace unbinds, Esc cancels); per-shortcut and "reset all" restore the
+  defaults. Bindings persist locally and are shared across tabs.
+
 - Bookmarks: click the flag on any line to mark it (or press Ctrl/Cmd+B on the
   selected line); marks persist per file and are listed in a new toolbar menu.
   Press F2 / Shift+F2 to jump to the next / previous bookmark.
