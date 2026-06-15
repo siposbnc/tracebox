@@ -428,6 +428,28 @@ test('index is reused on reopen of an unchanged file', async () => {
   assert.match(rows[0].text, /request 4 /);
 });
 
+test('copyText returns the current view as multi-line text, capped and ordered', async () => {
+  const file = makeLogFile('copy.log', appLogLines(100));
+  const s = await openAndIndex(file);
+
+  // whole file, capped
+  const a = await s.copyText(5, 'asc');
+  assert.equal(a.count, 5);
+  assert.equal(a.total, 100);
+  assert.equal(a.text.split('\n').length, 5);
+  assert.match(a.text.split('\n')[0], /request 0 /);
+
+  // newest-first order
+  const d = await s.copyText(3, 'desc');
+  assert.match(d.text.split('\n')[0], /request 99 /);
+
+  // restricted to a search
+  s.setSearch('level:ERROR');
+  const e = await s.copyText(1000, 'asc');
+  assert.equal(e.count, e.total);
+  assert.ok(e.text.split('\n').every((l) => /\[ERROR\]/.test(l)));
+});
+
 test('export iteration covers all results in order', async () => {
   const file = makeLogFile('export.log', appLogLines(500));
   const s = await openAndIndex(file);

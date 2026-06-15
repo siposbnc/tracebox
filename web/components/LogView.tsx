@@ -14,7 +14,7 @@ import ShortcutsHelp from './ShortcutsHelp';
 import SettingsPanel from './SettingsPanel';
 import Histogram from './Histogram';
 import StatusBar from './StatusBar';
-import { getHistogramDefault } from '../settings';
+import { getHistogramDefault, useWrap, getOrder } from '../settings';
 
 export default function LogView({
   initial,
@@ -57,6 +57,7 @@ export default function LogView({
   const groupingActive = grouped && status.phase === 'ready';
   const groupingActiveRef = useRef(groupingActive);
   groupingActiveRef.current = groupingActive;
+  const wrap = useWrap();
 
   const refreshHistogram = useCallback(() => {
     void api.histogram(id).then(setHistogram).catch(() => setHistogram(null));
@@ -139,6 +140,14 @@ export default function LogView({
     },
     [runSearch],
   );
+
+  // copy the current view's rows (capped) to the clipboard as multi-line text
+  const COPY_CAP = 10000;
+  const copyRows = useCallback(async (): Promise<{ count: number; total: number }> => {
+    const r = await api.copyText(id, COPY_CAP, getOrder(), groupingActiveRef.current);
+    await navigator.clipboard.writeText(r.text);
+    return { count: r.count, total: r.total };
+  }, [id]);
 
   // drill the view down to a single cluster (or clear it); keeps the current text
   // query and does not refresh the patterns panel
@@ -324,6 +333,7 @@ export default function LogView({
         refreshing={refreshing}
         onOpenFile={onOpenFile}
         exportUrls={{ csv: api.exportUrl(id, 'csv'), json: api.exportUrl(id, 'json') }}
+        onCopyRows={copyRows}
         histogramOpen={histogramOpen}
         onToggleHistogram={() => setHistogramOpen((v) => !v)}
         facetsOpen={facetsOpen}
@@ -370,7 +380,7 @@ export default function LogView({
         )}
         <div className="min-w-0 flex-1">
           <LogList
-            key={`${groupingActive ? 'g' : 'u'}:${highlightActive ? `hl:${status.search?.query ?? ''}` : 'flt'}`}
+            key={`${wrap ? 'w' : 'n'}:${groupingActive ? 'g' : 'u'}:${highlightActive ? `hl:${status.search?.query ?? ''}` : 'flt'}`}
             sessionId={id}
             file={status.file}
             epoch={epoch}
@@ -382,6 +392,7 @@ export default function LogView({
             showContext={status.search !== null}
             highlight={highlightActive}
             grouped={groupingActive}
+            wrap={wrap}
             scrollTo={pendingJump}
             highlightTerms={highlightTerms}
             onUserScroll={() => setFollowTail(false)}

@@ -74,6 +74,10 @@ export const api = {
     }),
   refresh: (id: string) => request<SessionStatus>(`/api/sessions/${id}/refresh`, { method: 'POST' }),
   exportUrl: (id: string, format: 'csv' | 'json') => `/api/sessions/${id}/export?format=${format}`,
+  copyText: (id: string, limit: number, order: 'asc' | 'desc', grouped: boolean) =>
+    request<{ text: string; count: number; total: number }>(
+      `/api/sessions/${id}/copy?limit=${limit}&order=${order}${grouped ? '&grouped=1' : ''}`,
+    ),
 
   /** Subscribe to session events; returns an unsubscribe function. */
   events(id: string, handlers: { [event: string]: (status: SessionStatus) => void }): () => void {

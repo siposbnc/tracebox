@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { formatCount, tzAbbr } from '../api';
-import { useOrder, setOrder, useTz, setTz } from '../settings';
+import { useOrder, setOrder, useTz, setTz, useWrap, setWrap } from '../settings';
 import {
   recordHistory,
   clearHistory,
@@ -41,6 +41,7 @@ export default function SearchBar({
   refreshing,
   onOpenFile,
   exportUrls,
+  onCopyRows,
   histogramOpen,
   onToggleHistogram,
   facetsOpen,
@@ -71,6 +72,7 @@ export default function SearchBar({
   refreshing: boolean;
   onOpenFile: () => void;
   exportUrls: { csv: string; json: string };
+  onCopyRows: () => Promise<{ count: number; total: number }>;
   histogramOpen: boolean;
   onToggleHistogram: () => void;
   facetsOpen: boolean;
@@ -91,10 +93,12 @@ export default function SearchBar({
 }) {
   const [helpOpen, setHelpOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [copyNote, setCopyNote] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [saveName, setSaveName] = useState('');
   const order = useOrder();
   const tz = useTz();
+  const wrap = useWrap();
   const bindings = useBindings();
   const inputRef = useRef<HTMLInputElement>(null);
   const historyRef = useRef<HTMLDivElement>(null);
@@ -502,6 +506,21 @@ export default function SearchBar({
           </svg>
         </button>
 
+        <button
+          onClick={() => setWrap(!wrap)}
+          className={`rounded-lg border border-edge px-2.5 py-1.5 text-sm ${
+            wrap ? 'bg-surface-3 text-sky-300' : 'bg-surface-2 text-gray-400 hover:text-gray-100'
+          }`}
+          title={wrap ? 'Wrapping long lines — click to truncate' : 'Truncating long lines — click to wrap'}
+        >
+          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M3 6h18" />
+            <path d="M3 12h13a3 3 0 1 1 0 6h-4" />
+            <path d="m13 16-2 2 2 2" />
+            <path d="M3 18h4" />
+          </svg>
+        </button>
+
         <BookmarksMenu file={file} onJump={onJumpToLine} onGoToLine={onGoToLine} bindings={bindings} />
 
         <button
@@ -585,13 +604,33 @@ export default function SearchBar({
             Export ▾
           </button>
           {exportOpen && (
-            <div className="absolute right-0 top-full z-20 mt-1 w-44 overflow-hidden rounded-lg border border-edge bg-surface-2 shadow-xl">
+            <div className="absolute right-0 top-full z-20 mt-1 w-52 overflow-hidden rounded-lg border border-edge bg-surface-2 shadow-xl">
+              <button
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  setCopyNote('Copying…');
+                  void onCopyRows()
+                    .then(({ count, total }) =>
+                      setCopyNote(`Copied ${count.toLocaleString()}${total > count ? ` of ${total.toLocaleString()}` : ''} rows`),
+                    )
+                    .catch(() => setCopyNote('Copy failed'))
+                    .finally(() => setTimeout(() => setCopyNote(null), 2500));
+                }}
+                className="block w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-surface-3"
+              >
+                Copy rows to clipboard
+              </button>
               <a href={exportUrls.csv} className="block px-3 py-2 text-sm text-gray-300 hover:bg-surface-3" download>
                 Filtered rows as CSV
               </a>
               <a href={exportUrls.json} className="block px-3 py-2 text-sm text-gray-300 hover:bg-surface-3" download>
                 Filtered rows as JSON
               </a>
+            </div>
+          )}
+          {copyNote && (
+            <div className="absolute right-0 top-full z-30 mt-1 rounded-md border border-edge bg-surface-3 px-2.5 py-1 text-xs text-gray-200 shadow-lg">
+              {copyNote}
             </div>
           )}
         </div>

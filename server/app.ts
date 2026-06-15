@@ -162,6 +162,14 @@ export function createApp(distDir: string): TraceBoxApp {
     sendJson(res, 200, getSession(params.id).clusters(limit));
   });
 
+  router.add('GET', '/api/sessions/:id/copy', async (_req, res, params, query) => {
+    const s = getSession(params.id);
+    const limit = Number(query.get('limit') ?? 10000);
+    const order = query.get('order') === 'desc' ? 'desc' : 'asc';
+    const grouped = query.get('grouped') === '1';
+    sendJson(res, 200, await s.copyText(limit, order, grouped));
+  });
+
   router.add('GET', '/api/sessions/:id/next-match', (_req, res, params, query) => {
     const s = getSession(params.id);
     const after = Number(query.get('after') ?? 0);

@@ -13,8 +13,11 @@ const HISTOGRAM_KEY = 'tracebox.histogramDefault';
 const PAGE_JUMP_KEY = 'tracebox.pageJump';
 const PAGE_JUMP_BIG_KEY = 'tracebox.pageJumpBig';
 
+const WRAP_KEY = 'tracebox.wrap';
+
 let order: Order = localStorage.getItem(ORDER_KEY) === 'desc' ? 'desc' : 'asc';
 let tz: Tz = localStorage.getItem(TZ_KEY) === 'local' ? 'local' : 'utc';
+let wrap = localStorage.getItem(WRAP_KEY) === 'true';
 
 /** Read a non-negative integer setting, falling back to `fallback` when unset/invalid. */
 function loadNumber(key: string, fallback: number, min = 0, max = 1_000_000): number {
@@ -70,6 +73,22 @@ export function setTz(next: Tz): void {
 /** React hook for the global timestamp timezone. Updates every open tab when changed. */
 export function useTz(): Tz {
   return useSyncExternalStore(subscribe, getTz);
+}
+
+export function getWrap(): boolean {
+  return wrap;
+}
+
+export function setWrap(next: boolean): void {
+  if (next === wrap) return;
+  wrap = next;
+  localStorage.setItem(WRAP_KEY, String(next));
+  emit();
+}
+
+/** Whether long log lines wrap instead of being truncated. */
+export function useWrap(): boolean {
+  return useSyncExternalStore(subscribe, getWrap);
 }
 
 export function getContextLines(): number {

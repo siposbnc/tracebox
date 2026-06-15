@@ -41,6 +41,7 @@ export default function LogList({
   showContext,
   highlight,
   grouped,
+  wrap,
   scrollTo,
   highlightTerms,
   onUserScroll,
@@ -57,6 +58,7 @@ export default function LogList({
   showContext: boolean;
   highlight: boolean;
   grouped: boolean;
+  wrap: boolean;
   scrollTo: { lineNo: number; nonce: number } | null;
   highlightTerms: string[];
   onUserScroll: () => void;
@@ -296,15 +298,19 @@ export default function LogList({
         <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
           {items.map((item) => {
             const row = rowAt(item.index);
+            // When wrapping, rows have variable height: let the virtualizer measure
+            // each rendered row. Otherwise keep the fixed-height fast path.
             return (
               <div
                 key={item.key}
+                ref={wrap ? virtualizer.measureElement : undefined}
+                data-index={item.index}
                 style={{
                   position: 'absolute',
                   top: 0,
                   left: 0,
                   width: '100%',
-                  height: item.size,
+                  ...(wrap ? { minHeight: ROW_HEIGHT } : { height: item.size }),
                   transform: `translateY(${item.start}px)`,
                 }}
               >
@@ -321,9 +327,10 @@ export default function LogList({
                     highlightRegex={highlightRegex}
                     gutterWidth={gutterWidth}
                     tz={tz}
+                    wrap={wrap}
                   />
                 ) : (
-                  <div className="flex h-full items-center px-3">
+                  <div className="flex h-6 items-center px-3">
                     <div className="h-2.5 w-1/3 animate-pulse-subtle rounded bg-surface-2" />
                   </div>
                 )}
@@ -348,6 +355,7 @@ const Row = memo(function Row({
   highlightRegex,
   gutterWidth,
   tz,
+  wrap,
 }: {
   row: RowData;
   selected: boolean;
@@ -360,6 +368,7 @@ const Row = memo(function Row({
   highlightRegex: RegExp | null;
   gutterWidth: number;
   tz: Tz;
+  wrap: boolean;
 }) {
   const levelClass = row.level ? (LEVEL_STYLES[row.level] ?? 'bg-slate-800 text-slate-300') : '';
   const bar = row.level ? LEVEL_BAR[row.level] : undefined;
@@ -376,7 +385,9 @@ const Row = memo(function Row({
   return (
     <div
       onClick={() => onSelect(row.lineNo)}
-      className={`group row-text relative flex h-full cursor-pointer items-center gap-2 border-l-2 pr-3 font-mono text-[13px] leading-6 ${
+      className={`group row-text relative flex cursor-pointer gap-2 border-l-2 pr-3 font-mono text-[13px] leading-6 ${
+        wrap ? 'min-h-6 items-start py-px' : 'h-full items-center'
+      } ${
         selected
           ? 'border-sky-400 bg-sky-950/60'
           : isMatch
@@ -421,7 +432,11 @@ const Row = memo(function Row({
           +{row.span - 1}
         </span>
       )}
-      <span className="min-w-0 flex-1 truncate whitespace-pre text-gray-200">
+      <span
+        className={`min-w-0 flex-1 text-gray-200 ${
+          wrap ? 'whitespace-pre-wrap break-all' : 'truncate whitespace-pre'
+        }`}
+      >
         {content}
         {row.truncated && <span className="text-gray-500"> … (truncated — open details)</span>}
       </span>

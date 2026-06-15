@@ -4,6 +4,8 @@ import {
   setOrder,
   useTz,
   setTz,
+  useWrap,
+  setWrap,
   useContextLines,
   setContextLines,
   useHistogramDefault,
@@ -63,6 +65,7 @@ export default function SettingsPanel({
 }) {
   const order = useOrder();
   const tz = useTz();
+  const wrap = useWrap();
   const contextLines = useContextLines();
   const histogramDefault = useHistogramDefault();
   const pageJump = usePageJump();
@@ -110,6 +113,21 @@ export default function SettingsPanel({
                 { value: 'local', label: 'Local' },
               ]}
             />
+          </Row>
+
+          <Row label="Word wrap" hint="Wrap long lines instead of truncating them">
+            <button
+              role="switch"
+              aria-checked={wrap}
+              onClick={() => setWrap(!wrap)}
+              className={`relative h-5 w-9 rounded-full transition-colors ${wrap ? 'bg-sky-600' : 'bg-surface-3'}`}
+            >
+              <span
+                className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
+                  wrap ? 'translate-x-4' : 'translate-x-0.5'
+                }`}
+              />
+            </button>
           </Row>
 
           <Row label="Context lines" hint="Lines shown before/after when peeking at a match">

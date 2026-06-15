@@ -677,6 +677,17 @@ export class LogSession extends EventEmitter {
     return this.readRows(lineNos);
   }
 
+  /**
+   * Plain-text of the current view's rows for the clipboard (one row per line),
+   * in display order, capped at `limit` rows. For grouped rows this is the head
+   * line; for the whole untruncated record use the detail panel.
+   */
+  async copyText(limit: number, order: 'asc' | 'desc' = 'asc', grouped = false): Promise<{ text: string; count: number; total: number }> {
+    limit = Math.min(Math.max(limit, 1), 100_000);
+    const rows = await this.getRows(0, limit, order, false, grouped);
+    return { text: rows.map((r) => r.text).join('\n'), count: rows.length, total: this.displayTotal(grouped) };
+  }
+
   async close(): Promise<void> {
     this.closed = true;
     this.setTail(false);
