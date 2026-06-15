@@ -6,6 +6,8 @@ export interface RowData {
   truncated: boolean;
   /** In highlight mode, whether this (unfiltered) line matches the active query. */
   match?: boolean;
+  /** In grouped mode, physical lines in this record (1 = no continuation lines). */
+  span?: number;
 }
 
 export interface SessionStatus {
@@ -19,6 +21,7 @@ export interface SessionStatus {
   reusedIndex: boolean;
   error: string | null;
   tail: boolean;
+  recordCount: number;
   levelCounts: Record<string, number>;
   fieldNames: { key: string; count: number }[];
   search: { query: string; total: number; durationMs: number } | null;
@@ -65,6 +68,8 @@ export interface LineDetail {
   ts: number | null;
   level: string | null;
   fields: { key: string; value: string }[];
+  /** Present when this line heads a multi-line record: the full record text. */
+  record?: { span: number; text: string };
 }
 
 export interface RecentFile {

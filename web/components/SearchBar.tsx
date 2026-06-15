@@ -47,6 +47,8 @@ export default function SearchBar({
   onToggleFacets,
   highlightMode,
   onToggleHighlight,
+  grouped,
+  onToggleGrouped,
   file,
   onJumpToLine,
   onGoToLine,
@@ -73,6 +75,8 @@ export default function SearchBar({
   onToggleFacets: () => void;
   highlightMode: boolean;
   onToggleHighlight: () => void;
+  grouped: boolean;
+  onToggleGrouped: () => void;
   file: string;
   onJumpToLine: (lineNo: number) => void;
   onGoToLine: () => void;
@@ -462,6 +466,20 @@ export default function SearchBar({
             <path d="m17 7 3-3 1 1-3 3" />
             <path d="m13 7 4 4" />
             <path d="M14 6l4 4" />
+          </svg>
+        </button>
+
+        <button
+          onClick={onToggleGrouped}
+          className={`rounded-lg border border-edge px-2.5 py-1.5 text-sm ${
+            grouped ? 'bg-surface-3 text-sky-300' : 'bg-surface-2 text-gray-400 hover:text-gray-100'
+          }`}
+          title="Group multi-line records (fold stack traces into one row)"
+        >
+          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M8 6h13M8 12h13M8 18h13" />
+            <path d="M3 6v12" />
+            <path d="M3 6h2M3 18h2" />
           </svg>
         </button>
 

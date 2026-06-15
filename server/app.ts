@@ -110,17 +110,19 @@ export function createApp(distDir: string): TraceBoxApp {
     const limit = Math.min(1000, Math.max(1, Number(query.get('limit') ?? 200)));
     const order = query.get('order') === 'desc' ? 'desc' : 'asc';
     const highlight = query.get('highlight') === '1';
-    const rows = await s.getRows(offset, limit, order, highlight);
+    const grouped = query.get('grouped') === '1';
+    const rows = await s.getRows(offset, limit, order, highlight, grouped);
     // In highlight mode the list spans the whole file (matches are flagged, not filtered).
-    const total = highlight && s.hasSearch ? s.lineCount : s.viewTotal;
+    const total =
+      highlight && s.hasSearch ? (grouped ? s.recordCount() : s.lineCount) : s.displayTotal(grouped);
     sendJson(res, 200, { rows, total, lineCount: s.lineCount });
   });
 
   router.add('POST', '/api/sessions/:id/search', async (req, res, params) => {
     const s = getSession(params.id);
-    const body = (await readJsonBody(req)) as { query?: string };
+    const body = (await readJsonBody(req)) as { query?: string; grouped?: boolean };
     try {
-      const result = s.setSearch(body.query ?? '');
+      const result = s.setSearch(body.query ?? '', Boolean(body.grouped));
       sendJson(res, 200, result);
     } catch (err) {
       if (err instanceof QuerySyntaxError) {

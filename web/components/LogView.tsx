@@ -37,12 +37,19 @@ export default function LogView({
   const [histogramOpen, setHistogramOpen] = useState(getHistogramDefault);
   const [facetsOpen, setFacetsOpen] = useState(false);
   const [highlightMode, setHighlightMode] = useState(false);
+  const [grouped, setGrouped] = useState(true);
   const [gotoOpen, setGotoOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [followTail, setFollowTail] = useState(initial.tail);
   const statusRef = useRef(status);
   statusRef.current = status;
+
+  // Grouping folds stack-trace continuation lines into one record. It only takes
+  // effect once indexing has finished (the records table is built at finalize).
+  const groupingActive = grouped && status.phase === 'ready';
+  const groupingActiveRef = useRef(groupingActive);
+  groupingActiveRef.current = groupingActive;
 
   const refreshHistogram = useCallback(() => {
     void api.histogram(id).then(setHistogram).catch(() => setHistogram(null));
@@ -97,7 +104,7 @@ export default function LogView({
       setSearching(true);
       setSearchError(null);
       try {
-        const r = await api.search(id, q);
+        const r = await api.search(id, q, groupingActiveRef.current);
         setTotal(r.total);
         setSelected(null);
         setEpoch((e) => e + 1);
@@ -120,6 +127,16 @@ export default function LogView({
     },
     [runSearch],
   );
+
+  // when grouping turns on/off (toggle, or indexing finishing), re-materialize an
+  // active search in the new mode; for plain browsing just invalidate the rows
+  const prevGroupingRef = useRef(groupingActive);
+  useEffect(() => {
+    if (prevGroupingRef.current === groupingActive) return;
+    prevGroupingRef.current = groupingActive;
+    if (statusRef.current.search) void runSearch(statusRef.current.search.query);
+    else setEpoch((e) => e + 1);
+  }, [groupingActive, runSearch]);
 
   const addFilter = useCallback(
     (clause: string) => {
@@ -264,7 +281,10 @@ export default function LogView({
 
   // Highlight mode only takes effect when there is an active search to mark.
   const highlightActive = highlightMode && status.search !== null;
-  const listTotal = highlightActive ? status.lineCount : total;
+  // browsing total depends on grouping (records vs physical lines); an active
+  // search already reports the grouped count via the search response (`total`).
+  const browseTotal = groupingActive ? status.recordCount : status.lineCount;
+  const listTotal = highlightActive ? browseTotal : status.search ? total : browseTotal;
 
   return (
     <div className="flex h-full flex-col">
@@ -287,6 +307,8 @@ export default function LogView({
         onToggleFacets={() => setFacetsOpen((v) => !v)}
         highlightMode={highlightMode}
         onToggleHighlight={toggleHighlight}
+        grouped={grouped}
+        onToggleGrouped={() => setGrouped((v) => !v)}
         file={status.file}
         onJumpToLine={(lineNo) => void jumpToLine(lineNo)}
         onGoToLine={() => setGotoOpen(true)}
@@ -313,7 +335,7 @@ export default function LogView({
         )}
         <div className="min-w-0 flex-1">
           <LogList
-            key={highlightActive ? `hl:${status.search?.query ?? ''}` : 'flt'}
+            key={`${groupingActive ? 'g' : 'u'}:${highlightActive ? `hl:${status.search?.query ?? ''}` : 'flt'}`}
             sessionId={id}
             file={status.file}
             epoch={epoch}
@@ -324,6 +346,7 @@ export default function LogView({
             onContext={setContextLine}
             showContext={status.search !== null}
             highlight={highlightActive}
+            grouped={groupingActive}
             scrollTo={pendingJump}
             highlightTerms={highlightTerms}
             onUserScroll={() => setFollowTail(false)}

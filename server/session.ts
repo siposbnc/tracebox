@@ -37,6 +37,8 @@ export interface SessionStatus {
   reusedIndex: boolean;
   error: string | null;
   tail: boolean;
+  /** Number of logical (multi-line-grouped) records; 0 until indexing finishes. */
+  recordCount: number;
   levelCounts: Record<string, number>;
   fieldNames: { key: string; count: number }[];
   search: { query: string; total: number; durationMs: number } | null;
@@ -586,6 +588,7 @@ export class LogSession extends EventEmitter {
       reusedIndex: this.reusedIndex,
       error: this.error,
       tail: this.tail,
+      recordCount: this.phase === 'ready' ? this.store.recordCount() : 0,
       levelCounts: this.levelCounts,
       fieldNames: [...this.fieldCounts.entries()]
         .sort((a, b) => b[1] - a[1])

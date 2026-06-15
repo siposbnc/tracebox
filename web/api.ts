@@ -32,15 +32,24 @@ export const api = {
   session: (id: string) => request<SessionStatus>(`/api/sessions/${id}`),
   closeSession: (id: string) => request<{ ok: boolean }>(`/api/sessions/${id}`, { method: 'DELETE' }),
 
-  rows: (id: string, offset: number, limit: number, order: 'asc' | 'desc' = 'asc', highlight = false) =>
+  rows: (
+    id: string,
+    offset: number,
+    limit: number,
+    order: 'asc' | 'desc' = 'asc',
+    highlight = false,
+    grouped = false,
+  ) =>
     request<{ rows: RowData[]; total: number; lineCount: number }>(
-      `/api/sessions/${id}/rows?offset=${offset}&limit=${limit}&order=${order}${highlight ? '&highlight=1' : ''}`,
+      `/api/sessions/${id}/rows?offset=${offset}&limit=${limit}&order=${order}${
+        highlight ? '&highlight=1' : ''
+      }${grouped ? '&grouped=1' : ''}`,
     ),
-  search: (id: string, query: string) =>
+  search: (id: string, query: string, grouped = false) =>
     request<{ total: number; durationMs: number }>(`/api/sessions/${id}/search`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query }),
+      body: JSON.stringify({ query, grouped }),
     }),
   detail: (id: string, lineNo: number) => request<LineDetail>(`/api/sessions/${id}/line/${lineNo}`),
   context: (id: string, line: number, before: number, after: number) =>

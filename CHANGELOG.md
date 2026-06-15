@@ -14,6 +14,12 @@ date and start a fresh `Unreleased` section.
 
 ### Added
 
+- Multi-line grouping (toolbar toggle, on by default): stack traces and wrapped
+  messages fold into their parent log entry, so each logical event is one row
+  with a "+N" badge; opening it shows the full multi-line record. Search treats
+  a record as a unit — matching text inside a stack trace surfaces the parent
+  entry once. Continuation lines are detected per format (timestamp/level for
+  app logs, indentation and JVM markers otherwise).
 - Settings panel (toolbar gear) consolidating display preferences: row order,
   timestamp timezone, default context-peek lines, and whether the histogram
   shows by default. Includes a shortcut to the keyboard-shortcuts editor.

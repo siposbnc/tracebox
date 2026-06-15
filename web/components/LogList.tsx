@@ -39,6 +39,7 @@ export default function LogList({
   onContext,
   showContext,
   highlight,
+  grouped,
   scrollTo,
   highlightTerms,
   onUserScroll,
@@ -54,6 +55,7 @@ export default function LogList({
   onContext: (lineNo: number) => void;
   showContext: boolean;
   highlight: boolean;
+  grouped: boolean;
   scrollTo: { lineNo: number; nonce: number } | null;
   highlightTerms: string[];
   onUserScroll: () => void;
@@ -103,7 +105,7 @@ export default function LogList({
       const requestEpoch = epochRef.current;
       const requestOrder = orderRef.current;
       void api
-        .rows(sessionId, blockIdx * BLOCK, BLOCK, requestOrder, highlight)
+        .rows(sessionId, blockIdx * BLOCK, BLOCK, requestOrder, highlight, grouped)
         .then((r) => {
           if (epochRef.current !== requestEpoch || orderRef.current !== requestOrder) return; // stale
           blocksRef.current.set(blockIdx, { epoch: requestEpoch, rows: r.rows });
@@ -111,7 +113,7 @@ export default function LogList({
         })
         .finally(() => loadingRef.current.delete(blockIdx));
     },
-    [sessionId, highlight],
+    [sessionId, highlight, grouped],
   );
 
   const items = virtualizer.getVirtualItems();
@@ -337,6 +339,14 @@ const Row = memo(function Row({
           className={`w-12 shrink-0 rounded px-1 text-center text-[10px] font-semibold leading-4 ${levelClass}`}
         >
           {row.level}
+        </span>
+      )}
+      {row.span !== undefined && row.span > 1 && (
+        <span
+          className="shrink-0 rounded bg-surface-2 px-1 text-[10px] leading-4 text-gray-400"
+          title={`${row.span} lines (stack trace / multi-line) — open to expand`}
+        >
+          +{row.span - 1}
         </span>
       )}
       <span className="min-w-0 flex-1 truncate whitespace-pre text-gray-200">

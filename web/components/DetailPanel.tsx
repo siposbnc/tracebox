@@ -114,15 +114,17 @@ export default function DetailPanel({
             )}
 
             <section>
-              <h3 className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-gray-500">Raw content</h3>
+              <h3 className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+                {detail.record ? `Record (${detail.record.span} lines)` : 'Raw content'}
+              </h3>
               <pre className="max-h-[50vh] overflow-auto whitespace-pre-wrap break-all rounded-md border border-edge bg-surface-0 p-2 font-mono text-xs leading-5 text-gray-300">
-                {detail.raw}
+                {detail.record ? detail.record.text : detail.raw}
               </pre>
               <button
                 className="mt-2 rounded border border-edge bg-surface-2 px-2 py-1 text-xs text-gray-400 hover:text-gray-100"
-                onClick={() => void navigator.clipboard.writeText(detail.raw)}
+                onClick={() => void navigator.clipboard.writeText(detail.record ? detail.record.text : detail.raw)}
               >
-                Copy raw line
+                {detail.record ? 'Copy record' : 'Copy raw line'}
               </button>
             </section>
           </>
