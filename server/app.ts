@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import path from 'node:path';
 import { Router, sendJson, readJsonBody, serveStatic, SseConnection } from './http.ts';
 import { LogSession } from './session.ts';
+import { MergedTimeline } from './merged.ts';
 import { listRoots, listDir, getRecents, addRecent } from './files.ts';
 import { QuerySyntaxError } from './queryParser.ts';
 
@@ -21,6 +22,7 @@ export interface TraceBoxApp {
  */
 export function createApp(distDir: string): TraceBoxApp {
   const sessions = new Map<string, LogSession>();
+  let merged: MergedTimeline | null = null;
   const router = new Router();
 
   function getSession(id: string): LogSession {
@@ -96,6 +98,11 @@ export function createApp(distDir: string): TraceBoxApp {
     const s = sessions.get(params.id);
     if (s) {
       sessions.delete(params.id);
+      // the merged timeline may reference this session; drop it
+      if (merged) {
+        merged.close();
+        merged = null;
+      }
       await s.close();
     }
     sendJson(res, 200, { ok: true });
@@ -162,6 +169,46 @@ export function createApp(distDir: string): TraceBoxApp {
   router.add('GET', '/api/sessions/:id/clusters', (_req, res, params, query) => {
     const limit = Number(query.get('limit') ?? 50);
     sendJson(res, 200, getSession(params.id).clusters(limit));
+  });
+
+  // ---------------------------------------------------------------------------
+  // Merged timeline (time-ordered view across several open files)
+
+  router.add('POST', '/api/merged', async (req, res) => {
+    const body = (await readJsonBody(req)) as { sessionIds?: string[] };
+    const ids = body.sessionIds?.length ? body.sessionIds : [...sessions.keys()];
+    const list = ids.map((id) => sessions.get(id)).filter((s): s is LogSession => s !== undefined);
+    if (list.length === 0) {
+      sendJson(res, 400, { error: 'No open files to merge' });
+      return;
+    }
+    if (merged) merged.close();
+    merged = new MergedTimeline(list);
+    sendJson(res, 201, { count: merged.count(), sources: merged.sourceList() });
+  });
+
+  router.add('GET', '/api/merged/rows', async (_req, res, _params, query) => {
+    if (!merged) {
+      sendJson(res, 404, { error: 'No merged timeline' });
+      return;
+    }
+    const offset = Math.max(0, Number(query.get('offset') ?? 0));
+    const limit = Math.min(1000, Math.max(1, Number(query.get('limit') ?? 200)));
+    const order = query.get('order') === 'desc' ? 'desc' : 'asc';
+    const rows = await merged.page(offset, limit, order);
+    sendJson(res, 200, { rows, total: merged.count() });
+  });
+
+  router.add('GET', '/api/merged/histogram', (_req, res) => {
+    sendJson(res, 200, merged ? merged.histogram() : null);
+  });
+
+  router.add('DELETE', '/api/merged', (_req, res) => {
+    if (merged) {
+      merged.close();
+      merged = null;
+    }
+    sendJson(res, 200, { ok: true });
   });
 
   router.add('GET', '/api/sessions/:id/copy', async (_req, res, params, query) => {
@@ -309,6 +356,7 @@ export function createApp(distDir: string): TraceBoxApp {
     server,
     sessions,
     async shutdown(): Promise<void> {
+      merged?.close();
       await Promise.allSettled([...sessions.values()].map((s) => s.close()));
       await new Promise<void>((resolve) => server.close(() => resolve()));
     },

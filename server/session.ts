@@ -676,6 +676,11 @@ export class LogSession extends EventEmitter {
     return this.index.lineCount;
   }
 
+  /** Path to this file's on-disk index DB (used by the merged timeline). */
+  get dbPath(): string {
+    return this.store.dbPath;
+  }
+
   iterateResultRows(): Generator<number[]> {
     return this.store.iterateResults();
   }
