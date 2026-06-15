@@ -1,0 +1,270 @@
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
+import { api, formatTs } from '../api';
+import type { RowData } from '../types';
+
+const BLOCK = 256;
+const ROW_HEIGHT = 24;
+
+const LEVEL_STYLES: Record<string, string> = {
+  TRACE: 'bg-slate-800 text-slate-400',
+  DEBUG: 'bg-slate-800 text-slate-300',
+  INFO: 'bg-sky-950 text-sky-300',
+  WARN: 'bg-amber-950 text-amber-300',
+  ERROR: 'bg-red-950 text-red-300',
+  FATAL: 'bg-fuchsia-950 text-fuchsia-300',
+};
+
+const LEVEL_BAR: Record<string, string> = {
+  WARN: 'bg-amber-500',
+  ERROR: 'bg-red-500',
+  FATAL: 'bg-fuchsia-500',
+};
+
+interface Block {
+  epoch: number;
+  rows: RowData[];
+}
+
+export default function LogList({
+  sessionId,
+  epoch,
+  total,
+  followTail,
+  selected,
+  onSelect,
+  highlightTerms,
+  onUserScroll,
+  onScrolledToEnd,
+}: {
+  sessionId: string;
+  epoch: number;
+  total: number;
+  followTail: boolean;
+  selected: number | null;
+  onSelect: (lineNo: number) => void;
+  highlightTerms: string[];
+  onUserScroll: () => void;
+  onScrolledToEnd: () => void;
+}) {
+  const parentRef = useRef<HTMLDivElement>(null);
+  const blocksRef = useRef(new Map<number, Block>());
+  const loadingRef = useRef(new Set<number>());
+  const [, forceRender] = useState(0);
+  const epochRef = useRef(epoch);
+
+  // a new search invalidates everything; appended data only the incomplete tail blocks
+  const prevTotalRef = useRef(total);
+  const searchEpochRef = useRef(0);
+  if (epoch !== epochRef.current) {
+    epochRef.current = epoch;
+    const lastBlock = Math.floor(Math.max(0, prevTotalRef.current - 1) / BLOCK);
+    for (const [idx, block] of blocksRef.current) {
+      if (idx >= lastBlock || block.rows.length < BLOCK) blocksRef.current.delete(idx);
+    }
+  }
+  prevTotalRef.current = total;
+
+  const virtualizer = useVirtualizer({
+    count: total,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => ROW_HEIGHT,
+    overscan: 30,
+  });
+
+  const fetchBlock = useCallback(
+    (blockIdx: number) => {
+      if (blocksRef.current.has(blockIdx) || loadingRef.current.has(blockIdx)) return;
+      loadingRef.current.add(blockIdx);
+      const requestEpoch = epochRef.current;
+      void api
+        .rows(sessionId, blockIdx * BLOCK, BLOCK)
+        .then((r) => {
+          if (epochRef.current !== requestEpoch) return; // stale
+          blocksRef.current.set(blockIdx, { epoch: requestEpoch, rows: r.rows });
+          forceRender((n) => n + 1);
+        })
+        .finally(() => loadingRef.current.delete(blockIdx));
+    },
+    [sessionId],
+  );
+
+  const items = virtualizer.getVirtualItems();
+
+  useEffect(() => {
+    if (items.length === 0) return;
+    const firstBlock = Math.floor(items[0].index / BLOCK);
+    const lastBlock = Math.floor(items[items.length - 1].index / BLOCK);
+    for (let b = firstBlock; b <= lastBlock; b++) fetchBlock(b);
+  }, [items, fetchBlock, epoch, total]);
+
+  // follow tail: keep pinned to the bottom as data arrives
+  useEffect(() => {
+    if (followTail && total > 0) {
+      virtualizer.scrollToIndex(total - 1, { align: 'end' });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [followTail, total, epoch]);
+
+  const rowAt = (index: number): RowData | null => {
+    const block = blocksRef.current.get(Math.floor(index / BLOCK));
+    return block?.rows[index % BLOCK] ?? null;
+  };
+
+  // keyboard navigation: move by view position (line numbers are not
+  // contiguous when a search filter is active)
+  useEffect(() => {
+    const el = parentRef.current;
+    if (!el) return;
+    const viewIndexOf = (lineNo: number): number | null => {
+      for (const [blockIdx, block] of blocksRef.current) {
+        const i = block.rows.findIndex((r) => r.lineNo === lineNo);
+        if (i >= 0) return blockIdx * BLOCK + i;
+      }
+      return null;
+    };
+    const onKey = (e: KeyboardEvent): void => {
+      if (selected === null) return;
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        const cur = viewIndexOf(selected);
+        if (cur === null) return;
+        const next = Math.max(0, Math.min(total - 1, cur + (e.key === 'ArrowDown' ? 1 : -1)));
+        const nextRow = rowAt(next);
+        if (nextRow) {
+          onSelect(nextRow.lineNo);
+          virtualizer.scrollToIndex(next, { align: 'auto' });
+        }
+      }
+    };
+    el.addEventListener('keydown', onKey);
+    return () => el.removeEventListener('keydown', onKey);
+  }, [selected, total, onSelect, virtualizer]);
+
+  const highlightRegex = useMemo(() => {
+    if (highlightTerms.length === 0) return null;
+    const escaped = highlightTerms
+      .filter((t) => t.length > 0)
+      .map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    if (escaped.length === 0) return null;
+    try {
+      return new RegExp(`(${escaped.join('|')})`, 'gi');
+    } catch {
+      return null;
+    }
+  }, [highlightTerms]);
+
+  const onScroll = useCallback(() => {
+    const el = parentRef.current;
+    if (!el) return;
+    const atEnd = el.scrollTop + el.clientHeight >= el.scrollHeight - ROW_HEIGHT * 2;
+    if (atEnd) onScrolledToEnd();
+  }, [onScrolledToEnd]);
+
+  const gutterWidth = Math.max(5, String(total).length) + 1;
+
+  return (
+    <div
+      ref={parentRef}
+      tabIndex={0}
+      onScroll={onScroll}
+      onWheel={onUserScroll}
+      className="h-full overflow-y-auto overscroll-none bg-surface-0 outline-none"
+    >
+      {total === 0 ? (
+        <div className="flex h-full items-center justify-center text-sm text-gray-500">
+          No matching log lines
+        </div>
+      ) : (
+        <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
+          {items.map((item) => {
+            const row = rowAt(item.index);
+            return (
+              <div
+                key={item.key}
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  height: item.size,
+                  transform: `translateY(${item.start}px)`,
+                }}
+              >
+                {row ? (
+                  <Row
+                    row={row}
+                    selected={selected === row.lineNo}
+                    onSelect={onSelect}
+                    highlightRegex={highlightRegex}
+                    gutterWidth={gutterWidth}
+                  />
+                ) : (
+                  <div className="flex h-full items-center px-3">
+                    <div className="h-2.5 w-1/3 animate-pulse-subtle rounded bg-surface-2" />
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const Row = memo(function Row({
+  row,
+  selected,
+  onSelect,
+  highlightRegex,
+  gutterWidth,
+}: {
+  row: RowData;
+  selected: boolean;
+  onSelect: (lineNo: number) => void;
+  highlightRegex: RegExp | null;
+  gutterWidth: number;
+}) {
+  const levelClass = row.level ? (LEVEL_STYLES[row.level] ?? 'bg-slate-800 text-slate-300') : '';
+  const bar = row.level ? LEVEL_BAR[row.level] : undefined;
+
+  let content: React.ReactNode = row.text;
+  if (highlightRegex && row.text) {
+    const parts = row.text.split(highlightRegex);
+    if (parts.length > 1) {
+      content = parts.map((part, i) => (i % 2 === 1 ? <mark key={i}>{part}</mark> : part));
+    }
+  }
+
+  return (
+    <div
+      onClick={() => onSelect(row.lineNo)}
+      className={`row-text flex h-full cursor-pointer items-center gap-2 border-l-2 pr-3 font-mono text-[13px] leading-6 ${
+        selected
+          ? 'border-sky-400 bg-sky-950/60'
+          : `${bar ? `border-transparent` : 'border-transparent'} hover:bg-surface-1`
+      }`}
+    >
+      <span
+        className="shrink-0 select-none text-right text-[11px] text-gray-600"
+        style={{ width: `${gutterWidth}ch` }}
+      >
+        {row.lineNo + 1}
+      </span>
+      {bar && !selected && <span className={`h-3.5 w-0.5 shrink-0 rounded ${bar}`} />}
+      <span className="shrink-0 whitespace-nowrap text-xs text-gray-500">{formatTs(row.ts)}</span>
+      {row.level && (
+        <span
+          className={`w-12 shrink-0 rounded px-1 text-center text-[10px] font-semibold leading-4 ${levelClass}`}
+        >
+          {row.level}
+        </span>
+      )}
+      <span className="min-w-0 flex-1 truncate whitespace-pre text-gray-200">
+        {content}
+        {row.truncated && <span className="text-gray-500"> … (truncated — open details)</span>}
+      </span>
+    </div>
+  );
+});

@@ -1,0 +1,219 @@
+// TraceBox desktop shell (Electron main process).
+//
+// Architecture: the unchanged TraceBox HTTP backend runs in a utilityProcess
+// (Electron's Node child process) on an ephemeral 127.0.0.1 port; the
+// BrowserWindow loads the UI from it. File paths arriving via CLI arguments,
+// "Open with TraceBox", second instances, or drag-and-drop are forwarded to
+// the renderer, which opens them through the regular HTTP API.
+const { app, BrowserWindow, dialog, ipcMain, utilityProcess, Menu } = require('electron');
+const path = require('node:path');
+const fs = require('node:fs');
+
+const SMOKE = process.argv.includes('--smoke');
+
+let mainWindow = null;
+let serverProcess = null;
+let serverPort = null;
+let rendererReady = false;
+const pendingOpenPaths = [];
+
+// ---------------------------------------------------------------------------
+// Single instance: a second launch (e.g. double-clicking another .log file)
+// forwards its file argument to the running window.
+
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
+} else {
+  app.on('second-instance', (_event, argv) => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+    for (const file of extractFileArgs(argv)) queueOpenPath(file);
+  });
+
+  // macOS "open with" events (harmless on Windows)
+  app.on('open-file', (event, filePath) => {
+    event.preventDefault();
+    queueOpenPath(filePath);
+  });
+
+  void app.whenReady().then(start);
+}
+
+/** File paths among CLI arguments (skips the executable, flags, and non-files). */
+function extractFileArgs(argv) {
+  return argv.slice(1).filter((arg) => {
+    if (arg.startsWith('-')) return false;
+    try {
+      return fs.statSync(arg).isFile();
+    } catch {
+      return false;
+    }
+  });
+}
+
+function queueOpenPath(filePath) {
+  const resolved = path.resolve(filePath);
+  if (rendererReady && mainWindow) {
+    mainWindow.webContents.send('tracebox:open-path', resolved);
+  } else {
+    pendingOpenPaths.push(resolved);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Backend lifecycle
+
+/**
+ * node:sqlite is unflagged in newer Node lines but still behind
+ * --experimental-sqlite in others; Electron pins its own Node, so probe the
+ * runtime instead of assuming.
+ */
+function sqliteExecArgv() {
+  try {
+    require('node:sqlite');
+    return [];
+  } catch {
+    return ['--experimental-sqlite'];
+  }
+}
+
+function startServer() {
+  return new Promise((resolve, reject) => {
+    const entry = path.join(__dirname, '..', 'dist-electron', 'server.cjs');
+    const distDir = path.join(__dirname, '..', 'dist');
+    serverProcess = utilityProcess.fork(entry, [], {
+      stdio: 'pipe',
+      execArgv: sqliteExecArgv(),
+      env: { ...process.env, TRACEBOX_DIST: distDir },
+      serviceName: 'tracebox-server',
+    });
+    serverProcess.stdout?.on('data', (d) => console.log(`[server] ${d}`.trimEnd()));
+    serverProcess.stderr?.on('data', (d) => console.error(`[server] ${d}`.trimEnd()));
+
+    const timeout = setTimeout(() => reject(new Error('Backend did not start within 15s')), 15_000);
+    serverProcess.on('message', (msg) => {
+      if (msg && msg.type === 'ready') {
+        clearTimeout(timeout);
+        serverPort = msg.port;
+        resolve(msg.port);
+      } else if (msg && msg.type === 'error') {
+        clearTimeout(timeout);
+        reject(new Error(msg.message));
+      }
+    });
+    serverProcess.on('exit', (code) => {
+      serverProcess = null;
+      if (!app.isQuiting && code !== 0) {
+        dialog.showErrorBox('TraceBox', `The log engine stopped unexpectedly (exit code ${code}).`);
+        app.quit();
+      }
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
+
+function createWindow(port) {
+  mainWindow = new BrowserWindow({
+    width: 1500,
+    height: 950,
+    minWidth: 900,
+    minHeight: 600,
+    backgroundColor: '#0b1018',
+    autoHideMenuBar: true,
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+    },
+  });
+  mainWindow.once('ready-to-show', () => mainWindow.show());
+  mainWindow.webContents.on('did-finish-load', () => {
+    rendererReady = true;
+    for (const p of pendingOpenPaths.splice(0)) {
+      mainWindow.webContents.send('tracebox:open-path', p);
+    }
+  });
+  // keep target=_blank/external links out of the app window
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  void mainWindow.loadURL(`http://127.0.0.1:${port}`);
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+  });
+}
+
+async function start() {
+  app.setAppUserModelId('io.tracebox.app');
+  Menu.setApplicationMenu(null);
+
+  ipcMain.handle('tracebox:open-dialog', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Open log file',
+      properties: ['openFile'],
+      filters: [
+        { name: 'Log files', extensions: ['log', 'txt', 'json', 'jsonl', 'ndjson', 'out'] },
+        { name: 'All files', extensions: ['*'] },
+      ],
+    });
+    return result.canceled ? null : result.filePaths[0];
+  });
+
+  try {
+    const port = await startServer();
+    for (const file of extractFileArgs(process.argv)) queueOpenPath(file);
+    createWindow(port);
+    if (SMOKE) await runSmokeTest(port);
+  } catch (err) {
+    dialog.showErrorBox('TraceBox failed to start', String(err && err.message ? err.message : err));
+    app.quit();
+  }
+}
+
+app.on('window-all-closed', () => {
+  app.quit();
+});
+
+app.on('before-quit', () => {
+  app.isQuiting = true;
+  if (serverProcess) {
+    try {
+      serverProcess.postMessage({ type: 'shutdown' });
+    } catch {}
+    const proc = serverProcess;
+    setTimeout(() => {
+      try {
+        proc.kill();
+      } catch {}
+    }, 2000);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// --smoke: automated self-check used by CI/agents. Verifies the backend
+// answers, captures a screenshot of the window, prints JSON, then exits.
+
+async function runSmokeTest(port) {
+  const results = { port, health: null, screenshot: null, errors: [] };
+  mainWindow.webContents.on('console-message', (_e, level, message) => {
+    if (level >= 3) results.errors.push(message);
+  });
+  await new Promise((r) => setTimeout(r, 4000));
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/api/health`);
+    results.health = (await res.json()).ok === true;
+  } catch (err) {
+    results.health = String(err);
+  }
+  try {
+    const image = await mainWindow.webContents.capturePage();
+    const out = path.join(app.getPath('temp'), 'tracebox-electron-smoke.png');
+    fs.writeFileSync(out, image.toPNG());
+    results.screenshot = out;
+  } catch (err) {
+    results.errors.push(`screenshot: ${err.message}`);
+  }
+  console.log(`SMOKE_RESULT ${JSON.stringify(results)}`);
+  app.quit();
+}

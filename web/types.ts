@@ -1,0 +1,58 @@
+export interface RowData {
+  lineNo: number;
+  text: string;
+  ts: number | null;
+  level: string | null;
+  truncated: boolean;
+}
+
+export interface SessionStatus {
+  id: string;
+  file: string;
+  fileSize: number;
+  phase: 'indexing' | 'finalizing' | 'ready' | 'error';
+  bytesIndexed: number;
+  lineCount: number;
+  format: string;
+  reusedIndex: boolean;
+  error: string | null;
+  tail: boolean;
+  levelCounts: Record<string, number>;
+  fieldNames: { key: string; count: number }[];
+  search: { query: string; total: number; durationMs: number } | null;
+}
+
+export interface HistogramData {
+  minTs: number;
+  maxTs: number;
+  bucketMs: number;
+  buckets: { start: number; counts: Record<string, number>; total: number }[];
+  withoutTs: number;
+}
+
+export interface DirEntry {
+  name: string;
+  path: string;
+  dir: boolean;
+  size: number;
+  mtimeMs: number;
+}
+
+export interface BrowseResult {
+  path: string;
+  parent: string | null;
+  entries: DirEntry[];
+}
+
+export interface LineDetail {
+  lineNo: number;
+  raw: string;
+  ts: number | null;
+  level: string | null;
+  fields: { key: string; value: string }[];
+}
+
+export interface RecentFile {
+  path: string;
+  openedAt: number;
+}

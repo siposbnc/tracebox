@@ -1,0 +1,45 @@
+appId: io.tracebox.app
+productName: TraceBox
+copyright: TraceBox
+
+directories:
+  output: release
+  buildResources: build
+
+# The renderer is fully bundled by Vite and the backend by esbuild —
+# no node_modules are shipped.
+files:
+  - dist/**/*
+  - dist-electron/**/*
+  - electron/main.cjs
+  - electron/preload.cjs
+
+asar: true
+
+win:
+  target:
+    - nsis
+  icon: build/icon.ico
+  # Registers TraceBox as an openable application for these types
+  # (adds it to the "Open with" list and enables double-click open).
+  fileAssociations:
+    - ext: log
+      name: Log File
+      description: Log file
+      role: Viewer
+    - ext: jsonl
+      name: JSON Lines Log
+      description: JSON Lines log file
+      role: Viewer
+    - ext: ndjson
+      name: NDJSON Log
+      description: Newline-delimited JSON log file
+      role: Viewer
+
+nsis:
+  oneClick: true
+  perMachine: false
+  runAfterFinish: true
+  deleteAppDataOnUninstall: false
+  # adds the explicit right-click "Open with TraceBox" verbs
+  include: build/installer.nsh
