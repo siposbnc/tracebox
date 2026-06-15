@@ -9,6 +9,7 @@ import WhatsNew from './components/WhatsNew';
 import { Logo } from './components/Logo';
 import { patchNotes } from './patchnotes';
 import { compareVersions } from './version';
+import { matchCommand } from './keybindings';
 
 const LAST_SEEN_VERSION_KEY = 'tracebox.lastSeenVersion';
 
@@ -39,6 +40,25 @@ export default function App() {
     if (lastSeen && compareVersions(current, lastSeen) > 0) setWhatsNewOpen(true);
     localStorage.setItem(LAST_SEEN_VERSION_KEY, current);
   }, []);
+
+  // cycle through open file tabs (Ctrl+Tab / Ctrl+Shift+Tab, rebindable)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      const cmd = matchCommand(e);
+      if (cmd !== 'nextTab' && cmd !== 'prevTab') return;
+      e.preventDefault();
+      if (sessions.length < 2) return;
+      setActiveId((cur) => {
+        const idx = Math.max(0, sessions.findIndex((s) => s.id === cur));
+        const n = sessions.length;
+        const next = cmd === 'nextTab' ? (idx + 1) % n : (idx - 1 + n) % n;
+        return sessions[next].id;
+      });
+      setWhatsNewOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [sessions]);
 
   const openFile = useCallback(async (path: string) => {
     const status = await api.openFile(path);
