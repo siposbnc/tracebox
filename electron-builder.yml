@@ -20,6 +20,9 @@ win:
   target:
     - nsis
   icon: build/icon.ico
+  # Code signing is driven by the CSC_LINK / CSC_KEY_PASSWORD environment
+  # variables (no secrets stored here). If unset, the build is unsigned.
+  # See SIGNING.md for local self-signed testing and using a real certificate.
   # Registers TraceBox as an openable application for these types
   # (adds it to the "Open with" list and enables double-click open).
   fileAssociations:

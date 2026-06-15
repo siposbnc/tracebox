@@ -4,3 +4,9 @@ dist-electron/
 release/
 *.log
 *.stackdump
+
+# Code signing certificates / secrets — never commit
+certs/
+*.pfx
+*.p12
+*.b64.txt
