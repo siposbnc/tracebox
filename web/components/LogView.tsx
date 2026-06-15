@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api';
+import { getBookmarks, toggleBookmark } from '../bookmarks';
 import type { HistogramData, SessionStatus } from '../types';
 import SearchBar from './SearchBar';
 import LogList from './LogList';
@@ -170,17 +171,54 @@ export default function LogView({
     [runSearch, highlightMode],
   );
 
-  // Ctrl/Cmd+G opens the go-to-line prompt
+  const toggleHighlight = useCallback(() => {
+    setHighlightMode((v) => !v);
+    setEpoch((e) => e + 1);
+  }, []);
+
+  // jump to the next/previous bookmarked line relative to the current selection
+  // (wrapping around the ends), so F2 / Shift+F2 cycle through them.
+  const jumpBookmark = useCallback(
+    (dir: 1 | -1) => {
+      const marks = getBookmarks(statusRef.current.file);
+      if (marks.length === 0) return;
+      const cur = selected;
+      let target: number;
+      if (dir === 1) {
+        target = marks.find((m) => cur === null || m > cur) ?? marks[0];
+      } else {
+        const before = marks.filter((m) => cur === null || m < cur);
+        target = before.length > 0 ? before[before.length - 1] : marks[marks.length - 1];
+      }
+      void jumpToLine(target);
+    },
+    [selected, jumpToLine],
+  );
+
+  // navigation hotkeys: Ctrl/Cmd+G go to line, Ctrl/Cmd+B toggle bookmark on the
+  // selected line, F2 / Shift+F2 next/previous bookmark, Ctrl/Cmd+H highlight mode
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if ((e.ctrlKey || e.metaKey) && (e.key === 'g' || e.key === 'G')) {
+      const mod = e.ctrlKey || e.metaKey;
+      const key = e.key.toLowerCase();
+      if (mod && key === 'g') {
         e.preventDefault();
         setGotoOpen(true);
+      } else if (mod && key === 'b') {
+        if (selected === null) return;
+        e.preventDefault();
+        toggleBookmark(statusRef.current.file, selected);
+      } else if (mod && key === 'h') {
+        e.preventDefault();
+        toggleHighlight();
+      } else if (e.key === 'F2') {
+        e.preventDefault();
+        jumpBookmark(e.shiftKey ? -1 : 1);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [selected, toggleHighlight, jumpBookmark]);
 
   // highlight terms extracted from the active query
   const highlightTerms = useMemo(() => {
@@ -228,10 +266,7 @@ export default function LogView({
         facetsOpen={facetsOpen}
         onToggleFacets={() => setFacetsOpen((v) => !v)}
         highlightMode={highlightMode}
-        onToggleHighlight={() => {
-          setHighlightMode((v) => !v);
-          setEpoch((e) => e + 1);
-        }}
+        onToggleHighlight={toggleHighlight}
         file={status.file}
         onJumpToLine={(lineNo) => void jumpToLine(lineNo)}
         onGoToLine={() => setGotoOpen(true)}

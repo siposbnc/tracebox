@@ -66,7 +66,7 @@ export default function BookmarksMenu({
           <div className="max-h-[50vh] overflow-y-auto p-1">
             {marks.length === 0 ? (
               <div className="px-2 py-2 text-xs text-gray-600">
-                No bookmarks yet. Click the flag on a line to add one.
+                No bookmarks yet. Click the flag on a line, or press Ctrl+B on a selected line.
               </div>
             ) : (
               marks.map((lineNo) => (
@@ -94,6 +94,11 @@ export default function BookmarksMenu({
               ))
             )}
           </div>
+          {marks.length > 0 && (
+            <div className="border-t border-edge/60 px-2 py-1 text-[10px] text-gray-600">
+              F2 / Shift+F2 to cycle · Ctrl+B to toggle
+            </div>
+          )}
         </div>
       )}
     </div>
