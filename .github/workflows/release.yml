@@ -38,11 +38,20 @@ jobs:
             exit 1
           fi
 
+      # Pre-create the draft so electron-builder reuses it. Without this, its
+      # parallel artifact uploads can each create a draft, splitting the assets
+      # (installer / blockmap / latest.yml) across duplicate releases.
+      - name: Create draft release
+        shell: bash
+        run: gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --draft --title "$GITHUB_REF_NAME" --notes "Release $GITHUB_REF_NAME"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build and publish installer
         run: npm run release
         env:
           # Provided automatically by GitHub Actions; lets electron-builder
-          # create the release and upload assets.
+          # reuse the draft above and upload assets.
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Optional code signing — see SIGNING.md. Absent secrets => unsigned build.
           CSC_LINK: ${{ secrets.CSC_LINK }}
