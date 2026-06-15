@@ -284,6 +284,28 @@ test('multi-line grouping folds stack traces into one record', async () => {
   assert.match(detail.record.text, /Caused by/);
 });
 
+test('nextMatch walks occurrences with wrap-around', async () => {
+  const file = makeLogFile('nextmatch.log', appLogLines(50));
+  const s = await openAndIndex(file);
+  s.setSearch('level:ERROR'); // hits at line_no 4, 10, 16, 22, 28, 34, 40, 46
+
+  // forward from the top lands on the first hit, then the next
+  assert.equal(s.nextMatch(-1, 1, false)?.lineNo, 4);
+  assert.equal(s.nextMatch(4, 1, false)?.lineNo, 10);
+  // ungrouped view index equals the physical line number
+  assert.equal(s.nextMatch(4, 1, false)?.viewIndex, 10);
+  // forward past the last hit wraps to the first
+  assert.equal(s.nextMatch(46, 1, false)?.lineNo, 4);
+  // backward from the end and with wrap
+  assert.equal(s.nextMatch(50, -1, false)?.lineNo, 46);
+  assert.equal(s.nextMatch(10, -1, false)?.lineNo, 4);
+  assert.equal(s.nextMatch(4, -1, false)?.lineNo, 46);
+
+  // no active search → null
+  s.setSearch('');
+  assert.equal(s.nextMatch(0, 1, false), null);
+});
+
 test('context returns surrounding lines and marks the hits in the window', async () => {
   const file = makeLogFile('context.log', appLogLines(50));
   const s = await openAndIndex(file);

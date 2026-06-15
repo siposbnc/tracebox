@@ -4,7 +4,7 @@ import { type QueryNode } from './queryParser.ts';
 import { compileQuery } from './queryCompiler.ts';
 
 /** Bumped when the on-disk schema changes so stale cached indexes are rebuilt. */
-export const SCHEMA_VERSION = '2';
+export const SCHEMA_VERSION = '3';
 
 export interface LineMeta {
   lineNo: number;
@@ -100,6 +100,7 @@ export class IndexStore {
       CREATE TABLE fields(line_no INTEGER NOT NULL, key TEXT NOT NULL, value TEXT COLLATE NOCASE, num REAL);
       CREATE VIRTUAL TABLE fts USING fts5(content, content='', contentless_delete=1);
       CREATE TABLE results(seq INTEGER PRIMARY KEY AUTOINCREMENT, line_no INTEGER NOT NULL);
+      CREATE INDEX idx_results_line ON results(line_no);
       CREATE TABLE records(rec_no INTEGER PRIMARY KEY AUTOINCREMENT, head INTEGER NOT NULL, span INTEGER NOT NULL);
       CREATE TABLE checkpoints(block INTEGER PRIMARY KEY, data BLOB NOT NULL);
     `);
@@ -303,6 +304,32 @@ export class IndexStore {
       | { span: number }
       | undefined;
     return row?.span ?? 1;
+  }
+
+  /** Zero-based position of a record (by its head) in file order. */
+  recordIndexOf(head: number): number {
+    const row = this.db.prepare(`SELECT rec_no FROM records WHERE head = ?`).get(head) as
+      | { rec_no: number }
+      | undefined;
+    return row ? row.rec_no - 1 : 0;
+  }
+
+  /**
+   * The next (dir = 1) or previous (dir = -1) matching line relative to `after`,
+   * among the current result set, wrapping around the ends. Null if no results.
+   */
+  nextResult(after: number, dir: 1 | -1): number | null {
+    const stmt =
+      dir > 0
+        ? this.db.prepare(`SELECT MIN(line_no) AS n FROM results WHERE line_no > ?`)
+        : this.db.prepare(`SELECT MAX(line_no) AS n FROM results WHERE line_no < ?`);
+    const row = stmt.get(after) as { n: number | null };
+    if (row.n !== null) return row.n;
+    // wrap: first match for forward, last match for backward
+    const wrap = this.db
+      .prepare(`SELECT ${dir > 0 ? 'MIN' : 'MAX'}(line_no) AS n FROM results`)
+      .get() as { n: number | null };
+    return wrap.n;
   }
 
   /** Iterate all result line numbers in order (for export). */

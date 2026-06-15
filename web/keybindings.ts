@@ -16,9 +16,17 @@ export interface Command {
 export const COMMANDS: Command[] = [
   { id: 'focusSearch', label: 'Focus search', defaultChord: 'Mod+F' },
   { id: 'goToLine', label: 'Go to line', defaultChord: 'Mod+G' },
+  { id: 'gotoStart', label: 'Jump to file start', defaultChord: 'Home' },
+  { id: 'gotoEnd', label: 'Jump to file end', defaultChord: 'End' },
+  { id: 'pageDown', label: 'Jump down a page', defaultChord: 'PageDown' },
+  { id: 'pageUp', label: 'Jump up a page', defaultChord: 'PageUp' },
+  { id: 'pageDownBig', label: 'Jump down a big page', defaultChord: 'Mod+PageDown' },
+  { id: 'pageUpBig', label: 'Jump up a big page', defaultChord: 'Mod+PageUp' },
   { id: 'toggleBookmark', label: 'Toggle bookmark on selected line', defaultChord: 'Mod+B' },
   { id: 'nextBookmark', label: 'Next bookmark', defaultChord: 'F2' },
   { id: 'prevBookmark', label: 'Previous bookmark', defaultChord: 'Shift+F2' },
+  { id: 'nextMatch', label: 'Next match (highlight mode)', defaultChord: 'F3' },
+  { id: 'prevMatch', label: 'Previous match (highlight mode)', defaultChord: 'Shift+F3' },
   { id: 'toggleHighlight', label: 'Highlight matches in place', defaultChord: 'Mod+H' },
   { id: 'showShortcuts', label: 'Show keyboard shortcuts', defaultChord: 'Mod+/' },
 ];

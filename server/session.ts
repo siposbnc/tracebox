@@ -434,6 +434,19 @@ export class LogSession extends EventEmitter {
     return this.store.facet(field, this.hasSearch, limit);
   }
 
+  /**
+   * Next/previous matching line relative to `after` (for "find next" in highlight
+   * mode), plus its zero-based position in the current browse view so the UI can
+   * scroll to it. Wraps around. Null when there is no active search.
+   */
+  nextMatch(after: number, dir: 1 | -1, grouped: boolean): { lineNo: number; viewIndex: number } | null {
+    if (!this.hasSearch) return null;
+    const lineNo = this.store.nextResult(after, dir);
+    if (lineNo === null) return null;
+    const viewIndex = grouped ? this.store.recordIndexOf(lineNo) : lineNo;
+    return { lineNo, viewIndex };
+  }
+
   // ---------------------------------------------------------------------------
   // Tail (follow appended data)
 

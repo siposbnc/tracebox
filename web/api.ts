@@ -57,6 +57,10 @@ export const api = {
       `/api/sessions/${id}/context?line=${line}&before=${before}&after=${after}`,
     ),
   histogram: (id: string) => request<HistogramData | null>(`/api/sessions/${id}/histogram`),
+  nextMatch: (id: string, after: number, dir: 'next' | 'prev', grouped: boolean) =>
+    request<{ lineNo: number; viewIndex: number } | null>(
+      `/api/sessions/${id}/next-match?after=${after}&dir=${dir}${grouped ? '&grouped=1' : ''}`,
+    ),
   facet: (id: string, field: string, limit = 25) =>
     request<FacetResult>(`/api/sessions/${id}/facet?field=${encodeURIComponent(field)}&limit=${limit}`),
   setTail: (id: string, on: boolean) =>

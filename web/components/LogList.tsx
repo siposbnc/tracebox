@@ -1,8 +1,9 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { api, formatTs } from '../api';
-import { useOrder, useTz, type Tz } from '../settings';
+import { useOrder, useTz, getPageJump, getPageJumpBig, type Tz } from '../settings';
 import { useBookmarks, toggleBookmark } from '../bookmarks';
+import { matchCommand } from '../keybindings';
 import type { RowData } from '../types';
 
 const BLOCK = 256;
@@ -152,35 +153,106 @@ export default function LogList({
     return block?.rows[index % BLOCK] ?? null;
   };
 
-  // keyboard navigation: move by view position (line numbers are not
-  // contiguous when a search filter is active)
+  const viewIndexOf = (lineNo: number): number | null => {
+    for (const [blockIdx, block] of blocksRef.current) {
+      const i = block.rows.findIndex((r) => r.lineNo === lineNo);
+      if (i >= 0) return blockIdx * BLOCK + i;
+    }
+    return null;
+  };
+
+  // Scroll to a display position and select the row there. The row may not be
+  // loaded yet, so remember the target and resolve it once its block arrives.
+  const pendingSelectRef = useRef<number | null>(null);
+  const selectAtViewIndex = (target: number, align: 'auto' | 'center' | 'start' | 'end' = 'center'): void => {
+    if (total === 0) return;
+    const t = Math.max(0, Math.min(total - 1, target));
+    virtualizer.scrollToIndex(t, { align });
+    const row = rowAt(t);
+    if (row) {
+      onSelect(row.lineNo);
+      pendingSelectRef.current = null;
+    } else {
+      pendingSelectRef.current = t;
+    }
+  };
+
+  // resolve a pending selection once the target row's block has loaded
+  useEffect(() => {
+    if (pendingSelectRef.current === null) return;
+    const row = rowAt(pendingSelectRef.current);
+    if (row) {
+      onSelect(row.lineNo);
+      pendingSelectRef.current = null;
+    }
+  });
+
+  // keyboard navigation. Arrows are fixed; the rest resolve through the
+  // rebindable keybinding store. Page/Home/End move by display position;
+  // F3 / Shift+F3 jump between matches when highlight mode is on.
   useEffect(() => {
     const el = parentRef.current;
     if (!el) return;
-    const viewIndexOf = (lineNo: number): number | null => {
-      for (const [blockIdx, block] of blocksRef.current) {
-        const i = block.rows.findIndex((r) => r.lineNo === lineNo);
-        if (i >= 0) return blockIdx * BLOCK + i;
+    const anchor = (): number => {
+      if (selected !== null) {
+        const idx = viewIndexOf(selected);
+        if (idx !== null) return idx;
       }
-      return null;
+      return virtualizer.getVirtualItems()[0]?.index ?? 0;
     };
     const onKey = (e: KeyboardEvent): void => {
-      if (selected === null) return;
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-        e.preventDefault();
+        if (selected === null) return;
         const cur = viewIndexOf(selected);
         if (cur === null) return;
-        const next = Math.max(0, Math.min(total - 1, cur + (e.key === 'ArrowDown' ? 1 : -1)));
-        const nextRow = rowAt(next);
-        if (nextRow) {
-          onSelect(nextRow.lineNo);
-          virtualizer.scrollToIndex(next, { align: 'auto' });
+        e.preventDefault();
+        selectAtViewIndex(cur + (e.key === 'ArrowDown' ? 1 : -1), 'auto');
+        return;
+      }
+      switch (matchCommand(e)) {
+        case 'pageDown':
+          e.preventDefault();
+          selectAtViewIndex(anchor() + getPageJump());
+          break;
+        case 'pageUp':
+          e.preventDefault();
+          selectAtViewIndex(anchor() - getPageJump());
+          break;
+        case 'pageDownBig':
+          e.preventDefault();
+          selectAtViewIndex(anchor() + getPageJumpBig());
+          break;
+        case 'pageUpBig':
+          e.preventDefault();
+          selectAtViewIndex(anchor() - getPageJumpBig());
+          break;
+        case 'gotoStart':
+          e.preventDefault();
+          selectAtViewIndex(orderRef.current === 'desc' ? total - 1 : 0, 'start');
+          break;
+        case 'gotoEnd':
+          e.preventDefault();
+          selectAtViewIndex(orderRef.current === 'desc' ? 0 : total - 1, 'end');
+          break;
+        case 'nextMatch':
+        case 'prevMatch': {
+          if (!highlight) return;
+          e.preventDefault();
+          const dir = matchCommand(e) === 'prevMatch' ? 'prev' : 'next';
+          const after = selected ?? (dir === 'next' ? -1 : total);
+          void api.nextMatch(sessionId, after, dir, grouped).then((m) => {
+            if (!m) return;
+            const display = orderRef.current === 'desc' ? total - 1 - m.viewIndex : m.viewIndex;
+            virtualizer.scrollToIndex(Math.max(0, Math.min(total - 1, display)), { align: 'center' });
+            onSelect(m.lineNo);
+          });
+          break;
         }
       }
     };
     el.addEventListener('keydown', onKey);
     return () => el.removeEventListener('keydown', onKey);
-  }, [selected, total, onSelect, virtualizer]);
+  }, [selected, total, onSelect, virtualizer, highlight, grouped, sessionId]);
 
   const highlightRegex = useMemo(() => {
     if (highlightTerms.length === 0) return null;

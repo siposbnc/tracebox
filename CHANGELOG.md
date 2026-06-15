@@ -14,6 +14,12 @@ date and start a fresh `Unreleased` section.
 
 ### Added
 
+- Line-jump navigation (all rebindable): Page Down / Page Up move the selection
+  by a configurable number of rows (default 100), Ctrl/Cmd + Page Down / Up move
+  a bigger configurable amount (default 1000), and Home / End jump to the start /
+  end of the file and select the first / last line.
+- Find next/previous match in highlight mode: F3 / Shift+F3 jump to and select
+  the next / previous matching line (rebindable).
 - Multi-line grouping (toolbar toggle, on by default): stack traces and wrapped
   messages fold into their parent log entry, so each logical event is one row
   with a "+N" badge; opening it shows the full multi-line record. Search treats
@@ -45,6 +51,11 @@ date and start a fresh `Unreleased` section.
   the host's local timezone (rows, detail panel, histogram, and context peek).
   The active zone is shown explicitly (e.g. `UTC`, `GMT+2`) so a timestamp is
   never ambiguous. The choice persists across files and sessions.
+
+### Fixed
+
+- Default context-peek window is 5 lines again (it had become 0 when the setting
+  was unset, because the stored value parsed as 0).
 
 ## [1.2.0] - 2026-06-15
 

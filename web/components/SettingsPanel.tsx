@@ -8,6 +8,10 @@ import {
   setContextLines,
   useHistogramDefault,
   setHistogramDefault,
+  usePageJump,
+  setPageJump,
+  usePageJumpBig,
+  setPageJumpBig,
 } from '../settings';
 import { tzAbbr } from '../api';
 
@@ -61,6 +65,8 @@ export default function SettingsPanel({
   const tz = useTz();
   const contextLines = useContextLines();
   const histogramDefault = useHistogramDefault();
+  const pageJump = usePageJump();
+  const pageJumpBig = usePageJumpBig();
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -113,6 +119,26 @@ export default function SettingsPanel({
               max={1000}
               value={contextLines}
               onChange={(e) => setContextLines(Number(e.target.value))}
+              className="w-20 rounded border border-edge bg-surface-0 px-2 py-1 text-right font-mono text-sm text-gray-100 outline-none focus:border-sky-600"
+            />
+          </Row>
+
+          <Row label="Page jump" hint="Rows moved by Page Up / Page Down">
+            <input
+              type="number"
+              min={1}
+              value={pageJump}
+              onChange={(e) => setPageJump(Number(e.target.value))}
+              className="w-20 rounded border border-edge bg-surface-0 px-2 py-1 text-right font-mono text-sm text-gray-100 outline-none focus:border-sky-600"
+            />
+          </Row>
+
+          <Row label="Big page jump" hint="Rows moved by Ctrl/Cmd + Page Up / Down">
+            <input
+              type="number"
+              min={1}
+              value={pageJumpBig}
+              onChange={(e) => setPageJumpBig(Number(e.target.value))}
               className="w-20 rounded border border-edge bg-surface-0 px-2 py-1 text-right font-mono text-sm text-gray-100 outline-none focus:border-sky-600"
             />
           </Row>
