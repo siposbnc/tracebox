@@ -78,6 +78,21 @@ issue / ask when you have the token in hand and we'll wire it up — the exact
 steps depend on the CA's signing client (e.g. Certum SimplySign, SSL.com
 eSigner cloud signing).
 
+## Signing and auto-updates
+
+The desktop app auto-updates via `electron-updater` (see the README). On Windows,
+`electron-updater` enforces **publisher consistency**: if an installed build is
+code-signed, it will only install an update signed by the **same publisher name**.
+Practical implications:
+
+- **Unsigned → unsigned** updates work fine (no signature check). This is the
+  current default, including CI builds without the signing secrets.
+- Once you start signing, **keep signing every release with the same
+  certificate**. Going signed → unsigned, or switching to a certificate with a
+  different subject/publisher name, will cause the updater to reject the update.
+- So adopt signing at a clean version boundary and apply it consistently from
+  then on.
+
 ## CI signing (GitHub Actions)
 
 When you set up automated release builds, store the certificate as repository

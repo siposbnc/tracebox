@@ -4,6 +4,7 @@ import type { SessionStatus } from './types';
 import LogView from './components/LogView';
 import OpenFileDialog from './components/OpenFileDialog';
 import WelcomeScreen from './components/WelcomeScreen';
+import UpdateBanner from './components/UpdateBanner';
 import { Logo } from './components/Logo';
 
 export default function App() {
@@ -94,6 +95,7 @@ export default function App() {
 
   return (
     <div className="flex h-full flex-col">
+      <UpdateBanner />
       {sessions.length > 0 && (
         <div className="flex items-stretch gap-1 border-b border-edge bg-surface-1 px-2 pt-1.5">
           <div className="mr-1 flex items-center gap-2 px-2 pb-1.5">

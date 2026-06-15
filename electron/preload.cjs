@@ -12,4 +12,10 @@ contextBridge.exposeInMainWorld('tracebox', {
   onOpenPath: (callback) => {
     ipcRenderer.on('tracebox:open-path', (_event, filePath) => callback(filePath));
   },
+  /** Auto-update lifecycle: available → downloading → ready (or error). */
+  onUpdateStatus: (callback) => {
+    ipcRenderer.on('tracebox:update', (_event, status) => callback(status));
+  },
+  /** Quit and install a downloaded update. */
+  installUpdate: () => ipcRenderer.send('tracebox:install-update'),
 });

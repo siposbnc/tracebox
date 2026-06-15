@@ -79,6 +79,24 @@ normal HTTP API. The backend is bundled to a single `dist-electron/server.cjs`
 by esbuild at package time. Nothing in `server/` or `web/` is desktop-specific;
 the shell lives entirely in `electron/`.
 
+### Automatic updates
+
+The desktop app updates itself. On launch (and every 6 hours) it checks the
+GitHub releases for a newer version, downloads it in the background, and shows an
+in-app banner with a one-click **Restart & update** — users never re-download or
+reinstall manually. This is wired through `electron-updater` and the `publish`
+config in `electron-builder.yml`; each release built by the
+[release workflow](.github/workflows/release.yml) ships the `latest.yml` and
+blockmap that the updater needs.
+
+Notes:
+
+- Auto-update only runs in the packaged (installed) app, not in development.
+- A user must already be on a build that contains the updater for it to take
+  effect; the first such release is installed manually, and every release after
+  it updates automatically.
+- Keep signing consistent across releases — see `SIGNING.md`.
+
 ## Running as a local web app
 
 TraceBox also runs as a plain local web server (useful for headless or remote use).
