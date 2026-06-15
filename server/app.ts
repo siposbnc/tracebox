@@ -32,7 +32,7 @@ export function createApp(distDir: string): TraceBoxApp {
   // ---------------------------------------------------------------------------
   // Filesystem browsing
 
-  router.add('GET', '/api/health', (_req, res) => sendJson(res, 200, { ok: true, version: '1.1.0' }));
+  router.add('GET', '/api/health', (_req, res) => sendJson(res, 200, { ok: true, version: '1.2.0' }));
 
   router.add('GET', '/api/roots', (_req, res) => {
     sendJson(res, 200, { roots: listRoots(), home: homedir() });
@@ -140,6 +140,14 @@ export function createApp(distDir: string): TraceBoxApp {
 
   router.add('GET', '/api/sessions/:id/histogram', (_req, res, params) => {
     sendJson(res, 200, getSession(params.id).histogram());
+  });
+
+  router.add('GET', '/api/sessions/:id/context', async (_req, res, params, query) => {
+    const s = getSession(params.id);
+    const line = Math.max(0, Number(query.get('line') ?? 0));
+    const before = Number(query.get('before') ?? 3);
+    const after = Number(query.get('after') ?? 3);
+    sendJson(res, 200, await s.getContext(line, before, after));
   });
 
   router.add('POST', '/api/sessions/:id/refresh', async (_req, res, params) => {

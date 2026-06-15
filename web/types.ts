@@ -44,6 +44,12 @@ export interface BrowseResult {
   entries: DirEntry[];
 }
 
+export interface ContextResult {
+  center: number;
+  rows: RowData[];
+  matchLines: number[];
+}
+
 export interface LineDetail {
   lineNo: number;
   raw: string;

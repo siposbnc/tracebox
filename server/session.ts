@@ -339,6 +339,29 @@ export class LogSession extends EventEmitter {
     return { lineNo, raw, ts: meta?.ts ?? null, level: meta?.level ?? null, fields };
   }
 
+  /**
+   * Surrounding lines for one line (grep -C). Returns the contiguous range
+   * [lineNo - before, lineNo + after] clamped to the file, plus which of those
+   * lines are members of the current search result set (so the UI can mark the
+   * hits within the window).
+   */
+  async getContext(
+    lineNo: number,
+    before: number,
+    after: number,
+  ): Promise<{ center: number; rows: RowData[]; matchLines: number[] }> {
+    const total = this.index.lineCount;
+    if (lineNo < 0 || lineNo >= total) return { center: lineNo, rows: [], matchLines: [] };
+    before = Math.min(Math.max(before, 0), 1000);
+    after = Math.min(Math.max(after, 0), 1000);
+    const start = Math.max(0, lineNo - before);
+    const end = Math.min(total - 1, lineNo + after);
+    const lineNos = Array.from({ length: end - start + 1 }, (_, i) => start + i);
+    const rows = await this.readRows(lineNos);
+    const matchLines = this.hasSearch ? [...this.store.matchingLines(lineNos)] : [];
+    return { center: lineNo, rows, matchLines };
+  }
+
   histogram(): ReturnType<IndexStore['histogram']> {
     return this.store.histogram(this.hasSearch);
   }

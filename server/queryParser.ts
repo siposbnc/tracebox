@@ -174,12 +174,13 @@ class Parser {
     const field = word.slice(0, colon);
     let rest = word.slice(colon + 1);
 
-    // field:"quoted phrase"
+    // field:"quoted value" — quoting lets a value contain spaces; wildcards and
+    // the field-exists shorthand still apply to the quoted text.
     if (rest === '') {
       const next = this.peek();
       if (next?.kind === 'quoted') {
         this.pos++;
-        return { type: 'field', field, op: 'eq', value: next.value };
+        return this.fieldEq(field, next.value);
       }
       throw new QuerySyntaxError(`Missing value for field "${field}"`);
     }
@@ -203,11 +204,15 @@ class Parser {
 
     if (rest === '') throw new QuerySyntaxError(`Missing value for field "${field}"`);
 
-    if (op === 'eq') {
-      if (rest === '*') return { type: 'exists', field };
-      if (rest.includes('*')) return { type: 'fieldLike', field, pattern: rest };
-    }
+    if (op === 'eq') return this.fieldEq(field, rest);
     return { type: 'field', field, op, value: rest };
+  }
+
+  /** An `eq` field predicate, routing `*` to exists and `*`-bearing values to a LIKE match. */
+  private fieldEq(field: string, value: string): QueryNode {
+    if (value === '*') return { type: 'exists', field };
+    if (value.includes('*')) return { type: 'fieldLike', field, pattern: value };
+    return { type: 'field', field, op: 'eq', value };
   }
 }
 

@@ -4,6 +4,7 @@ import type { HistogramData, SessionStatus } from '../types';
 import SearchBar from './SearchBar';
 import LogList from './LogList';
 import DetailPanel from './DetailPanel';
+import ContextPeek from './ContextPeek';
 import Histogram from './Histogram';
 import StatusBar from './StatusBar';
 
@@ -23,6 +24,8 @@ export default function LogView({
   const [epoch, setEpoch] = useState(0);
   const [total, setTotal] = useState(initial.search?.total ?? initial.lineCount);
   const [selected, setSelected] = useState<number | null>(null);
+  const [contextLine, setContextLine] = useState<number | null>(null);
+  const [pendingJump, setPendingJump] = useState<{ lineNo: number; nonce: number } | null>(null);
   const [histogram, setHistogram] = useState<HistogramData | null>(null);
   const [histogramOpen, setHistogramOpen] = useState(true);
   const [followTail, setFollowTail] = useState(initial.tail);
@@ -145,6 +148,21 @@ export default function LogView({
     }
   }, [id, refreshHistogram]);
 
+  // jump to a line in the full, unfiltered view (from the context peek): clear
+  // any active filter, select the line, and scroll the list to it.
+  const jumpToLine = useCallback(
+    async (lineNo: number) => {
+      setContextLine(null);
+      if (statusRef.current.search) {
+        setQuery('');
+        await runSearch('');
+      }
+      setSelected(lineNo);
+      setPendingJump({ lineNo, nonce: Date.now() });
+    },
+    [runSearch],
+  );
+
   // highlight terms extracted from the active query
   const highlightTerms = useMemo(() => {
     const active = status.search?.query ?? '';
@@ -185,6 +203,7 @@ export default function LogView({
         histogramOpen={histogramOpen}
         onToggleHistogram={() => setHistogramOpen((v) => !v)}
         fieldNames={status.fieldNames}
+        levelCounts={status.levelCounts}
       />
 
       {histogramOpen && histogram && histogram.buckets.length > 0 && (
@@ -200,6 +219,9 @@ export default function LogView({
             followTail={status.tail && followTail}
             selected={selected}
             onSelect={setSelected}
+            onContext={setContextLine}
+            showContext={status.search !== null}
+            scrollTo={pendingJump}
             highlightTerms={highlightTerms}
             onUserScroll={() => setFollowTail(false)}
             onScrolledToEnd={() => status.tail && setFollowTail(true)}
@@ -216,6 +238,16 @@ export default function LogView({
       </div>
 
       <StatusBar status={status} total={total} onLevelClick={(level) => submitQuery(`level:${level}`)} />
+
+      {contextLine !== null && (
+        <ContextPeek
+          sessionId={id}
+          lineNo={contextLine}
+          highlightTerms={highlightTerms}
+          onClose={() => setContextLine(null)}
+          onJumpToLine={(lineNo) => void jumpToLine(lineNo)}
+        />
+      )}
     </div>
   );
 }

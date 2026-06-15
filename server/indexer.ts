@@ -235,6 +235,17 @@ export class IndexStore {
     return out;
   }
 
+  /** Of the given lines, which are members of the current result set. */
+  matchingLines(lineNos: number[]): Set<number> {
+    const out = new Set<number>();
+    if (lineNos.length === 0) return out;
+    const rows = this.db
+      .prepare(`SELECT DISTINCT line_no FROM results WHERE line_no IN (${lineNos.map(() => '?').join(',')})`)
+      .all(...lineNos) as { line_no: number }[];
+    for (const r of rows) out.add(r.line_no);
+    return out;
+  }
+
   /** Structured fields for one line. */
   lineFields(lineNo: number): { key: string; value: string }[] {
     return this.db

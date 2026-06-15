@@ -1,5 +1,6 @@
 import type {
   BrowseResult,
+  ContextResult,
   HistogramData,
   LineDetail,
   RecentFile,
@@ -40,6 +41,10 @@ export const api = {
       body: JSON.stringify({ query }),
     }),
   detail: (id: string, lineNo: number) => request<LineDetail>(`/api/sessions/${id}/line/${lineNo}`),
+  context: (id: string, line: number, before: number, after: number) =>
+    request<ContextResult>(
+      `/api/sessions/${id}/context?line=${line}&before=${before}&after=${after}`,
+    ),
   histogram: (id: string) => request<HistogramData | null>(`/api/sessions/${id}/histogram`),
   setTail: (id: string, on: boolean) =>
     request<{ tail: boolean }>(`/api/sessions/${id}/tail`, {

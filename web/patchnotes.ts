@@ -3,6 +3,26 @@ import type { PatchNote } from './types';
 
 export const patchNotes: PatchNote[] = [
   {
+    "version": "1.2.0",
+    "date": "2026-06-15",
+    "sections": [
+      {
+        "title": "Added",
+        "items": [
+          "Context around matches (grep -C): while a search filter is active, hover a result row and click \"± context\" to peek at the surrounding (unfiltered) lines. The window can be grown before/after, other hits in the window are marked, and clicking any line opens it in the full, unfiltered view.",
+          "Inline query autocomplete: as you type, the search bar suggests field names, `level:` values, and boolean operators (`AND`/`OR`/`NOT`). Tab to complete, ↑/↓ to choose, Enter to run.",
+          "Search history and saved searches: recent queries are remembered and a query can be saved under a name for one-click reuse, both available from the new history button in the toolbar. Stored locally and shared across tabs."
+        ]
+      },
+      {
+        "title": "Fixed",
+        "items": [
+          "Quoted field values now honor wildcards, so a value containing spaces can be matched, e.g. `message:\"*request started*\"`. Previously a quoted value was always treated as an exact match and the `*` was ignored."
+        ]
+      }
+    ]
+  },
+  {
     "version": "1.1.0",
     "date": "2026-06-15",
     "sections": [

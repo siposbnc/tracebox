@@ -122,6 +122,27 @@ test('JSON logs: nested fields, comparisons, wildcards, exists', async () => {
   assert.equal(h.buckets.reduce((acc, b) => acc + b.total, 0), 100);
 });
 
+test('search is case-insensitive and quoted field values support wildcards with spaces', async () => {
+  const file = makeLogFile('wild.jsonl', [
+    JSON.stringify({ level: 'INFO', message: 'Incoming request started now', host: 'Web-01' }),
+    JSON.stringify({ level: 'ERROR', message: 'incoming REQUEST stopped later', host: 'web-01' }),
+    JSON.stringify({ level: 'INFO', message: 'unrelated entry', host: 'db-02' }),
+  ]);
+  const s = await openAndIndex(file);
+
+  // full-text and field matching ignore case
+  assert.equal(s.setSearch('REQUEST').total, 2);
+  assert.equal(s.setSearch('request').total, 2);
+  assert.equal(s.setSearch('message:*REQUEST*').total, 2);
+  assert.equal(s.setSearch('host:WEB-01').total, 2);
+
+  // a wildcard value containing a space must be quoted; the wildcards still apply
+  assert.equal(s.setSearch('message:"*request st*"').total, 2); // matches "request started" and "request stopped"
+  assert.equal(s.setSearch('message:"*request sto*"').total, 1); // only "request stopped"
+  assert.equal(s.setSearch('message:"*REQUEST STO*"').total, 1); // and stays case-insensitive
+  assert.equal(s.setSearch('message:"incoming request started now"').total, 1); // exact (no wildcard)
+});
+
 test('phrase search and field phrase', async () => {
   const file = makeLogFile('phrase.log', [
     '2024-01-01 00:00:00 [ERROR] connection failed to db-1',
@@ -157,6 +178,32 @@ test('descending order returns rows newest-first (whole file and within a search
   s.setSearch('level:ERROR'); // matches line_no 4, 10, 16, 22, 28, 34, 40, 46
   assert.deepEqual((await s.getRows(0, 3, 'asc')).map((r) => r.lineNo), [4, 10, 16]);
   assert.deepEqual((await s.getRows(0, 3, 'desc')).map((r) => r.lineNo), [46, 40, 34]);
+});
+
+test('context returns surrounding lines and marks the hits in the window', async () => {
+  const file = makeLogFile('context.log', appLogLines(50));
+  const s = await openAndIndex(file);
+
+  // no search active: window around a line, clamped at the file start
+  s.setSearch('');
+  const win = await s.getContext(2, 3, 3);
+  assert.equal(win.center, 2);
+  assert.deepEqual(win.rows.map((r) => r.lineNo), [0, 1, 2, 3, 4, 5]);
+  assert.deepEqual(win.matchLines, []);
+
+  // window clamps at the file end too
+  const tailWin = await s.getContext(49, 3, 3);
+  assert.deepEqual(tailWin.rows.map((r) => r.lineNo), [46, 47, 48, 49]);
+
+  // with a search active, the matching lines within the window are marked
+  s.setSearch('level:ERROR'); // hits at line_no 4, 10, 16, 22, ...
+  const hitWin = await s.getContext(10, 2, 2);
+  assert.deepEqual(hitWin.rows.map((r) => r.lineNo), [8, 9, 10, 11, 12]);
+  assert.deepEqual([...hitWin.matchLines].sort((a, b) => a - b), [10]);
+
+  // out-of-range line yields an empty window
+  const empty = await s.getContext(999, 3, 3);
+  assert.deepEqual(empty.rows, []);
 });
 
 test('manual refresh picks up appended lines without tail mode', async () => {

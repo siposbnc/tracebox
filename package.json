@@ -1,6 +1,6 @@
 {
   "name": "tracebox",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "TraceBox — a fast, offline log reader with complex search for huge files",
   "author": "TraceBox",
   "private": true,

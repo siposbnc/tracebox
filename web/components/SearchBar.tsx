@@ -1,6 +1,16 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { formatCount } from '../api';
 import { useOrder, setOrder } from '../settings';
+import {
+  recordHistory,
+  clearHistory,
+  saveSearch,
+  removeSaved,
+  isSaved,
+  useHistory,
+  useSaved,
+} from '../searches';
+import { computeSuggestions, tokenBounds, type Suggestion } from '../querySuggest';
 import type { SessionStatus } from '../types';
 
 const SYNTAX_EXAMPLES: [string, string][] = [
@@ -9,7 +19,8 @@ const SYNTAX_EXAMPLES: [string, string][] = [
   ['level:error', 'field equals (level, or any extracted field)'],
   ['status:>=500', 'numeric comparison: > >= < <='],
   ['timestamp:>2024-01-31', 'after a date/time (also <, ranges by precision)'],
-  ['path:/api/*', 'wildcard match'],
+  ['path:/api/*', 'wildcard match (case-insensitive)'],
+  ['msg:"*user logged in*"', 'wildcard value with spaces — quote it'],
   ['user:*', 'field exists'],
   ['(level:error OR level:warn) AND NOT db', 'boolean logic with grouping'],
   ['-debug', 'exclude a term'],
@@ -31,6 +42,7 @@ export default function SearchBar({
   histogramOpen,
   onToggleHistogram,
   fieldNames,
+  levelCounts,
 }: {
   query: string;
   onChange: (q: string) => void;
@@ -47,11 +59,63 @@ export default function SearchBar({
   histogramOpen: boolean;
   onToggleHistogram: () => void;
   fieldNames: { key: string; count: number }[];
+  levelCounts: Record<string, number>;
 }) {
   const [helpOpen, setHelpOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [saveName, setSaveName] = useState('');
   const order = useOrder();
   const inputRef = useRef<HTMLInputElement>(null);
+  const historyRef = useRef<HTMLDivElement>(null);
+
+  // --- inline autocomplete --------------------------------------------------
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [suggestOpen, setSuggestOpen] = useState(false);
+  const [activeIdx, setActiveIdx] = useState(0);
+  const [navigated, setNavigated] = useState(false);
+
+  const history = useHistory();
+  const saved = useSaved();
+  const fieldKeys = useMemo(() => fieldNames.map((f) => f.key), [fieldNames]);
+  const levelKeys = useMemo(() => Object.keys(levelCounts), [levelCounts]);
+
+  const refreshSuggestions = (value: string, cursor: number): void => {
+    const { token } = tokenBounds(value, cursor);
+    const next = computeSuggestions(token, fieldKeys, levelKeys);
+    setSuggestions(next);
+    setSuggestOpen(next.length > 0);
+    setActiveIdx(0);
+    setNavigated(false);
+  };
+
+  const acceptSuggestion = (s: Suggestion): void => {
+    const input = inputRef.current;
+    if (!input) return;
+    const cursor = input.selectionStart ?? query.length;
+    const { start } = tokenBounds(query, cursor);
+    const insert = s.insert + (s.trailingSpace ? ' ' : '');
+    const next = query.slice(0, start) + insert + query.slice(cursor);
+    const newCursor = start + insert.length;
+    onChange(next);
+    requestAnimationFrame(() => {
+      input.focus();
+      input.setSelectionRange(newCursor, newCursor);
+      refreshSuggestions(next, newCursor); // e.g. `level:` then offers values
+    });
+  };
+
+  const submit = (q: string): void => {
+    setSuggestOpen(false);
+    recordHistory(q);
+    onSubmit(q);
+  };
+
+  const applySearch = (q: string): void => {
+    onChange(q);
+    setHistoryOpen(false);
+    submit(q);
+  };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -64,6 +128,15 @@ export default function SearchBar({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
+
+  useEffect(() => {
+    if (!historyOpen) return;
+    const onDown = (e: MouseEvent): void => {
+      if (historyRef.current && !historyRef.current.contains(e.target as Node)) setHistoryOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [historyOpen]);
 
   return (
     <div className="relative border-b border-edge bg-surface-1 px-3 py-2">
@@ -82,21 +155,89 @@ export default function SearchBar({
           <input
             ref={inputRef}
             value={query}
-            onChange={(e) => onChange(e.target.value)}
+            onChange={(e) => {
+              onChange(e.target.value);
+              setHelpOpen(false);
+              setHistoryOpen(false);
+              refreshSuggestions(e.target.value, e.target.selectionStart ?? e.target.value.length);
+            }}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') onSubmit(query);
+              if (suggestOpen && suggestions.length > 0) {
+                if (e.key === 'ArrowDown') {
+                  e.preventDefault();
+                  setActiveIdx((i) => (i + 1) % suggestions.length);
+                  setNavigated(true);
+                  return;
+                }
+                if (e.key === 'ArrowUp') {
+                  e.preventDefault();
+                  setActiveIdx((i) => (i - 1 + suggestions.length) % suggestions.length);
+                  setNavigated(true);
+                  return;
+                }
+                if (e.key === 'Tab') {
+                  e.preventDefault();
+                  acceptSuggestion(suggestions[activeIdx]);
+                  return;
+                }
+                if (e.key === 'Escape') {
+                  e.preventDefault();
+                  setSuggestOpen(false);
+                  return;
+                }
+                // Enter accepts only when the user has navigated the list; otherwise it runs the search
+                if (e.key === 'Enter' && navigated) {
+                  e.preventDefault();
+                  acceptSuggestion(suggestions[activeIdx]);
+                  return;
+                }
+              }
+              if (e.key === 'Enter') submit(query);
               if (e.key === 'Escape' && query !== '') {
                 onChange('');
                 onSubmit('');
               }
             }}
+            onKeyUp={(e) => {
+              // recompute on cursor moves (arrows/home/end) that aren't list navigation
+              if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) {
+                const t = e.target as HTMLInputElement;
+                refreshSuggestions(t.value, t.selectionStart ?? t.value.length);
+              }
+            }}
+            onBlur={() => setTimeout(() => setSuggestOpen(false), 150)}
             onFocus={() => setHelpOpen(false)}
             placeholder='Search…  e.g.  level:error AND "connection failed"  ·  status:>=500  ·  press Enter'
             spellCheck={false}
+            autoComplete="off"
             className={`w-full rounded-lg border bg-surface-0 py-1.5 pl-9 pr-24 font-mono text-sm text-gray-100 outline-none placeholder:font-sans placeholder:text-gray-600 focus:border-sky-600 ${
               error ? 'border-red-700' : 'border-edge'
             }`}
           />
+
+          {suggestOpen && suggestions.length > 0 && (
+            <div className="absolute left-0 top-full z-40 mt-1 w-80 overflow-hidden rounded-lg border border-edge bg-surface-2 py-1 shadow-2xl">
+              {suggestions.map((s, i) => (
+                <button
+                  key={s.insert}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onMouseEnter={() => setActiveIdx(i)}
+                  onClick={() => acceptSuggestion(s)}
+                  className={`flex w-full items-center justify-between gap-3 px-3 py-1 text-left font-mono text-sm ${
+                    i === activeIdx ? 'bg-sky-900/60 text-gray-100' : 'text-gray-300 hover:bg-surface-3'
+                  }`}
+                >
+                  <span className="truncate">{s.label}</span>
+                  <span className="shrink-0 font-sans text-[10px] uppercase tracking-wide text-gray-500">
+                    {s.hint}
+                  </span>
+                </button>
+              ))}
+              <div className="border-t border-edge/60 px-3 pt-1 text-[10px] text-gray-600">
+                Tab to complete · ↑↓ to choose · Enter to run
+              </div>
+            </div>
+          )}
           <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1.5">
             {search && !searching && (
               <span className="rounded bg-surface-2 px-1.5 py-0.5 text-xs text-gray-400">
@@ -121,6 +262,108 @@ export default function SearchBar({
               </button>
             )}
           </div>
+        </div>
+
+        <div className="relative" ref={historyRef}>
+          <button
+            onClick={() => {
+              setHistoryOpen((v) => !v);
+              setSaveName('');
+            }}
+            className={`rounded-lg border border-edge px-2.5 py-1.5 text-sm ${
+              historyOpen ? 'bg-surface-3 text-sky-300' : 'bg-surface-2 text-gray-400 hover:text-gray-100'
+            }`}
+            title="Search history & saved searches"
+          >
+            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="9" />
+              <path d="M12 7v5l3 2" />
+            </svg>
+          </button>
+          {historyOpen && (
+            <div className="absolute right-0 top-full z-30 mt-1 w-[420px] max-w-[90vw] rounded-lg border border-edge bg-surface-2 shadow-2xl">
+              {query.trim() !== '' && !isSaved(query) && (
+                <div className="flex items-center gap-2 border-b border-edge p-2">
+                  <input
+                    value={saveName}
+                    onChange={(e) => setSaveName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        saveSearch(query, saveName);
+                        setSaveName('');
+                      }
+                    }}
+                    placeholder="Name this search…"
+                    className="min-w-0 flex-1 rounded border border-edge bg-surface-0 px-2 py-1 text-xs text-gray-100 outline-none focus:border-sky-600"
+                  />
+                  <button
+                    onClick={() => {
+                      saveSearch(query, saveName);
+                      setSaveName('');
+                    }}
+                    className="shrink-0 rounded bg-sky-700 px-2 py-1 text-xs font-medium text-white hover:bg-sky-600"
+                  >
+                    ★ Save
+                  </button>
+                </div>
+              )}
+
+              <div className="max-h-[60vh] overflow-y-auto p-2">
+                {saved.length > 0 && (
+                  <div className="mb-2">
+                    <div className="mb-1 px-1 text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+                      Saved
+                    </div>
+                    {saved.map((s) => (
+                      <div
+                        key={s.query}
+                        className="group flex items-center gap-2 rounded px-1 py-0.5 hover:bg-surface-3"
+                      >
+                        <button
+                          onClick={() => applySearch(s.query)}
+                          className="flex min-w-0 flex-1 flex-col items-start text-left"
+                          title={s.query}
+                        >
+                          <span className="truncate text-xs text-amber-300">★ {s.name}</span>
+                          <span className="w-full truncate font-mono text-[11px] text-gray-500">{s.query}</span>
+                        </button>
+                        <button
+                          onClick={() => removeSaved(s.query)}
+                          className="shrink-0 rounded px-1 text-gray-600 opacity-0 hover:text-red-300 group-hover:opacity-100"
+                          title="Remove saved search"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="mb-1 flex items-center justify-between px-1">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Recent</span>
+                  {history.length > 0 && (
+                    <button onClick={clearHistory} className="text-[10px] text-gray-500 hover:text-gray-300">
+                      Clear
+                    </button>
+                  )}
+                </div>
+                {history.length === 0 ? (
+                  <div className="px-1 py-2 text-xs text-gray-600">No recent searches yet.</div>
+                ) : (
+                  history.map((q) => (
+                    <button
+                      key={q}
+                      onClick={() => applySearch(q)}
+                      className="block w-full truncate rounded px-1 py-1 text-left font-mono text-[11px] text-gray-400 hover:bg-surface-3 hover:text-gray-100"
+                      title={q}
+                    >
+                      {q}
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         <button

@@ -34,6 +34,9 @@ export default function LogList({
   followTail,
   selected,
   onSelect,
+  onContext,
+  showContext,
+  scrollTo,
   highlightTerms,
   onUserScroll,
   onScrolledToEnd,
@@ -44,6 +47,9 @@ export default function LogList({
   followTail: boolean;
   selected: number | null;
   onSelect: (lineNo: number) => void;
+  onContext: (lineNo: number) => void;
+  showContext: boolean;
+  scrollTo: { lineNo: number; nonce: number } | null;
   highlightTerms: string[];
   onUserScroll: () => void;
   onScrolledToEnd: () => void;
@@ -119,6 +125,17 @@ export default function LogList({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [followTail, total, epoch, order]);
+
+  // jump to a specific line (used by "open in full view"). The caller clears any
+  // active filter first, so the view is unfiltered and the display position maps
+  // directly from the line number (mirrored for newest-first order).
+  const jumpNonceRef = useRef(0);
+  useEffect(() => {
+    if (!scrollTo || scrollTo.nonce === jumpNonceRef.current || total === 0) return;
+    jumpNonceRef.current = scrollTo.nonce;
+    const viewIndex = order === 'desc' ? Math.max(0, total - 1 - scrollTo.lineNo) : scrollTo.lineNo;
+    virtualizer.scrollToIndex(Math.min(viewIndex, total - 1), { align: 'center' });
+  }, [scrollTo, total, order, virtualizer]);
 
   const rowAt = (index: number): RowData | null => {
     const block = blocksRef.current.get(Math.floor(index / BLOCK));
@@ -214,6 +231,8 @@ export default function LogList({
                     row={row}
                     selected={selected === row.lineNo}
                     onSelect={onSelect}
+                    onContext={onContext}
+                    showContext={showContext}
                     highlightRegex={highlightRegex}
                     gutterWidth={gutterWidth}
                   />
@@ -235,12 +254,16 @@ const Row = memo(function Row({
   row,
   selected,
   onSelect,
+  onContext,
+  showContext,
   highlightRegex,
   gutterWidth,
 }: {
   row: RowData;
   selected: boolean;
   onSelect: (lineNo: number) => void;
+  onContext: (lineNo: number) => void;
+  showContext: boolean;
   highlightRegex: RegExp | null;
   gutterWidth: number;
 }) {
@@ -258,7 +281,7 @@ const Row = memo(function Row({
   return (
     <div
       onClick={() => onSelect(row.lineNo)}
-      className={`row-text flex h-full cursor-pointer items-center gap-2 border-l-2 pr-3 font-mono text-[13px] leading-6 ${
+      className={`group row-text relative flex h-full cursor-pointer items-center gap-2 border-l-2 pr-3 font-mono text-[13px] leading-6 ${
         selected
           ? 'border-sky-400 bg-sky-950/60'
           : `${bar ? `border-transparent` : 'border-transparent'} hover:bg-surface-1`
@@ -283,6 +306,18 @@ const Row = memo(function Row({
         {content}
         {row.truncated && <span className="text-gray-500"> … (truncated — open details)</span>}
       </span>
+      {showContext && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onContext(row.lineNo);
+          }}
+          title="Show surrounding lines (context)"
+          className="absolute right-2 top-1/2 hidden -translate-y-1/2 rounded border border-edge bg-surface-2 px-1.5 text-[10px] leading-4 text-gray-400 shadow group-hover:block hover:text-sky-300"
+        >
+          ± context
+        </button>
+      )}
     </div>
   );
 });
