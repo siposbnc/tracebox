@@ -527,9 +527,9 @@ export default function SearchBar({
         </button>
         {columnar && <ColumnsMenu fieldNames={fieldNames} columns={columns} onChange={onColumnsChange} />}
 
-        <Divider />
+        <div className="grow" />
 
-        {/* display preferences */}
+        {/* display preferences (right-aligned) */}
         <button
           onClick={() => setTz(tz === 'utc' ? 'local' : 'utc')}
           className="flex items-center gap-1.5 rounded-lg border border-edge bg-surface-2 px-2.5 py-1.5 text-sm text-gray-400 hover:text-gray-100"
