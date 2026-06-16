@@ -1,8 +1,9 @@
 import { useSyncExternalStore } from 'react';
+import { clientStore } from './clientStore';
 
 /**
  * Persistent search history (recent queries) and saved searches (named queries
- * the user pins for reuse). Both live in localStorage and are shared across all
+ * the user pins for reuse). Both live in the client store and are shared across all
  * open tabs via a single store.
  */
 
@@ -17,7 +18,7 @@ export interface SavedSearch {
 
 function load<T>(key: string, fallback: T): T {
   try {
-    const raw = localStorage.getItem(key);
+    const raw = clientStore.getItem(key);
     return raw ? (JSON.parse(raw) as T) : fallback;
   } catch {
     return fallback;
@@ -36,12 +37,12 @@ function emit(): void {
 }
 
 function persistHistory(): void {
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+  clientStore.setItem(HISTORY_KEY, JSON.stringify(history));
   emit();
 }
 
 function persistSaved(): void {
-  localStorage.setItem(SAVED_KEY, JSON.stringify(saved));
+  clientStore.setItem(SAVED_KEY, JSON.stringify(saved));
   emit();
 }
 

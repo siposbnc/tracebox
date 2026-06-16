@@ -1,8 +1,9 @@
 import { useCallback, useSyncExternalStore } from 'react';
+import { clientStore } from './clientStore';
 
 /**
  * Named workspaces: a snapshot of the open files and each file's active search,
- * persisted in localStorage and reopenable in one click. Search state is keyed by
+ * persisted in the client store and reopenable in one click. Search state is keyed by
  * file path (session ids are ephemeral).
  */
 
@@ -28,7 +29,7 @@ export interface Workspace {
 
 function load(): Workspace[] {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = clientStore.getItem(KEY);
     const arr = raw ? (JSON.parse(raw) as unknown) : [];
     return Array.isArray(arr) ? (arr as Workspace[]) : [];
   } catch {
@@ -41,7 +42,7 @@ const listeners = new Set<() => void>();
 
 function persist(next: Workspace[]): void {
   store = next;
-  localStorage.setItem(KEY, JSON.stringify(store));
+  clientStore.setItem(KEY, JSON.stringify(store));
   for (const l of listeners) l();
 }
 

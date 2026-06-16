@@ -1,7 +1,8 @@
 import { useCallback, useSyncExternalStore } from 'react';
+import { clientStore } from './clientStore';
 
 /**
- * Per-file line bookmarks, persisted in localStorage and shared across open
+ * Per-file line bookmarks, persisted via the client store and shared across open
  * tabs. Keyed by absolute file path so marks survive reopening a file; line
  * numbers are stored 0-based (the display adds 1).
  */
@@ -13,7 +14,7 @@ type Store = Record<string, number[]>;
 
 function load(): Store {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = clientStore.getItem(KEY);
     const obj = raw ? (JSON.parse(raw) as unknown) : {};
     return obj && typeof obj === 'object' ? (obj as Store) : {};
   } catch {
@@ -31,7 +32,7 @@ function emit(): void {
 
 function persist(): void {
   version++;
-  localStorage.setItem(KEY, JSON.stringify(store));
+  clientStore.setItem(KEY, JSON.stringify(store));
   emit();
 }
 

@@ -145,12 +145,17 @@ date and start a fresh `Unreleased` section.
   The active zone is shown explicitly (e.g. `UTC`, `GMT+2`) so a timestamp is
   never ambiguous. The choice persists across files and sessions.
 
-### Fixed
+### Changed
 
-- Desktop app: client-side state (workspaces, bookmarks, notes, settings) now
-  persists across launches. The window had loaded from an ephemeral port each
-  launch, giving a new browser origin and therefore empty localStorage every time;
-  the backend now uses a stable port (with an ephemeral fallback if it's taken).
+- Client state (workspaces, bookmarks, notes, saved searches, settings, column
+  layouts, keybindings) is now stored on disk by the backend
+  (`~/.tracebox/state.json`) instead of browser localStorage. localStorage is keyed
+  by the window's origin, so the desktop app — whose loopback port can vary between
+  launches — would reset all of it; disk-backed storage is stable regardless of
+  port. Existing localStorage state is migrated automatically on first run. (The
+  desktop backend also prefers a stable port now, with an ephemeral fallback.)
+
+### Fixed
 - Default context-peek window is 5 lines again (it had become 0 when the setting
   was unset, because the stored value parsed as 0).
 

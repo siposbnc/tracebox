@@ -1,8 +1,9 @@
 import { useCallback, useSyncExternalStore } from 'react';
+import { clientStore } from './clientStore';
 
 /**
  * Per-file column selection for the columnar (grid) view, persisted in
- * localStorage and keyed by file path. Empty means "use the default columns".
+ * the client store and keyed by file path. Empty means "use the default columns".
  */
 
 const KEY = 'tracebox.columns';
@@ -12,7 +13,7 @@ type Store = Record<string, string[]>;
 
 function load(): Store {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = clientStore.getItem(KEY);
     const obj = raw ? (JSON.parse(raw) as unknown) : {};
     return obj && typeof obj === 'object' ? (obj as Store) : {};
   } catch {
@@ -35,7 +36,7 @@ export function setColumns(file: string, cols: string[]): void {
   store = { ...store };
   if (cols.length === 0) delete store[file];
   else store[file] = cols;
-  localStorage.setItem(KEY, JSON.stringify(store));
+  clientStore.setItem(KEY, JSON.stringify(store));
   emit();
 }
 

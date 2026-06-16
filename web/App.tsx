@@ -10,6 +10,7 @@ import MergedView from './components/MergedView';
 import WorkspacesMenu from './components/WorkspacesMenu';
 import { Logo } from './components/Logo';
 import { saveWorkspace, useWorkspaces, type ViewState, type Workspace } from './workspaces';
+import { clientStore } from './clientStore';
 import { patchNotes } from './patchnotes';
 import { compareVersions } from './version';
 import { matchCommand } from './keybindings';
@@ -29,7 +30,7 @@ export default function App() {
   // pending jump from the merged timeline: open a file's tab at a specific line
   const [jumpTarget, setJumpTarget] = useState<{ id: string; lineNo: number; nonce: number } | null>(null);
   // the newest version the user had seen before this launch (for "New" badges)
-  const [sinceVersion] = useState<string | null>(() => localStorage.getItem(LAST_SEEN_VERSION_KEY));
+  const [sinceVersion] = useState<string | null>(() => clientStore.getItem(LAST_SEEN_VERSION_KEY));
   // last-known search state per session, for saving workspaces (sessions report it up)
   const viewStateRef = useRef<Map<string, ViewState>>(new Map());
   const captureViewState = useCallback((id: string, vs: ViewState) => {
@@ -50,9 +51,9 @@ export default function App() {
   useEffect(() => {
     const current = patchNotes[0]?.version;
     if (!current) return;
-    const lastSeen = localStorage.getItem(LAST_SEEN_VERSION_KEY);
+    const lastSeen = clientStore.getItem(LAST_SEEN_VERSION_KEY);
     if (lastSeen && compareVersions(current, lastSeen) > 0) setWhatsNewOpen(true);
-    localStorage.setItem(LAST_SEEN_VERSION_KEY, current);
+    clientStore.setItem(LAST_SEEN_VERSION_KEY, current);
   }, []);
 
   // cycle through open file tabs (Ctrl+Tab / Ctrl+Shift+Tab, rebindable)

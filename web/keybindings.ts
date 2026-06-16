@@ -1,8 +1,9 @@
 import { useSyncExternalStore } from 'react';
+import { clientStore } from './clientStore';
 
 /**
  * Rebindable keyboard shortcuts. Each command has a default chord; user
- * overrides are persisted in localStorage and shared across tabs. A chord is a
+ * overrides are persisted in the client store and shared across tabs. A chord is a
  * canonical string like `Mod+G`, `Shift+F2`, `Mod+Shift+B` — `Mod` matches Ctrl
  * or Cmd so bindings work on every platform. An empty chord means "unbound".
  */
@@ -45,7 +46,7 @@ const IS_MAC = typeof navigator !== 'undefined' && /mac/i.test(navigator.platfor
 
 function loadOverrides(): Record<string, string> {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = clientStore.getItem(KEY);
     const obj = raw ? (JSON.parse(raw) as unknown) : {};
     return obj && typeof obj === 'object' ? (obj as Record<string, string>) : {};
   } catch {
@@ -69,7 +70,7 @@ function emit(): void {
 }
 
 function persist(): void {
-  localStorage.setItem(KEY, JSON.stringify(overrides));
+  clientStore.setItem(KEY, JSON.stringify(overrides));
   snapshot = computeSnapshot();
   emit();
 }

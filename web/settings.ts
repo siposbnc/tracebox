@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react';
+import { clientStore } from './clientStore';
 
 /** Display order for log rows: oldest-first (file order) or newest-first. */
 export type Order = 'asc' | 'desc';
@@ -16,21 +17,21 @@ const PAGE_JUMP_BIG_KEY = 'tracebox.pageJumpBig';
 const WRAP_KEY = 'tracebox.wrap';
 const COLUMNAR_KEY = 'tracebox.columnar';
 
-let order: Order = localStorage.getItem(ORDER_KEY) === 'desc' ? 'desc' : 'asc';
-let tz: Tz = localStorage.getItem(TZ_KEY) === 'local' ? 'local' : 'utc';
-let wrap = localStorage.getItem(WRAP_KEY) === 'true';
-let columnar = localStorage.getItem(COLUMNAR_KEY) === 'true';
+let order: Order = clientStore.getItem(ORDER_KEY) === 'desc' ? 'desc' : 'asc';
+let tz: Tz = clientStore.getItem(TZ_KEY) === 'local' ? 'local' : 'utc';
+let wrap = clientStore.getItem(WRAP_KEY) === 'true';
+let columnar = clientStore.getItem(COLUMNAR_KEY) === 'true';
 
 /** Read a non-negative integer setting, falling back to `fallback` when unset/invalid. */
 function loadNumber(key: string, fallback: number, min = 0, max = 1_000_000): number {
-  const raw = localStorage.getItem(key);
+  const raw = clientStore.getItem(key);
   if (raw === null) return fallback;
   const n = Number(raw);
   return Number.isFinite(n) && n >= min ? Math.min(n, max) : fallback;
 }
 
 let contextLines = loadNumber(CONTEXT_KEY, 5, 0, 1000);
-let histogramDefault = localStorage.getItem(HISTOGRAM_KEY) !== 'false';
+let histogramDefault = clientStore.getItem(HISTOGRAM_KEY) !== 'false';
 let pageJump = loadNumber(PAGE_JUMP_KEY, 100, 1);
 let pageJumpBig = loadNumber(PAGE_JUMP_BIG_KEY, 1000, 1);
 
@@ -52,7 +53,7 @@ export function getOrder(): Order {
 export function setOrder(next: Order): void {
   if (next === order) return;
   order = next;
-  localStorage.setItem(ORDER_KEY, next);
+  clientStore.setItem(ORDER_KEY, next);
   emit();
 }
 
@@ -68,7 +69,7 @@ export function getTz(): Tz {
 export function setTz(next: Tz): void {
   if (next === tz) return;
   tz = next;
-  localStorage.setItem(TZ_KEY, next);
+  clientStore.setItem(TZ_KEY, next);
   emit();
 }
 
@@ -84,7 +85,7 @@ export function getWrap(): boolean {
 export function setWrap(next: boolean): void {
   if (next === wrap) return;
   wrap = next;
-  localStorage.setItem(WRAP_KEY, String(next));
+  clientStore.setItem(WRAP_KEY, String(next));
   emit();
 }
 
@@ -100,7 +101,7 @@ export function getColumnar(): boolean {
 export function setColumnar(next: boolean): void {
   if (next === columnar) return;
   columnar = next;
-  localStorage.setItem(COLUMNAR_KEY, String(next));
+  clientStore.setItem(COLUMNAR_KEY, String(next));
   emit();
 }
 
@@ -117,7 +118,7 @@ export function setContextLines(next: number): void {
   const clamped = Math.min(Math.max(Math.round(next), 0), 1000);
   if (clamped === contextLines) return;
   contextLines = clamped;
-  localStorage.setItem(CONTEXT_KEY, String(clamped));
+  clientStore.setItem(CONTEXT_KEY, String(clamped));
   emit();
 }
 
@@ -134,7 +135,7 @@ export function setPageJump(next: number): void {
   const clamped = Math.min(Math.max(Math.round(next), 1), 1_000_000);
   if (clamped === pageJump) return;
   pageJump = clamped;
-  localStorage.setItem(PAGE_JUMP_KEY, String(clamped));
+  clientStore.setItem(PAGE_JUMP_KEY, String(clamped));
   emit();
 }
 
@@ -151,7 +152,7 @@ export function setPageJumpBig(next: number): void {
   const clamped = Math.min(Math.max(Math.round(next), 1), 1_000_000);
   if (clamped === pageJumpBig) return;
   pageJumpBig = clamped;
-  localStorage.setItem(PAGE_JUMP_BIG_KEY, String(clamped));
+  clientStore.setItem(PAGE_JUMP_BIG_KEY, String(clamped));
   emit();
 }
 
@@ -167,7 +168,7 @@ export function getHistogramDefault(): boolean {
 export function setHistogramDefault(next: boolean): void {
   if (next === histogramDefault) return;
   histogramDefault = next;
-  localStorage.setItem(HISTOGRAM_KEY, String(next));
+  clientStore.setItem(HISTOGRAM_KEY, String(next));
   emit();
 }
 

@@ -7,6 +7,7 @@ import { LogSession, indexCacheDir } from './session.ts';
 import { MergedTimeline } from './merged.ts';
 import { listCache, evictCache, clearCache, pruneStaleCache } from './cache.ts';
 import { getConfig, setConfig, DEFAULT_CACHE_DIR } from './config.ts';
+import { getClientState, patchClientState } from './clientState.ts';
 import { mkdirSync } from 'node:fs';
 import { listRoots, listDir, getRecents, addRecent } from './files.ts';
 import { detectRotationGroup } from './rotation.ts';
@@ -85,6 +86,22 @@ export function createApp(distDir: string): TraceBoxApp {
       }
     }
     sendJson(res, 200, { config: setConfig(body), defaultCacheDir: DEFAULT_CACHE_DIR });
+  });
+
+  // Client/UI state (workspaces, bookmarks, notes, settings). Stored on disk so it
+  // persists across launches independent of the renderer origin/port.
+  router.add('GET', '/api/state', (_req, res) => {
+    sendJson(res, 200, { values: getClientState() });
+  });
+
+  router.add('POST', '/api/state', async (req, res) => {
+    const body = (await readJsonBody(req)) as { patch?: Record<string, string | null> };
+    if (!body.patch || typeof body.patch !== 'object') {
+      sendJson(res, 400, { error: 'Missing "patch"' });
+      return;
+    }
+    patchClientState(body.patch);
+    sendJson(res, 200, { ok: true });
   });
 
   // ---------------------------------------------------------------------------
