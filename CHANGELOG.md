@@ -14,6 +14,10 @@ date and start a fresh `Unreleased` section.
 
 ### Added
 
+- JSON tree in the detail panel: when a line is a JSON object/array, the detail
+  panel shows a collapsible, syntax-highlighted tree (Tree/Raw toggle, "Copy JSON"
+  pretty-prints). Each leaf has a "+filter" that builds a query clause using the
+  same dot/`[i]` path the field index uses, so it resolves against the data.
 - Compressed logs: `.gz` files open transparently — TraceBox decompresses once to
   a cached temp (recognised by extension or gzip magic bytes) and indexes that, so
   reopening an unchanged archive reuses both the decompressed copy and its index.

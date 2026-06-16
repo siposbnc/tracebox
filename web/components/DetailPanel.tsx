@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { api, formatTs, tzAbbr } from '../api';
 import { useTz } from '../settings';
 import type { LineDetail } from '../types';
+import JsonTree, { tryParseJson } from './JsonTree';
 
 const LEVEL_COLORS: Record<string, string> = {
   TRACE: 'text-slate-400',
@@ -25,12 +26,17 @@ export default function DetailPanel({
 }) {
   const [detail, setDetail] = useState<LineDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showRaw, setShowRaw] = useState(false);
   const tz = useTz();
+
+  // the raw line as a JSON tree, when it is a JSON object/array
+  const json = useMemo(() => (detail ? tryParseJson(detail.raw) : null), [detail]);
 
   useEffect(() => {
     let cancelled = false;
     setDetail(null);
     setError(null);
+    setShowRaw(false);
     void api
       .detail(sessionId, lineNo)
       .then((d) => {
@@ -114,17 +120,49 @@ export default function DetailPanel({
             )}
 
             <section>
-              <h3 className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
-                {detail.record ? `Record (${detail.record.span} lines)` : 'Raw content'}
-              </h3>
-              <pre className="max-h-[50vh] overflow-auto whitespace-pre-wrap break-all rounded-md border border-edge bg-surface-0 p-2 font-mono text-xs leading-5 text-gray-300">
-                {detail.record ? detail.record.text : detail.raw}
-              </pre>
+              <div className="mb-1 flex items-center justify-between">
+                <h3 className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+                  {json && !showRaw ? 'JSON' : detail.record ? `Record (${detail.record.span} lines)` : 'Raw content'}
+                </h3>
+                {json && (
+                  <div className="flex overflow-hidden rounded border border-edge text-[11px]">
+                    <button
+                      className={`px-1.5 py-0.5 ${!showRaw ? 'bg-surface-2 text-sky-300' : 'text-gray-500 hover:text-gray-300'}`}
+                      onClick={() => setShowRaw(false)}
+                    >
+                      Tree
+                    </button>
+                    <button
+                      className={`px-1.5 py-0.5 ${showRaw ? 'bg-surface-2 text-sky-300' : 'text-gray-500 hover:text-gray-300'}`}
+                      onClick={() => setShowRaw(true)}
+                    >
+                      Raw
+                    </button>
+                  </div>
+                )}
+              </div>
+              {json && !showRaw ? (
+                <div className="max-h-[50vh]">
+                  <JsonTree value={json} onFilter={(p, v) => onAddFilter(`${p}:${filterValue(v)}`)} />
+                </div>
+              ) : (
+                <pre className="max-h-[50vh] overflow-auto whitespace-pre-wrap break-all rounded-md border border-edge bg-surface-0 p-2 font-mono text-xs leading-5 text-gray-300">
+                  {detail.record ? detail.record.text : detail.raw}
+                </pre>
+              )}
               <button
                 className="mt-2 rounded border border-edge bg-surface-2 px-2 py-1 text-xs text-gray-400 hover:text-gray-100"
-                onClick={() => void navigator.clipboard.writeText(detail.record ? detail.record.text : detail.raw)}
+                onClick={() =>
+                  void navigator.clipboard.writeText(
+                    json && !showRaw
+                      ? JSON.stringify(json, null, 2)
+                      : detail.record
+                        ? detail.record.text
+                        : detail.raw,
+                  )
+                }
               >
-                {detail.record ? 'Copy record' : 'Copy raw line'}
+                {json && !showRaw ? 'Copy JSON' : detail.record ? 'Copy record' : 'Copy raw line'}
               </button>
             </section>
           </>
