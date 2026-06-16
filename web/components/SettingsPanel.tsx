@@ -123,8 +123,8 @@ export default function SettingsPanel({
               className={`relative h-5 w-9 rounded-full transition-colors ${wrap ? 'bg-sky-600' : 'bg-surface-3'}`}
             >
               <span
-                className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
-                  wrap ? 'translate-x-4' : 'translate-x-0.5'
+                className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
+                  wrap ? 'translate-x-4' : 'translate-x-0'
                 }`}
               />
             </button>
@@ -169,8 +169,8 @@ export default function SettingsPanel({
               className={`relative h-5 w-9 rounded-full transition-colors ${histogramDefault ? 'bg-sky-600' : 'bg-surface-3'}`}
             >
               <span
-                className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
-                  histogramDefault ? 'translate-x-4' : 'translate-x-0.5'
+                className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
+                  histogramDefault ? 'translate-x-4' : 'translate-x-0'
                 }`}
               />
             </button>
