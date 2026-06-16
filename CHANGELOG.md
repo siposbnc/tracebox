@@ -14,6 +14,10 @@ date and start a fresh `Unreleased` section.
 
 ### Added
 
+- Saved workspaces: a "Workspaces" menu in the header saves the open files and each
+  file's active search as a named workspace, reopenable in one click (restores the
+  files and re-applies their searches). Persisted locally; available even on a fresh
+  launch with no files open.
 - Cluster correlation ("Concentrated in"): with a search active, the summary panel
   surfaces the field=value pairs the result set concentrates in and that are
   over-represented vs the whole file (e.g. "host=web-03 · 80% · 3.4×"). Click one

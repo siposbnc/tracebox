@@ -61,9 +61,9 @@ The original backlog is essentially complete. Delivered so far (see `CHANGELOG.m
 
 ### Workflow — keep an investigation
 
-- **Saved workspaces.** Persist the open files, active searches, column layout, and
-  panel state as a named workspace, reopenable in one click. Debugging the same
-  system repeatedly is the norm.
+- ~~**Saved workspaces.**~~ *Shipped* — name and reopen the set of open files with
+  their active searches in one click. (Could later also capture column layout and
+  open-panel state.)
 - ~~**Notes & report export.**~~ *Shipped* — per-line notes plus a
   bookmarks/notes report exported as Markdown or standalone HTML.
 

@@ -24,10 +24,13 @@ import { useColumns, defaultColumns, setColumns } from '../columns';
 export default function LogView({
   initial,
   onOpenFile,
+  onViewState,
   jumpTo,
 }: {
   initial: SessionStatus;
   onOpenFile: () => void;
+  /** Reports the file's search state up to the app for workspace saving. */
+  onViewState?: (id: string, vs: { query: string; regex: boolean; grouped: boolean }) => void;
   jumpTo?: { lineNo: number; nonce: number } | null;
 }) {
   const id = initial.id;
@@ -197,6 +200,11 @@ export default function LogView({
     prevRegexRef.current = regexMode;
     void runSearch(query);
   }, [regexMode, runSearch, query]);
+
+  // report search state up for workspace saving (cheap; runs on change)
+  useEffect(() => {
+    onViewState?.(id, { query, regex: regexMode, grouped });
+  }, [id, query, regexMode, grouped, onViewState]);
 
   const addFilter = useCallback(
     (clause: string) => {
