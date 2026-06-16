@@ -80,6 +80,21 @@ export interface Clusters {
   covered: number;
 }
 
+export interface Correlations {
+  /** Rows in the result set being explained. */
+  resultsTotal: number;
+  /** Field=value pairs over-represented in the result set vs the whole file. */
+  items: {
+    field: string;
+    value: string;
+    count: number;
+    /** Fraction of result rows with this field=value (0..1). */
+    share: number;
+    /** Over-representation vs the whole-file rate (1 = no different). */
+    lift: number;
+  }[];
+}
+
 /**
  * SQLite-backed search index for one log file. Stores per-line metadata
  * (timestamp, level), an FTS5 full-text index, and a key/value fields table.
@@ -641,6 +656,51 @@ export class IndexStore {
       .prepare(`SELECT COUNT(*) AS distinctCount, COALESCE(SUM(count), 0) AS covered FROM templates`)
       .get() as { distinctCount: number; covered: number };
     return { patterns, distinctCount: agg.distinctCount, covered: agg.covered };
+  }
+
+  /**
+   * "Concentrated in" analysis for the current result set: the field=value pairs
+   * that dominate the results and are over-represented relative to the whole file
+   * (e.g. "80% of these are host=web-03"). Only meaningful over a result set;
+   * returns no items when nothing distinctive stands out.
+   */
+  correlate(limit = 8): Correlations {
+    const resultsTotal = (this.db.prepare(`SELECT COUNT(*) AS n FROM results`).get() as { n: number }).n;
+    if (resultsTotal === 0) return { resultsTotal: 0, items: [] };
+    const fileTotal = (this.db.prepare(`SELECT COUNT(*) AS n FROM lines`).get() as { n: number }).n;
+
+    // value counts within the results, per field (bounded by the result-set size)
+    const rows = this.db
+      .prepare(
+        `SELECT f.key AS key, f.value AS value, COUNT(*) AS c
+         FROM results r JOIN fields f ON f.line_no = r.line_no
+         GROUP BY f.key, f.value`,
+      )
+      .all() as { key: string; value: string; c: number }[];
+
+    // the dominant value for each field
+    const top = new Map<string, { value: string; count: number }>();
+    const skip = /^(message|msg|text|@message|log|raw|exception|stack|stacktrace)$/i;
+    for (const r of rows) {
+      if (skip.test(r.key)) continue;
+      const cur = top.get(r.key);
+      if (!cur || r.c > cur.count) top.set(r.key, { value: r.value, count: r.c });
+    }
+
+    const baseStmt = this.db.prepare(`SELECT COUNT(*) AS n FROM fields WHERE key = ? AND value = ?`);
+    const items: Correlations['items'] = [];
+    for (const [field, t] of top) {
+      const share = t.count / resultsTotal;
+      const baseCount = (baseStmt.get(field, t.value) as { n: number }).n;
+      const baseShare = fileTotal > 0 ? baseCount / fileTotal : 0;
+      const lift = baseShare > 0 ? share / baseShare : 0;
+      // keep clearly concentrated, or moderately concentrated AND over-represented
+      if (share >= 0.5 || (share >= 0.15 && lift >= 1.5)) {
+        items.push({ field, value: t.value, count: t.count, share, lift });
+      }
+    }
+    items.sort((a, b) => b.share - a.share || b.lift - a.lift);
+    return { resultsTotal, items: items.slice(0, limit) };
   }
 
   /** Replace the templates table from the in-memory pattern catalogue. */

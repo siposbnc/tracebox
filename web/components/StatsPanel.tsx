@@ -1,6 +1,12 @@
 import { useEffect, useState } from 'react';
 import { api, formatCount } from '../api';
-import type { StatsResult } from '../types';
+import type { Correlations, StatsResult } from '../types';
+
+/** Quote a field value for the query language (empty value matches the empty string). */
+function filterValue(value: string): string {
+  if (value === '') return '""';
+  return /[\s:"()]/.test(value) ? `"${value.replaceAll('"', '\\"')}"` : value;
+}
 
 const LEVEL_COLORS: Record<string, string> = {
   TRACE: '#64748b',
@@ -40,16 +46,19 @@ export default function StatsPanel({
   epoch,
   grouped,
   hasSearch,
+  onAddFilter,
   onClose,
 }: {
   sessionId: string;
   epoch: number;
   grouped: boolean;
   hasSearch: boolean;
+  onAddFilter: (clause: string) => void;
   onClose: () => void;
 }) {
   const [data, setData] = useState<StatsResult | null>(null);
   const [loading, setLoading] = useState(false);
+  const [corr, setCorr] = useState<Correlations | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -66,6 +75,21 @@ export default function StatsPanel({
       cancelled = true;
     };
   }, [sessionId, epoch, grouped]);
+
+  // "concentrated in" only makes sense over a result set
+  useEffect(() => {
+    if (!hasSearch) {
+      setCorr(null);
+      return;
+    }
+    let cancelled = false;
+    void api.correlate(sessionId).then((c) => {
+      if (!cancelled) setCorr(c);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId, epoch, hasSearch]);
 
   const span = data && data.minTs !== null && data.maxTs !== null ? data.maxTs - data.minTs : 0;
   const avgPerMin = span > 0 && data ? Math.round((data.withTs / span) * 60_000) : 0;
@@ -94,6 +118,38 @@ export default function StatsPanel({
             </div>
             {data.withTs < data.total && (
               <div className="mt-1 text-[10px] text-gray-600">{formatCount(data.total - data.withTs)} lines without a timestamp</div>
+            )}
+
+            {corr && corr.items.length > 0 && (
+              <div className="mt-4">
+                <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-gray-500" title="Fields this filtered set concentrates in, vs the whole file">
+                  Concentrated in
+                </div>
+                {corr.items.map((it) => {
+                  const pct = Math.round(it.share * 100);
+                  return (
+                    <button
+                      key={`${it.field}=${it.value}`}
+                      onClick={() => onAddFilter(`${it.field}:${filterValue(it.value)}`)}
+                      title={`${pct}% of results · ${it.lift.toFixed(1)}× the whole-file rate — click to filter`}
+                      className="group relative mb-1 block w-full overflow-hidden rounded px-1.5 py-1 text-left hover:bg-surface-3"
+                    >
+                      <span className="absolute inset-y-0 left-0 rounded bg-amber-900/30" style={{ width: `${pct}%` }} />
+                      <span className="relative flex items-center justify-between gap-2 text-[11px]">
+                        <span className="truncate font-mono text-gray-200">
+                          <span className="text-sky-400">{it.field}</span>
+                          <span className="text-gray-500">=</span>
+                          {it.value === '' ? <span className="italic text-gray-500">(empty)</span> : it.value}
+                        </span>
+                        <span className="shrink-0 text-gray-400">
+                          {pct}%
+                          {it.lift >= 1.5 && <span className="ml-1 text-amber-400">{it.lift.toFixed(1)}×</span>}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             )}
 
             <div className="mt-4">

@@ -14,6 +14,10 @@ date and start a fresh `Unreleased` section.
 
 ### Added
 
+- Cluster correlation ("Concentrated in"): with a search active, the summary panel
+  surfaces the field=value pairs the result set concentrates in and that are
+  over-represented vs the whole file (e.g. "host=web-03 · 80% · 3.4×"). Click one
+  to refine the filter.
 - Gap & spike detection on the histogram: unusual volume bursts are marked with a
   red caret (click to zoom to that range) and notable silences are shown as
   hatched bands, with a summary in the histogram footer. Detection is robust

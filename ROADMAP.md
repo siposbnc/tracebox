@@ -54,10 +54,10 @@ The original backlog is essentially complete. Delivered so far (see `CHANGELOG.m
 - **Numeric field trends.** Chart a numeric field over time (`duration_ms`,
   response bytes) with p50/p95, not just line volume. Builds on the histogram +
   stats code; turns the tool into a mini offline observability view.
-- **Gap & spike detection.** Surface unusual silences (a service going quiet) and
-  bursts directly on the timeline — the histogram already has the data.
-- **Cluster correlation.** For a pattern or error spike, auto-surface the fields it
-  concentrates in ("80% of these are `host=web-03`, `status=503`").
+- ~~**Gap & spike detection.**~~ *Shipped* — volume spikes and notable silences
+  marked on the histogram.
+- ~~**Cluster correlation.**~~ *Shipped* — the summary panel surfaces the fields a
+  filtered result set concentrates in, with over-representation (lift).
 
 ### Workflow — keep an investigation
 

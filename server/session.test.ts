@@ -568,6 +568,32 @@ test('numericFacet summarizes a numeric field and facet reports numeric coverage
   assert.equal(nf2.count, 50); // odd i → status 500
 });
 
+test('correlate surfaces fields the result set concentrates in', async () => {
+  // 300 lines; errors (every 5th) nearly all come from host=web-03
+  const lines = Array.from({ length: 300 }, (_, i) => {
+    const err = i % 5 === 0;
+    const host = err ? (i % 25 === 0 ? 'web-01' : 'web-03') : `web-0${i % 7}`;
+    return `level=${err ? 'ERROR' : 'INFO'} host=${host} status=${err ? 503 : 200} msg=req${i}`;
+  });
+  const s = await openAndIndex(makeLogFile('corr.log', lines));
+
+  // no search → nothing to explain
+  assert.deepEqual(s.correlate().items, []);
+
+  s.setSearch('level:ERROR');
+  const c = s.correlate();
+  assert.equal(c.resultsTotal, 60);
+  // host concentrates on web-03, status on 503
+  const host = c.items.find((it) => it.field === 'host');
+  assert.ok(host);
+  assert.equal(host.value, 'web-03');
+  assert.ok(host.share >= 0.7 && host.share <= 0.9); // ~80%
+  assert.ok(host.lift > 1.5); // over-represented vs the whole file
+  assert.ok(c.items.some((it) => it.field === 'status' && it.value === '503'));
+  // high-cardinality msg never dominates, so it isn't surfaced
+  assert.ok(!c.items.some((it) => it.field === 'msg'));
+});
+
 test('index is reused on reopen of an unchanged file', async () => {
   const file = makeLogFile('reuse.log', appLogLines(2000));
   const s1 = await openAndIndex(file);

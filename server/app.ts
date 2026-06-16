@@ -238,6 +238,11 @@ export function createApp(distDir: string): TraceBoxApp {
     sendJson(res, 200, getSession(params.id).numericFacet(field, buckets));
   });
 
+  router.add('GET', '/api/sessions/:id/correlate', (_req, res, params, query) => {
+    const limit = Number(query.get('limit') ?? 8);
+    sendJson(res, 200, getSession(params.id).correlate(limit));
+  });
+
   router.add('GET', '/api/sessions/:id/clusters', (_req, res, params, query) => {
     const limit = Number(query.get('limit') ?? 50);
     sendJson(res, 200, getSession(params.id).clusters(limit));

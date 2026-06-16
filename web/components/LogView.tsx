@@ -420,6 +420,7 @@ export default function LogView({
             epoch={epoch}
             grouped={groupingActive}
             hasSearch={status.search !== null}
+            onAddFilter={addFilter}
             onClose={() => setStatsOpen(false)}
           />
         )}

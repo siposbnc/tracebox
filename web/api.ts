@@ -4,6 +4,7 @@ import type {
   ConfigInfo,
   ClustersResult,
   ContextResult,
+  Correlations,
   FacetResult,
   HistogramData,
   LineDetail,
@@ -92,6 +93,8 @@ export const api = {
     ),
   clusters: (id: string, limit = 50) =>
     request<ClustersResult>(`/api/sessions/${id}/clusters?limit=${limit}`),
+  correlate: (id: string, limit = 8) =>
+    request<Correlations>(`/api/sessions/${id}/correlate?limit=${limit}`),
   stats: (id: string, grouped = false) =>
     request<StatsResult>(`/api/sessions/${id}/stats${grouped ? '?grouped=1' : ''}`),
   setTail: (id: string, on: boolean) =>

@@ -85,6 +85,11 @@ export interface NumericFacet {
   buckets: { lo: number; hi: number; count: number }[];
 }
 
+export interface Correlations {
+  resultsTotal: number;
+  items: { field: string; value: string; count: number; share: number; lift: number }[];
+}
+
 export interface ClustersResult {
   patterns: { id: number; pattern: string; count: number }[];
   distinctCount: number;

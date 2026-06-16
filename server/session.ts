@@ -670,6 +670,12 @@ export class LogSession extends EventEmitter {
     return this.store.numericFacet(field, this.hasSearch, buckets);
   }
 
+  /** Field=value pairs the current result set concentrates in (empty without a search). */
+  correlate(limit?: number): ReturnType<IndexStore['correlate']> {
+    if (!this.hasSearch) return { resultsTotal: 0, items: [] };
+    return this.store.correlate(limit);
+  }
+
   /** Top log patterns (clusters) over the current view (search results, or the whole file). */
   clusters(limit?: number): ReturnType<IndexStore['clusters']> {
     return this.store.clusters(this.hasSearch, limit);
