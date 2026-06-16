@@ -45,6 +45,8 @@ export interface RowData {
 export interface SessionStatus {
   id: string;
   file: string;
+  /** Number of source files (1 normally; >1 when a rotation group was opened as one stream). */
+  sourceCount: number;
   fileSize: number;
   phase: 'indexing' | 'finalizing' | 'ready' | 'error';
   bytesIndexed: number;
@@ -92,9 +94,11 @@ function looksGzip(file: string): boolean {
 export class LogSession extends EventEmitter {
   readonly id: string;
   readonly file: string;
-  /** Path the reader/indexer actually read — same as `file`, or a decompressed temp for .gz. */
+  /** Files that make up this session: just `[file]`, or a rotation group oldest→newest. */
+  readonly sources: string[];
+  /** Path the reader/indexer actually read — same as `file`, or a temp (decompressed .gz / concatenated rotation group). */
   private dataPath: string;
-  /** True when `file` is gzip-compressed and served from a decompressed temp. */
+  /** True when the data is served from a temp (gzip source, or a multi-file rotation group). */
   readonly compressed: boolean;
   private index = new LineIndex();
   private store: IndexStore;
@@ -140,18 +144,29 @@ export class LogSession extends EventEmitter {
   private appendRunning = false;
   private appendQueued = false;
 
-  constructor(file: string) {
+  /**
+   * `file` is the primary/displayed path. `sources` (when given and longer than
+   * one) is a rotation group — its members are concatenated oldest→newest into a
+   * single stream and indexed as one logical file.
+   */
+  constructor(file: string, sources?: string[]) {
     super();
     this.id = String(nextId++);
     this.file = path.resolve(file);
     const st = statSync(this.file);
     if (!st.isFile()) throw new Error('Not a file');
     this.fileSize = st.size;
-    this.compressed = looksGzip(this.file);
-    const hash = createHash('sha1').update(this.file.toLowerCase()).digest('hex').slice(0, 16);
+    this.sources = sources && sources.length > 1 ? sources.map((s) => path.resolve(s)) : [this.file];
+    const rotation = this.sources.length > 1;
+    // a rotation group is concatenated to a plain temp; only a lone .gz is "compressed"
+    this.compressed = !rotation && looksGzip(this.file);
+    // identity (and thus the index db) keys off the whole group, so reopening the
+    // same set reuses the index; a single file keeps its plain per-file hash
+    const identity = rotation ? this.sources.join('|') : this.file;
+    const hash = createHash('sha1').update(identity.toLowerCase()).digest('hex').slice(0, 16);
     const dbPath = path.join(indexCacheDir(), `${hash}.db`);
     this.store = new IndexStore(dbPath);
-    // the reader is created in start(), once dataPath is known (decompress for .gz)
+    // the reader is created in start(), once dataPath is known (temp for .gz / rotation)
     this.dataPath = this.file;
   }
 
@@ -160,9 +175,14 @@ export class LogSession extends EventEmitter {
     return this.store.dbPath.replace(/\.db$/, '.data');
   }
 
-  /** Ensure the readable data file exists; for .gz decompress to a temp (reused if still valid). */
+  /**
+   * Ensure the readable data file exists. A plain single file is read in place; a
+   * lone .gz is decompressed to a temp; a rotation group is concatenated
+   * (decompressing .gz members) oldest→newest into a temp. The temp is reused
+   * when the fingerprint still matches.
+   */
   private async prepareData(reusable: boolean): Promise<void> {
-    if (!this.compressed) {
+    if (this.sources.length <= 1 && !this.compressed) {
       this.dataPath = this.file;
       return;
     }
@@ -170,22 +190,58 @@ export class LogSession extends EventEmitter {
     try {
       if (reusable && statSync(temp).size > 0) {
         this.dataPath = temp;
-        return; // decompressed copy from a previous open is still valid
+        return; // temp from a previous open is still valid
       }
     } catch {
-      // temp missing — decompress below
+      // temp missing — (re)build it below
     }
-    await pipeline(createReadStream(this.file), createGunzip(), createWriteStream(temp));
+    if (this.sources.length > 1) {
+      await this.concatSources(temp);
+    } else {
+      await pipeline(createReadStream(this.file), createGunzip(), createWriteStream(temp));
+    }
     this.dataPath = temp;
   }
 
-  private fingerprint(size: number, mtimeMs: number): string {
-    return `${this.file.toLowerCase()}|${size}|${Math.round(mtimeMs)}`;
+  /** Concatenate the rotation group into `temp`, decompressing .gz members and
+   * inserting a newline between files that don't already end with one. */
+  private async concatSources(temp: string): Promise<void> {
+    const out = createWriteStream(temp);
+    try {
+      for (const src of this.sources) {
+        const input = looksGzip(src) ? createReadStream(src).pipe(createGunzip()) : createReadStream(src);
+        let lastByte = 0x0a;
+        input.on('data', (chunk: Buffer) => {
+          if (chunk.length) lastByte = chunk[chunk.length - 1];
+        });
+        await new Promise<void>((resolve, reject) => {
+          input.on('error', reject);
+          out.on('error', reject);
+          input.on('end', resolve);
+          input.pipe(out, { end: false });
+        });
+        if (lastByte !== 0x0a) {
+          await new Promise<void>((resolve, reject) => out.write('\n', (e) => (e ? reject(e) : resolve())));
+        }
+      }
+    } finally {
+      await new Promise<void>((resolve) => out.end(resolve));
+    }
+  }
+
+  /** Fingerprint of every source file; reflects any member changing, so an
+   * altered rotation group rebuilds rather than reusing a stale index. */
+  private fingerprint(): string {
+    return this.sources
+      .map((s) => {
+        const st = statSync(s);
+        return `${s.toLowerCase()}|${st.size}|${Math.round(st.mtimeMs)}`;
+      })
+      .join(';');
   }
 
   async start(): Promise<void> {
-    const st = statSync(this.file);
-    const fp = this.fingerprint(st.size, st.mtimeMs);
+    const fp = this.fingerprint();
     const reusable = this.store.isReusable(fp);
     // decompress .gz to a temp (or reuse it) before reading; indexing/seeking
     // then works on the decompressed data exactly as for a plain file
@@ -364,10 +420,10 @@ export class LogSession extends EventEmitter {
   }
 
   private persistMeta(sizeAtIndex: number): void {
-    const st = statSync(this.file);
     const snap = this.index.snapshot();
     this.store.saveCheckpoints(snap.blocks, snap.checkpoints);
-    this.store.setMeta('fingerprint', this.fingerprint(st.size, st.mtimeMs));
+    this.store.setMeta('fingerprint', this.fingerprint());
+    this.store.setMeta('source', this.file);
     this.store.setMeta('lineCount', String(this.index.lineCount));
     this.store.setMeta('indexedBytes', String(this.index.indexedBytes));
     this.store.setMeta('format', this.parser.name);
@@ -804,6 +860,7 @@ export class LogSession extends EventEmitter {
     return {
       id: this.id,
       file: this.file,
+      sourceCount: this.sources.length,
       fileSize: this.fileSize,
       phase: this.phase,
       bytesIndexed: Math.min(this.index.indexedBytes, this.fileSize),

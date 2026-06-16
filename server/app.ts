@@ -9,6 +9,7 @@ import { listCache, evictCache, clearCache, pruneStaleCache } from './cache.ts';
 import { getConfig, setConfig, DEFAULT_CACHE_DIR } from './config.ts';
 import { mkdirSync } from 'node:fs';
 import { listRoots, listDir, getRecents, addRecent } from './files.ts';
+import { detectRotationGroup } from './rotation.ts';
 import { QuerySyntaxError } from './queryParser.ts';
 
 export interface TraceBoxApp {
@@ -90,7 +91,7 @@ export function createApp(distDir: string): TraceBoxApp {
   // Sessions
 
   router.add('POST', '/api/sessions', async (req, res) => {
-    const body = (await readJsonBody(req)) as { path?: string };
+    const body = (await readJsonBody(req)) as { path?: string; rotation?: boolean };
     if (!body.path) {
       sendJson(res, 400, { error: 'Missing "path"' });
       return;
@@ -107,18 +108,37 @@ export function createApp(distDir: string): TraceBoxApp {
       sendJson(res, 400, { error: 'Not a file' });
       return;
     }
-    // reuse an existing session for the same file
+    // opening a rotation group as one stream (the file plus its rotated siblings)
+    const group = body.rotation ? detectRotationGroup(resolved).map((m) => m.path) : [resolved];
+    // reuse an existing session for the same file/group
     for (const s of sessions.values()) {
-      if (s.file.toLowerCase() === resolved.toLowerCase()) {
+      const sameGroup = s.sources.length === group.length && s.sources.every((p, i) => p.toLowerCase() === group[i].toLowerCase());
+      if (sameGroup) {
         sendJson(res, 200, s.status());
         return;
       }
     }
-    const session = new LogSession(resolved);
+    const session = group.length > 1 ? new LogSession(resolved, group) : new LogSession(resolved);
     sessions.set(session.id, session);
     addRecent(resolved);
     await session.start();
     sendJson(res, 201, session.status());
+  });
+
+  // Rotation group for a file (the file plus its rotated siblings), for the UI to
+  // offer "open as one stream"; returns just the file itself when none are found.
+  router.add('GET', '/api/rotation', (_req, res, _params, query) => {
+    const p = query.get('path');
+    if (!p) {
+      sendJson(res, 400, { error: 'Missing "path"' });
+      return;
+    }
+    try {
+      const members = detectRotationGroup(path.resolve(p));
+      sendJson(res, 200, { members });
+    } catch {
+      sendJson(res, 404, { error: 'File not found' });
+    }
   });
 
   router.add('GET', '/api/sessions', (_req, res) => {

@@ -14,6 +14,14 @@ date and start a fresh `Unreleased` section.
 
 ### Added
 
+- Compressed logs: `.gz` files open transparently — TraceBox decompresses once to
+  a cached temp (recognised by extension or gzip magic bytes) and indexes that, so
+  reopening an unchanged archive reuses both the decompressed copy and its index.
+- Rotation-aware open: when you open a log that has rotated siblings
+  (`app.log` + `app.log.1` + `app.log.2.gz`, or dateext names), TraceBox offers to
+  open the whole group as one time-ordered stream — members are concatenated
+  oldest→newest (decompressing `.gz` parts) and indexed as a single file. The tab
+  shows a `+N` badge for the extra files.
 - macOS and Linux desktop builds: the release workflow now builds Windows (NSIS),
   macOS (dmg + zip), and Linux (AppImage) on an OS matrix and publishes them to
   one GitHub release. `npm run dist:mac` / `dist:linux` build locally on the

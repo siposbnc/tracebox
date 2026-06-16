@@ -15,6 +15,8 @@ export interface RowData {
 export interface SessionStatus {
   id: string;
   file: string;
+  /** Number of source files (1 normally; >1 when a rotation group was opened as one stream). */
+  sourceCount: number;
   fileSize: number;
   phase: 'indexing' | 'finalizing' | 'ready' | 'error';
   bytesIndexed: number;
@@ -27,6 +29,12 @@ export interface SessionStatus {
   levelCounts: Record<string, number>;
   fieldNames: { key: string; count: number }[];
   search: { query: string; total: number; durationMs: number } | null;
+}
+
+export interface RotationMember {
+  path: string;
+  size: number;
+  mtimeMs: number;
 }
 
 export interface HistogramData {

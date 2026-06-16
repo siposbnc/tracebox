@@ -39,17 +39,20 @@ function readMeta(dbPath: string): { path: string | null; lineCount: number } {
   try {
     const db = new DatabaseSync(dbPath, { readOnly: true });
     try {
-      const fp = (db.prepare(`SELECT value FROM meta WHERE key = 'fingerprint'`).get() as { value: string } | undefined)
-        ?.value;
-      const lc = (db.prepare(`SELECT value FROM meta WHERE key = 'lineCount'`).get() as { value: string } | undefined)
-        ?.value;
-      // fingerprint is `path|size|mtime`
-      let srcPath: string | null = null;
-      if (fp) {
-        const parts = fp.split('|');
-        parts.pop();
-        parts.pop();
-        srcPath = parts.join('|') || null;
+      const get = (key: string): string | undefined =>
+        (db.prepare(`SELECT value FROM meta WHERE key = ?`).get(key) as { value: string } | undefined)?.value;
+      const lc = get('lineCount');
+      // prefer the explicit source path; else derive it from the fingerprint
+      // (`path|size|mtime`, or `…;…` per member for a rotation group)
+      let srcPath: string | null = get('source') ?? null;
+      if (!srcPath) {
+        const fp = get('fingerprint');
+        if (fp) {
+          const parts = fp.split(';')[0].split('|');
+          parts.pop();
+          parts.pop();
+          srcPath = parts.join('|') || null;
+        }
       }
       return { path: srcPath, lineCount: Number(lc ?? 0) || 0 };
     } finally {

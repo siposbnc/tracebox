@@ -20,6 +20,8 @@ export default function App() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [openError, setOpenError] = useState<string | null>(null);
+  // a freshly-opened lone file that has rotated siblings — offer to open them as one stream
+  const [rotationOffer, setRotationOffer] = useState<{ path: string; count: number; sessionId: string } | null>(null);
   const [whatsNewOpen, setWhatsNewOpen] = useState(false);
   const [timelineOpen, setTimelineOpen] = useState(false);
   // pending jump from the merged timeline: open a file's tab at a specific line
@@ -66,11 +68,39 @@ export default function App() {
   }, [sessions]);
 
   const openFile = useCallback(async (path: string) => {
+    setRotationOffer(null);
     const status = await api.openFile(path);
     setSessions((prev) => (prev.some((s) => s.id === status.id) ? prev : [...prev, status]));
     setActiveId(status.id);
     setDialogOpen(false);
+    // if this lone file is part of a rotation set, offer to open the whole group
+    if (status.sourceCount === 1) {
+      void api
+        .rotation(path)
+        .then((r) => {
+          if (r.members.length > 1) setRotationOffer({ path, count: r.members.length, sessionId: status.id });
+        })
+        .catch(() => {});
+    }
   }, []);
+
+  // Re-open the offered file as its full rotation group, replacing the single-file tab.
+  const openRotationGroup = useCallback(async () => {
+    const offer = rotationOffer;
+    if (!offer) return;
+    setRotationOffer(null);
+    try {
+      const status = await api.openFile(offer.path, true);
+      setSessions((prev) => {
+        const next = prev.some((s) => s.id === status.id) ? prev : [...prev, status];
+        return next.filter((s) => s.id === status.id || s.id !== offer.sessionId);
+      });
+      setActiveId(status.id);
+      if (status.id !== offer.sessionId) await api.closeSession(offer.sessionId);
+    } catch (err) {
+      setOpenError(err instanceof Error ? err.message : String(err));
+    }
+  }, [rotationOffer]);
 
   const openFileSafe = useCallback(
     (path: string) => {
@@ -123,6 +153,7 @@ export default function App() {
   const closeSession = useCallback(
     async (id: string) => {
       setTimelineOpen(false); // the merged timeline references open sessions
+      setRotationOffer((o) => (o?.sessionId === id ? null : o));
       await api.closeSession(id);
       setSessions((prev) => {
         const next = prev.filter((s) => s.id !== id);
@@ -163,9 +194,17 @@ export default function App() {
                     ? 'border-edge bg-surface-0 text-gray-100'
                     : 'border-transparent bg-surface-2/50 text-gray-400 hover:bg-surface-2'
                 }`}
-                title={s.file}
+                title={s.sourceCount > 1 ? `${s.file} (+${s.sourceCount - 1} rotated)` : s.file}
               >
                 <span className="truncate">{name}</span>
+                {s.sourceCount > 1 && (
+                  <span
+                    className="rounded bg-surface-2 px-1 text-[10px] font-medium text-sky-300"
+                    title={`${s.sourceCount} rotated files opened as one stream`}
+                  >
+                    +{s.sourceCount - 1}
+                  </span>
+                )}
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
@@ -219,6 +258,30 @@ export default function App() {
           <button onClick={() => setOpenError(null)} className="rounded px-1.5 text-red-400 hover:text-red-200">
             ×
           </button>
+        </div>
+      )}
+
+      {rotationOffer && (
+        <div className="flex items-center justify-between gap-3 border-b border-sky-900 bg-sky-950/50 px-4 py-1.5 text-sm text-sky-200">
+          <span>
+            Found {rotationOffer.count - 1} rotated {rotationOffer.count - 1 === 1 ? 'file' : 'files'} alongside this
+            log.
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => void openRotationGroup()}
+              className="rounded bg-sky-700/60 px-2 py-0.5 font-medium text-sky-100 hover:bg-sky-600/60"
+            >
+              Open all {rotationOffer.count} as one stream
+            </button>
+            <button
+              onClick={() => setRotationOffer(null)}
+              className="rounded px-1.5 text-sky-400 hover:text-sky-200"
+              title="Dismiss"
+            >
+              ×
+            </button>
+          </div>
         </div>
       )}
 

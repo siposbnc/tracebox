@@ -22,6 +22,10 @@ WPF application, re-imagined as a local web app with a Node.js backend.
   keeps extending over them; unterminated trailing lines are handled correctly. A **manual
   refresh** button reloads the file on demand, and rows can be ordered **oldest- or
   newest-first** via a global toggle.
+- **Compressed & rotated logs** — `.gz` files open transparently (decompressed once to a cached
+  temp), and a rotation group (`app.log` + `app.log.1` + `app.log.2.gz`, or dateext names) can be
+  opened as one time-ordered stream — members are concatenated oldest→newest and indexed as a
+  single file.
 - **Persistent index cache** — reopening an unchanged file is instant (the index is fingerprinted
   by path + size + mtime and reused).
 - **Time histogram** — stacked per-level volume over time; drag a range to filter.

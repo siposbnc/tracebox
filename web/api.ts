@@ -10,6 +10,7 @@ import type {
   MergedBuild,
   MergedRow,
   RecentFile,
+  RotationMember,
   RowData,
   SessionStatus,
   StatsResult,
@@ -39,12 +40,13 @@ export const api = {
       body: JSON.stringify(patch),
     }),
 
-  openFile: (path: string) =>
+  openFile: (path: string, rotation = false) =>
     request<SessionStatus>('/api/sessions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path }),
+      body: JSON.stringify({ path, rotation }),
     }),
+  rotation: (path: string) => request<{ members: RotationMember[] }>(`/api/rotation?path=${encodeURIComponent(path)}`),
   sessions: () => request<SessionStatus[]>('/api/sessions'),
   session: (id: string) => request<SessionStatus>(`/api/sessions/${id}`),
   closeSession: (id: string) => request<{ ok: boolean }>(`/api/sessions/${id}`, { method: 'DELETE' }),

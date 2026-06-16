@@ -25,22 +25,18 @@ The original backlog is essentially complete. Delivered so far (see `CHANGELOG.m
 - **Platform & polish** — Windows / macOS / Linux desktop builds with auto-update,
   a settings panel, local/UTC timezone toggle, a two-row toolbar, and index-cache
   management (view/evict, configurable folder, auto-clear of stale caches).
-
-The one explicitly-deferred item from the original list is **compressed-file
-support**, carried forward below.
+- **Ingest** — transparent `.gz` open (decompress-once to a cached temp) and
+  rotation-aware open (concatenate `app.log` + `app.log.1` + `app.log.2.gz` into one
+  time-ordered stream, indexed as a single file).
 
 ## Ideas (forward-looking)
 
 ### Ingest — meet logs where they actually live
 
-- **Compressed files (`.gz` / `.zip`).** *(Highest-value real-world gap.)* Rotated
-  logs are almost always gzipped; today a `.gz` opens as garbage. Decompress to a
-  temp file once on open (reuses the whole existing index/seek/tail path) using
-  `node:zlib` — offline and dependency-free.
-- **Directory & rotation-aware open.** Open a folder or glob and treat
-  `app.log` + `app.log.1` + `app.log.2.gz` as one logical, time-ordered stream;
-  follow the rotation as it happens. This is how ops actually store logs, and it
-  pairs naturally with compression and the merged timeline.
+- **Live rotation following.** Rotation-aware open is a snapshot today; follow the
+  rotation as it happens (new `app.log` after a roll) the way single-file tail does.
+- **More archive formats.** Extend transparent decompression beyond `.gz` to
+  `.zip` / `.bz2` / `.xz`, and support opening a whole `.zip` of logs.
 - **Pipe / command sources.** Read from stdin or `tracebox -- <command>` to view a
   live process (`docker logs`, `journalctl`, `kubectl logs`) with the full toolset,
   still fully offline.

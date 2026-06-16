@@ -509,6 +509,32 @@ test('opens a gzipped log transparently', async () => {
   assert.equal(s.setSearch('level:ERROR').total, Math.floor(300 / 6) + (300 % 6 > 4 ? 1 : 0));
 });
 
+test('opens a rotation group as one time-ordered stream', async () => {
+  const all = appLogLines(200);
+  // older rotated member, intentionally without a trailing newline to exercise
+  // the separator inserted between concatenated files
+  const older = makeLogFile('svc.log.1', all.slice(0, 100), false);
+  const newer = makeLogFile('svc.log', all.slice(100));
+
+  const s = new LogSession(newer, [older, newer]); // oldest→newest
+  openSessions.push(s);
+  const done = new Promise<void>((resolve, reject) => {
+    s.on('done', resolve);
+    s.on('error-event', (msg: string) => reject(new Error(msg)));
+  });
+  await s.start();
+  if (s.phase !== 'ready') await done;
+
+  assert.equal(s.sources.length, 2);
+  assert.equal(s.status().sourceCount, 2);
+  // 200 lines, not 199 — the boundary between the two files stayed split
+  assert.equal(s.lineCount, 200);
+  const boundary = await s.getRows(99, 2);
+  assert.match(boundary[0].text, /request 99 /); // last line of the older file
+  assert.match(boundary[1].text, /request 100 /); // first line of the newer file
+  assert.equal(s.setSearch('level:ERROR').total, Math.floor(200 / 6) + (200 % 6 > 4 ? 1 : 0));
+});
+
 test('index is reused on reopen of an unchanged file', async () => {
   const file = makeLogFile('reuse.log', appLogLines(2000));
   const s1 = await openAndIndex(file);
