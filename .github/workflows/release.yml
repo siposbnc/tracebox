@@ -1,9 +1,9 @@
 name: Release
 
-# Builds the Windows installer and publishes it to a GitHub release whenever a
-# version tag (e.g. v1.0.1) is pushed. Signing happens automatically only if the
-# CSC_LINK / CSC_KEY_PASSWORD repository secrets are set; without them the build
-# still succeeds and produces an unsigned installer.
+# Builds the desktop apps for Windows, macOS, and Linux and publishes them to a
+# GitHub release whenever a version tag (e.g. v1.0.1) is pushed. Windows/macOS
+# signing happens only if the CSC_LINK / CSC_KEY_PASSWORD secrets are set;
+# without them the builds still succeed and are unsigned.
 on:
   push:
     tags:
@@ -14,8 +14,35 @@ permissions:
   contents: write
 
 jobs:
-  build-windows:
-    runs-on: windows-latest
+  # Verify the tag and pre-create one draft release so the per-OS build jobs all
+  # publish into it (otherwise their parallel uploads can create duplicate drafts
+  # and split the assets across them).
+  draft:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify tag matches package.json version
+        run: |
+          PKG_VERSION="v$(node -p "require('./package.json').version")"
+          if [ "$PKG_VERSION" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version $PKG_VERSION. Bump \"version\" in package.json before tagging."
+            exit 1
+          fi
+
+      - name: Create draft release
+        run: gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --draft --title "$GITHUB_REF_NAME" --notes "Release $GITHUB_REF_NAME"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build:
+    needs: draft
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -29,25 +56,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Verify tag matches package.json version
-        shell: bash
-        run: |
-          PKG_VERSION="v$(node -p "require('./package.json').version")"
-          if [ "$PKG_VERSION" != "$GITHUB_REF_NAME" ]; then
-            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version $PKG_VERSION. Bump \"version\" in package.json before tagging."
-            exit 1
-          fi
-
-      # Pre-create the draft so electron-builder reuses it. Without this, its
-      # parallel artifact uploads can each create a draft, splitting the assets
-      # (installer / blockmap / latest.yml) across duplicate releases.
-      - name: Create draft release
-        shell: bash
-        run: gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --draft --title "$GITHUB_REF_NAME" --notes "Release $GITHUB_REF_NAME"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and publish installer
+      - name: Build and publish
         run: npm run release
         env:
           # Provided automatically by GitHub Actions; lets electron-builder
@@ -56,3 +65,6 @@ jobs:
           # Optional code signing — see SIGNING.md. Absent secrets => unsigned build.
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          # On macOS, don't probe the (empty) CI keychain for a signing identity:
+          # produce a clean unsigned build unless CSC_LINK provides a certificate.
+          CSC_IDENTITY_AUTO_DISCOVERY: false

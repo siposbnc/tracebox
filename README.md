@@ -39,7 +39,7 @@ WPF application, re-imagined as a local web app with a Node.js backend.
 | Frontend | React 19 + TypeScript + Vite 7 + Tailwind CSS 4 |
 | Virtualization | `@tanstack/react-virtual` (smooth scrolling over millions of rows) |
 
-## Desktop app (Windows)
+## Desktop app (Windows, macOS, Linux)
 
 TraceBox ships as a standalone desktop application built with **Electron**. The same
 backend and UI run inside a native window — no browser, no localhost URL to manage.
@@ -50,12 +50,20 @@ npm install
 npm run app      # build everything and launch the desktop app
 ```
 
-To produce a distributable Windows installer:
+To produce distributable installers (each must be built on its own OS):
 
 ```powershell
-npm run dist     # → release\TraceBox Setup 1.0.0.exe  (NSIS installer)
-npm run dist:dir # → release\win-unpacked\TraceBox.exe (portable, unpacked)
+npm run dist        # Windows → release\TraceBox Setup x.y.z.exe  (NSIS installer)
+npm run dist:dir    # Windows → release\win-unpacked\TraceBox.exe (portable, unpacked)
+npm run dist:mac    # macOS   → release/TraceBox-x.y.z.dmg (+ zip for auto-update)
+npm run dist:linux  # Linux   → release/TraceBox-x.y.z.AppImage
 ```
+
+The [release workflow](.github/workflows/release.yml) builds all three on tag push
+via an OS matrix and publishes them to one GitHub release. macOS and Linux builds
+are unsigned unless signing secrets are configured; on macOS that means Gatekeeper
+requires a right-click → **Open** on first launch, and auto-update is disabled for
+unsigned macOS builds (Linux AppImage and Windows still auto-update).
 
 The installer:
 

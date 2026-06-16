@@ -23,7 +23,9 @@
     "app:dev": "npm run build:electron && electron .",
     "dist": "npm run build && npm run build:electron && electron-builder --win",
     "dist:dir": "npm run build && npm run build:electron && electron-builder --win --dir",
-    "release": "npm run build && npm run build:electron && electron-builder --win --publish always"
+    "dist:mac": "npm run build && npm run build:electron && electron-builder --mac",
+    "dist:linux": "npm run build && npm run build:electron && electron-builder --linux",
+    "release": "npm run build && npm run build:electron && electron-builder --publish always"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.0",

@@ -53,3 +53,33 @@ nsis:
   deleteAppDataOnUninstall: false
   # adds the explicit right-click "Open with TraceBox" verbs
   include: build/installer.nsh
+
+mac:
+  # dmg for distribution, zip for auto-update (electron-updater needs the zip).
+  target:
+    - dmg
+    - zip
+  # electron-builder generates the .icns from this 1024px PNG.
+  icon: build/icon.png
+  category: public.app-category.developer-tools
+  # Unsigned / un-notarized unless CSC_LINK (+ notarization secrets) are set;
+  # Gatekeeper then needs a right-click → Open on first launch, and auto-update
+  # is disabled for unsigned mac builds (Squirrel.Mac requires signing).
+  fileAssociations:
+    - ext: log
+      name: Log File
+      role: Viewer
+    - ext: jsonl
+      name: JSON Lines Log
+      role: Viewer
+    - ext: ndjson
+      name: NDJSON Log
+      role: Viewer
+
+linux:
+  target:
+    - AppImage
+  icon: build/icon.png
+  category: Development
+  synopsis: Fast, offline log reader for multi-gigabyte files
+  maintainer: TraceBox <noreply@tracebox.io>

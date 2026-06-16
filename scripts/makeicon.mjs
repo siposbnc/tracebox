@@ -173,9 +173,11 @@ function encodeIco(pngs) {
 
 const sizes = [16, 24, 32, 48, 64, 128, 256];
 const pngs = sizes.map((size) => ({ size, data: encodePng(renderIcon(size), size) }));
+// 1024px source so electron-builder can derive the macOS .icns and Linux icons
+const icon1024 = encodePng(renderIcon(1024), 1024);
 
 writeFileSync(path.join(OUT_DIR, 'build', 'icon.ico'), encodeIco(pngs));
-writeFileSync(path.join(OUT_DIR, 'build', 'icon.png'), pngs.at(-1).data);
-// also refresh the in-app favicon used by the web UI
+writeFileSync(path.join(OUT_DIR, 'build', 'icon.png'), icon1024);
+// the in-app favicon used by the web UI stays small
 writeFileSync(path.join(OUT_DIR, 'public', 'tracebox.png'), pngs.at(-1).data);
-console.log(`Wrote build/icon.ico (${sizes.join(', ')}), build/icon.png, public/tracebox.png`);
+console.log(`Wrote build/icon.ico (${sizes.join(', ')}), build/icon.png (1024), public/tracebox.png`);

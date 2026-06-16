@@ -14,6 +14,10 @@ date and start a fresh `Unreleased` section.
 
 ### Added
 
+- macOS and Linux desktop builds: the release workflow now builds Windows (NSIS),
+  macOS (dmg + zip), and Linux (AppImage) on an OS matrix and publishes them to
+  one GitHub release. `npm run dist:mac` / `dist:linux` build locally on the
+  respective OS. macOS/Linux builds are unsigned unless signing secrets are set.
 - Summary panel (toolbar): metrics for the current view — total lines, time span,
   average and peak lines/min, the level breakdown with percentages, and the top
   structured fields with their leading values. Respects the active search.
