@@ -44,6 +44,17 @@ export interface Facet {
   covered: number;
 }
 
+export interface Stats {
+  /** Rows in the current view. */
+  total: number;
+  /** Of those, how many have a parseable timestamp. */
+  withTs: number;
+  minTs: number | null;
+  maxTs: number | null;
+  /** Per-level counts (descending), including 'NONE'. */
+  levels: { level: string; count: number }[];
+}
+
 export interface Clusters {
   /** Top patterns by count (descending), capped at the requested limit. */
   patterns: { id: number; pattern: string; count: number }[];
@@ -575,6 +586,27 @@ export class IndexStore {
       pattern: string;
       count: number;
     }[];
+  }
+
+  /**
+   * Summary stats for the current view: total/with-ts counts, time span, and the
+   * per-level breakdown. `headsOnly` counts records (heads) for the whole-file
+   * grouped view; when filtered, the result set already reflects grouping.
+   */
+  stats(filtered: boolean, headsOnly: boolean): Stats {
+    const from = filtered ? `results r JOIN lines l ON l.line_no = r.line_no` : `lines l`;
+    const where = !filtered && headsOnly ? ' WHERE l.is_head = 1' : '';
+    const agg = this.db
+      .prepare(
+        `SELECT COUNT(*) AS total, MIN(l.ts) AS minTs, MAX(l.ts) AS maxTs, COUNT(l.ts) AS withTs FROM ${from}${where}`,
+      )
+      .get() as { total: number; minTs: number | null; maxTs: number | null; withTs: number };
+    const levels = this.db
+      .prepare(
+        `SELECT COALESCE(l.level, 'NONE') AS level, COUNT(*) AS count FROM ${from}${where} GROUP BY l.level ORDER BY count DESC`,
+      )
+      .all() as { level: string; count: number }[];
+    return { total: agg.total, withTs: agg.withTs, minTs: agg.minTs, maxTs: agg.maxTs, levels };
   }
 
   /** Per-level counts over the whole file. */

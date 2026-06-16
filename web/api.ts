@@ -12,6 +12,7 @@ import type {
   RecentFile,
   RowData,
   SessionStatus,
+  StatsResult,
 } from './types';
 import { getTz, type Tz } from './settings';
 
@@ -84,6 +85,8 @@ export const api = {
     request<FacetResult>(`/api/sessions/${id}/facet?field=${encodeURIComponent(field)}&limit=${limit}`),
   clusters: (id: string, limit = 50) =>
     request<ClustersResult>(`/api/sessions/${id}/clusters?limit=${limit}`),
+  stats: (id: string, grouped = false) =>
+    request<StatsResult>(`/api/sessions/${id}/stats${grouped ? '?grouped=1' : ''}`),
   setTail: (id: string, on: boolean) =>
     request<{ tail: boolean }>(`/api/sessions/${id}/tail`, {
       method: 'POST',

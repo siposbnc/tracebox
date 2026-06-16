@@ -547,6 +547,33 @@ export class LogSession extends EventEmitter {
     return this.store.clusters(this.hasSearch, limit);
   }
 
+  /** Summary metrics for the current view: span, rate, level breakdown, top fields. */
+  stats(grouped = false): {
+    total: number;
+    withTs: number;
+    minTs: number | null;
+    maxTs: number | null;
+    peakPerMin: number;
+    levels: { level: string; count: number }[];
+    fields: { key: string; distinctCount: number; covered: number; values: { value: string; count: number }[] }[];
+  } {
+    const headsOnly = grouped && !this.hasSearch;
+    const base = this.store.stats(this.hasSearch, headsOnly);
+    const h = this.store.histogram(this.hasSearch);
+    const peakPerMin = h ? Math.round((Math.max(0, ...h.buckets.map((b) => b.total)) / h.bucketMs) * 60_000) : 0;
+    // top structured fields by occurrence, excluding the ones already summarised
+    const skip = /^(timestamp|ts|time|@timestamp|date|datetime|eventtime|level|lvl|severity|loglevel|message|msg)$/i;
+    const fields = [...this.fieldCounts.entries()]
+      .filter(([k]) => !skip.test(k))
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([key]) => {
+        const f = this.store.facet(key, this.hasSearch, 4);
+        return { key, distinctCount: f.distinctCount, covered: f.covered, values: f.values };
+      });
+    return { ...base, peakPerMin, fields };
+  }
+
   /**
    * Next/previous matching line relative to `after` (for "find next" in highlight
    * mode), plus its zero-based position in the current browse view so the UI can

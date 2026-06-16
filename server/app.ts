@@ -213,6 +213,10 @@ export function createApp(distDir: string): TraceBoxApp {
     sendJson(res, 200, getSession(params.id).clusters(limit));
   });
 
+  router.add('GET', '/api/sessions/:id/stats', (_req, res, params, query) => {
+    sendJson(res, 200, getSession(params.id).stats(query.get('grouped') === '1'));
+  });
+
   // ---------------------------------------------------------------------------
   // Merged timeline (time-ordered view across several open files)
 

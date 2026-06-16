@@ -9,6 +9,7 @@ import LogList from './LogList';
 import DetailPanel from './DetailPanel';
 import FacetPanel from './FacetPanel';
 import ClusterPanel from './ClusterPanel';
+import StatsPanel from './StatsPanel';
 import ContextPeek from './ContextPeek';
 import GoToLine from './GoToLine';
 import ShortcutsHelp from './ShortcutsHelp';
@@ -43,6 +44,7 @@ export default function LogView({
   const [histogramOpen, setHistogramOpen] = useState(getHistogramDefault);
   const [facetsOpen, setFacetsOpen] = useState(false);
   const [clustersOpen, setClustersOpen] = useState(false);
+  const [statsOpen, setStatsOpen] = useState(false);
   const [activeTemplate, setActiveTemplate] = useState<number | null>(null);
   const templateRef = useRef<number | null>(null);
   // bumped only when the cluster set changes (new text search / index ready), not
@@ -364,6 +366,8 @@ export default function LogView({
         onToggleFacets={() => setFacetsOpen((v) => !v)}
         clustersOpen={clustersOpen}
         onToggleClusters={() => setClustersOpen((v) => !v)}
+        statsOpen={statsOpen}
+        onToggleStats={() => setStatsOpen((v) => !v)}
         columns={columns}
         onColumnsChange={(cols) => setColumns(status.file, cols)}
         highlightMode={highlightMode}
@@ -404,6 +408,15 @@ export default function LogView({
             hasSearch={query.trim() !== ''}
             onDrill={drillCluster}
             onClose={() => setClustersOpen(false)}
+          />
+        )}
+        {statsOpen && (
+          <StatsPanel
+            sessionId={id}
+            epoch={epoch}
+            grouped={groupingActive}
+            hasSearch={status.search !== null}
+            onClose={() => setStatsOpen(false)}
           />
         )}
         <div className="min-w-0 flex-1">

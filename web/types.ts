@@ -70,6 +70,16 @@ export interface ClustersResult {
   covered: number;
 }
 
+export interface StatsResult {
+  total: number;
+  withTs: number;
+  minTs: number | null;
+  maxTs: number | null;
+  peakPerMin: number;
+  levels: { level: string; count: number }[];
+  fields: { key: string; distinctCount: number; covered: number; values: { value: string; count: number }[] }[];
+}
+
 export interface LineDetail {
   lineNo: number;
   raw: string;

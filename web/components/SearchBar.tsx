@@ -65,6 +65,8 @@ export default function SearchBar({
   onToggleFacets,
   clustersOpen,
   onToggleClusters,
+  statsOpen,
+  onToggleStats,
   columns,
   onColumnsChange,
   highlightMode,
@@ -100,6 +102,8 @@ export default function SearchBar({
   onToggleFacets: () => void;
   clustersOpen: boolean;
   onToggleClusters: () => void;
+  statsOpen: boolean;
+  onToggleStats: () => void;
   columns: string[];
   onColumnsChange: (cols: string[]) => void;
   highlightMode: boolean;
@@ -511,6 +515,12 @@ export default function SearchBar({
           <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <circle cx="6" cy="7" r="2.5" /><circle cx="17" cy="7" r="2.5" /><circle cx="9" cy="17" r="2.5" />
             <path d="M8 8.5 15 8.5M7.5 9 9 14.5M15.5 9 10 15" />
+          </svg>
+        </button>
+        <button onClick={onToggleStats} className={toolCls(statsOpen)} title="Summary statistics for the current view">
+          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M21 12a9 9 0 1 1-9-9v9z" />
+            <path d="M21 8a9 9 0 0 0-4-4" />
           </svg>
         </button>
         <BookmarksMenu file={file} onJump={onJumpToLine} onGoToLine={onGoToLine} bindings={bindings} />

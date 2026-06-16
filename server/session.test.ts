@@ -337,6 +337,38 @@ test('clustering groups lines into templates and drills into one', async () => {
   assert.equal(ce.covered, 10);
 });
 
+test('stats summarize the current view', async () => {
+  const lines = Array.from({ length: 600 }, (_, i) =>
+    JSON.stringify({
+      timestamp: new Date(Date.UTC(2024, 0, 1) + i * 1000).toISOString(),
+      level: i % 5 === 0 ? 'error' : 'info',
+      host: `web-${i % 3}`,
+    }),
+  );
+  const s = await openAndIndex(makeLogFile('stats.jsonl', lines));
+
+  const all = s.stats();
+  assert.equal(all.total, 600);
+  assert.equal(all.withTs, 600);
+  assert.equal(all.minTs, Date.UTC(2024, 0, 1));
+  assert.equal(all.maxTs, Date.UTC(2024, 0, 1) + 599 * 1000);
+  // 120 errors (every 5th), 480 info
+  assert.equal(all.levels.find((l) => l.level === 'ERROR')?.count, 120);
+  assert.equal(all.levels.find((l) => l.level === 'INFO')?.count, 480);
+  // top field "host" with 3 even values
+  const host = all.fields.find((f) => f.key === 'host');
+  assert.ok(host);
+  assert.equal(host.distinctCount, 3);
+  assert.ok(host.values.every((v) => v.count === 200));
+
+  // stats follow the active search
+  s.setSearch('level:error');
+  const e = s.stats();
+  assert.equal(e.total, 120);
+  assert.equal(e.levels.length, 1);
+  assert.equal(e.levels[0].level, 'ERROR');
+});
+
 test('regex search post-filters lines and groups by record', async () => {
   const file = makeLogFile('regex.log', [
     '2024-01-01 00:00:00 [INFO] user_42 logged in',

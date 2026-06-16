@@ -14,6 +14,9 @@ date and start a fresh `Unreleased` section.
 
 ### Added
 
+- Summary panel (toolbar): metrics for the current view — total lines, time span,
+  average and peak lines/min, the level breakdown with percentages, and the top
+  structured fields with their leading values. Respects the active search.
 - Regex search: a toolbar toggle (.*) switches the search box to regular-
   expression mode — lines are matched against the pattern (case-insensitive) and
   the matches are highlighted in place. Works with grouping (a match inside a
