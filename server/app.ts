@@ -5,6 +5,7 @@ import path from 'node:path';
 import { Router, sendJson, readJsonBody, serveStatic, SseConnection } from './http.ts';
 import { LogSession } from './session.ts';
 import { MergedTimeline } from './merged.ts';
+import { listCache, evictCache, clearCache } from './cache.ts';
 import { listRoots, listDir, getRecents, addRecent } from './files.ts';
 import { QuerySyntaxError } from './queryParser.ts';
 
@@ -50,6 +51,20 @@ export function createApp(distDir: string): TraceBoxApp {
   });
 
   router.add('GET', '/api/recents', (_req, res) => sendJson(res, 200, getRecents()));
+
+  // ---------------------------------------------------------------------------
+  // Index cache management
+
+  const activeDbs = (): Map<string, string> =>
+    new Map([...sessions.values()].map((s) => [s.dbPath, s.file]));
+
+  router.add('GET', '/api/cache', (_req, res) => sendJson(res, 200, listCache(activeDbs())));
+
+  router.add('DELETE', '/api/cache', (_req, res) => sendJson(res, 200, clearCache(activeDbs())));
+
+  router.add('DELETE', '/api/cache/:name', (_req, res, params) => {
+    sendJson(res, 200, { ok: evictCache(params.name, activeDbs()) });
+  });
 
   // ---------------------------------------------------------------------------
   // Sessions

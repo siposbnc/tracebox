@@ -85,6 +85,20 @@ export interface RecentFile {
   openedAt: number;
 }
 
+export interface CacheEntry {
+  name: string;
+  path: string;
+  size: number;
+  lineCount: number;
+  mtimeMs: number;
+  inUse: boolean;
+}
+
+export interface CacheInfo {
+  entries: CacheEntry[];
+  totalSize: number;
+}
+
 export interface MergedRow {
   seq: number;
   source: number;

@@ -1,5 +1,6 @@
 import type {
   BrowseResult,
+  CacheInfo,
   ClustersResult,
   ContextResult,
   FacetResult,
@@ -24,6 +25,10 @@ export const api = {
   roots: () => request<{ roots: string[]; home: string }>('/api/roots'),
   browse: (path: string) => request<BrowseResult>(`/api/browse?path=${encodeURIComponent(path)}`),
   recents: () => request<RecentFile[]>('/api/recents'),
+
+  cache: () => request<CacheInfo>('/api/cache'),
+  evictCache: (name: string) => request<{ ok: boolean }>(`/api/cache/${encodeURIComponent(name)}`, { method: 'DELETE' }),
+  clearCache: () => request<{ freed: number }>('/api/cache', { method: 'DELETE' }),
 
   openFile: (path: string) =>
     request<SessionStatus>('/api/sessions', {

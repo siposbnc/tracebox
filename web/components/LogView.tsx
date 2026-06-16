@@ -12,6 +12,7 @@ import ContextPeek from './ContextPeek';
 import GoToLine from './GoToLine';
 import ShortcutsHelp from './ShortcutsHelp';
 import SettingsPanel from './SettingsPanel';
+import CachePanel from './CachePanel';
 import Histogram from './Histogram';
 import StatusBar from './StatusBar';
 import { getHistogramDefault, useWrap, getWrap, setWrap, getOrder, useColumnar } from '../settings';
@@ -51,6 +52,7 @@ export default function LogView({
   const [gotoOpen, setGotoOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [cacheOpen, setCacheOpen] = useState(false);
   const [followTail, setFollowTail] = useState(initial.tail);
   const statusRef = useRef(status);
   statusRef.current = status;
@@ -464,8 +466,14 @@ export default function LogView({
             setSettingsOpen(false);
             setShortcutsOpen(true);
           }}
+          onManageCache={() => {
+            setSettingsOpen(false);
+            setCacheOpen(true);
+          }}
         />
       )}
+
+      {cacheOpen && <CachePanel onClose={() => setCacheOpen(false)} />}
     </div>
   );
 }

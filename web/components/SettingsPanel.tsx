@@ -59,9 +59,11 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
 export default function SettingsPanel({
   onClose,
   onShowShortcuts,
+  onManageCache,
 }: {
   onClose: () => void;
   onShowShortcuts: () => void;
+  onManageCache: () => void;
 }) {
   const order = useOrder();
   const tz = useTz();
@@ -182,6 +184,15 @@ export default function SettingsPanel({
               className="rounded-md border border-edge bg-surface-2 px-3 py-1 text-xs text-gray-300 hover:text-gray-100"
             >
               Edit shortcuts
+            </button>
+          </Row>
+
+          <Row label="Index cache" hint="On-disk indexes for fast reopen">
+            <button
+              onClick={onManageCache}
+              className="rounded-md border border-edge bg-surface-2 px-3 py-1 text-xs text-gray-300 hover:text-gray-100"
+            >
+              Manage cache
             </button>
           </Row>
         </div>

@@ -12,6 +12,13 @@ date and start a fresh `Unreleased` section.
 
 ## [Unreleased]
 
+### Added
+
+- Index cache management (Settings → Manage cache): see the on-disk index cache
+  with per-file sizes, line counts, and total, and evict entries individually or
+  clear all unused with one click. Indexes for currently-open files are flagged
+  and protected; everything else re-indexes on next open.
+
 ### Changed
 
 - Redesigned the toolbar into two clearer rows: search (with history and syntax
