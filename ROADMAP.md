@@ -64,9 +64,8 @@ The original backlog is essentially complete. Delivered so far (see `CHANGELOG.m
 - **Saved workspaces.** Persist the open files, active searches, column layout, and
   panel state as a named workspace, reopenable in one click. Debugging the same
   system repeatedly is the norm.
-- **Notes & report export.** Annotate lines (beyond bookmarks) and export a
-  selection + notes as a shareable Markdown/HTML report — the artifact you paste
-  into an incident ticket.
+- ~~**Notes & report export.**~~ *Shipped* — per-line notes plus a
+  bookmarks/notes report exported as Markdown or standalone HTML.
 
 ### Refine what's already there
 

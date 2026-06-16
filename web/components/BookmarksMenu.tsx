@@ -1,20 +1,25 @@
 import { useEffect, useRef, useState } from 'react';
 import { useBookmarks, toggleBookmark, clearBookmarks } from '../bookmarks';
+import { useNotes } from '../notes';
 import { formatChord } from '../keybindings';
 
-/** Toolbar dropdown listing the current file's bookmarks; click one to jump. */
+/** Toolbar dropdown listing the current file's bookmarks and notes; click one to
+ * jump, or export them all as a report. */
 export default function BookmarksMenu({
   file,
   onJump,
   onGoToLine,
+  onExportReport,
   bindings,
 }: {
   file: string;
   onJump: (lineNo: number) => void;
   onGoToLine: () => void;
+  onExportReport: () => void;
   bindings: Record<string, string>;
 }) {
   const marks = useBookmarks(file);
+  const notes = useNotes(file);
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -40,6 +45,7 @@ export default function BookmarksMenu({
           <path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z" />
         </svg>
         {marks.length > 0 && <span className="text-xs">{marks.length}</span>}
+        {notes.length > 0 && <span className="text-xs text-amber-400" title={`${notes.length} note(s)`}>●</span>}
       </button>
       {open && (
         <div className="absolute right-0 top-full z-30 mt-1 w-56 rounded-lg border border-edge bg-surface-2 shadow-2xl">
@@ -98,6 +104,43 @@ export default function BookmarksMenu({
               ))
             )}
           </div>
+          {notes.length > 0 && (
+            <>
+              <div className="border-y border-edge px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+                Notes
+              </div>
+              <div className="max-h-[30vh] overflow-y-auto p-1">
+                {notes.map((n) => (
+                  <button
+                    key={n.lineNo}
+                    onClick={() => {
+                      onJump(n.lineNo);
+                      setOpen(false);
+                    }}
+                    className="flex w-full flex-col gap-0.5 rounded px-1.5 py-1 text-left hover:bg-surface-3"
+                  >
+                    <span className="font-mono text-[10px] text-amber-300/80">Line {(n.lineNo + 1).toLocaleString()}</span>
+                    <span className="line-clamp-2 text-xs text-gray-300">{n.text}</span>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+
+          <button
+            onClick={() => {
+              setOpen(false);
+              onExportReport();
+            }}
+            disabled={marks.length === 0 && notes.length === 0}
+            className="flex w-full items-center gap-2 border-t border-edge px-2 py-1.5 text-xs text-gray-300 hover:bg-surface-3 disabled:cursor-default disabled:text-gray-600 disabled:hover:bg-transparent"
+          >
+            <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M14 3v4a1 1 0 0 0 1 1h4" /><path d="M5 3h9l5 5v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" /><path d="M9 13h6M9 17h4" />
+            </svg>
+            Export report…
+          </button>
+
           {marks.length > 0 && (bindings.nextBookmark || bindings.toggleBookmark) && (
             <div className="border-t border-edge/60 px-2 py-1 text-[10px] text-gray-600">
               {bindings.nextBookmark && `${formatChord(bindings.nextBookmark)} / ${formatChord(bindings.prevBookmark)} to cycle`}

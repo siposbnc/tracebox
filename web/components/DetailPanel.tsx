@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api, formatTs, tzAbbr } from '../api';
 import { useTz } from '../settings';
+import { useNote, setNote } from '../notes';
 import type { LineDetail } from '../types';
 import JsonTree, { tryParseJson } from './JsonTree';
 
@@ -15,11 +16,13 @@ const LEVEL_COLORS: Record<string, string> = {
 
 export default function DetailPanel({
   sessionId,
+  file,
   lineNo,
   onClose,
   onAddFilter,
 }: {
   sessionId: string;
+  file: string;
   lineNo: number;
   onClose: () => void;
   onAddFilter: (clause: string) => void;
@@ -28,6 +31,7 @@ export default function DetailPanel({
   const [error, setError] = useState<string | null>(null);
   const [showRaw, setShowRaw] = useState(false);
   const tz = useTz();
+  const note = useNote(file, lineNo);
 
   // the raw line as a JSON tree, when it is a JSON object/array
   const json = useMemo(() => (detail ? tryParseJson(detail.raw) : null), [detail]);
@@ -89,6 +93,21 @@ export default function DetailPanel({
                 </div>
               </section>
             )}
+
+            <section className="mb-3">
+              <h3 className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+                Note
+                {note && <span className="text-amber-400" title="This line has a note">●</span>}
+              </h3>
+              <textarea
+                value={note}
+                onChange={(e) => setNote(file, lineNo, e.target.value)}
+                placeholder="Add a note for this line… (included in the exported report)"
+                rows={note ? 3 : 2}
+                spellCheck={false}
+                className="w-full resize-y rounded-md border border-edge bg-surface-0 p-2 text-xs leading-5 text-gray-200 placeholder:text-gray-600 focus:border-amber-700/70 focus:outline-none"
+              />
+            </section>
 
             {detail.fields.length > 0 && (
               <section className="mb-3">

@@ -78,6 +78,7 @@ export default function SearchBar({
   file,
   onJumpToLine,
   onGoToLine,
+  onExportReport,
   onShowShortcuts,
   onOpenSettings,
   fieldNames,
@@ -115,6 +116,7 @@ export default function SearchBar({
   file: string;
   onJumpToLine: (lineNo: number) => void;
   onGoToLine: () => void;
+  onExportReport: () => void;
   onShowShortcuts: () => void;
   onOpenSettings: () => void;
   fieldNames: { key: string; count: number }[];
@@ -523,7 +525,13 @@ export default function SearchBar({
             <path d="M21 8a9 9 0 0 0-4-4" />
           </svg>
         </button>
-        <BookmarksMenu file={file} onJump={onJumpToLine} onGoToLine={onGoToLine} bindings={bindings} />
+        <BookmarksMenu
+          file={file}
+          onJump={onJumpToLine}
+          onGoToLine={onGoToLine}
+          onExportReport={onExportReport}
+          bindings={bindings}
+        />
 
         <Divider />
 

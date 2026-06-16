@@ -483,6 +483,7 @@ export default function MergedView({
           {selected && (
             <DetailPanel
               sessionId={sources[selected.source].id}
+              file={sources[selected.source].file}
               lineNo={selected.lineNo}
               onClose={() => setSelected(null)}
               onAddFilter={(clause) => {

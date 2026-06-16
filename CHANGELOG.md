@@ -14,6 +14,11 @@ date and start a fresh `Unreleased` section.
 
 ### Added
 
+- Line notes & report export: add a free-text note to any line from the detail
+  panel (persisted per file, like bookmarks). The bookmarks menu lists noted lines
+  and gains **Export report…**, which gathers the bookmarked and noted lines into a
+  shareable report — copy as Markdown, or download as Markdown / standalone HTML —
+  for pasting into an incident ticket.
 - Field breakdown panel: a filter box to search the field list by name, and a
   sort toggle (A–Z / by count). Fields are now ordered alphabetically by default.
 - Numeric / range faceting: for fields with numeric values, the field breakdown

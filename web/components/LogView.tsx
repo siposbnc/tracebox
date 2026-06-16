@@ -7,6 +7,7 @@ import type { HistogramData, SessionStatus } from '../types';
 import SearchBar from './SearchBar';
 import LogList from './LogList';
 import DetailPanel from './DetailPanel';
+import ReportDialog from './ReportDialog';
 import FacetPanel from './FacetPanel';
 import ClusterPanel from './ClusterPanel';
 import StatsPanel from './StatsPanel';
@@ -56,6 +57,7 @@ export default function LogView({
   regexRef.current = regexMode;
   const [grouped, setGrouped] = useState(true);
   const [gotoOpen, setGotoOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [cacheOpen, setCacheOpen] = useState(false);
@@ -380,6 +382,7 @@ export default function LogView({
         file={status.file}
         onJumpToLine={(lineNo) => void jumpToLine(lineNo)}
         onGoToLine={() => setGotoOpen(true)}
+        onExportReport={() => setReportOpen(true)}
         onShowShortcuts={() => setShortcutsOpen(true)}
         onOpenSettings={() => setSettingsOpen(true)}
         fieldNames={status.fieldNames}
@@ -447,6 +450,7 @@ export default function LogView({
         {selected !== null && (
           <DetailPanel
             sessionId={id}
+            file={status.file}
             lineNo={selected}
             onClose={() => setSelected(null)}
             onAddFilter={addFilter}
@@ -471,6 +475,16 @@ export default function LogView({
           lineCount={status.lineCount}
           onGo={(lineNo) => void jumpToLine(lineNo)}
           onClose={() => setGotoOpen(false)}
+        />
+      )}
+
+      {reportOpen && (
+        <ReportDialog
+          sessionId={id}
+          file={status.file}
+          query={status.search?.query ?? null}
+          lineCount={status.lineCount}
+          onClose={() => setReportOpen(false)}
         />
       )}
 
