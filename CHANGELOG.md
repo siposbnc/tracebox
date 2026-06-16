@@ -147,6 +147,10 @@ date and start a fresh `Unreleased` section.
 
 ### Fixed
 
+- Desktop app: client-side state (workspaces, bookmarks, notes, settings) now
+  persists across launches. The window had loaded from an ephemeral port each
+  launch, giving a new browser origin and therefore empty localStorage every time;
+  the backend now uses a stable port (with an ephemeral fallback if it's taken).
 - Default context-peek window is 5 lines again (it had become 0 when the setting
   was unset, because the stored value parsed as 0).
 
