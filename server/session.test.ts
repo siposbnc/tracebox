@@ -337,6 +337,35 @@ test('clustering groups lines into templates and drills into one', async () => {
   assert.equal(ce.covered, 10);
 });
 
+test('regex search post-filters lines and groups by record', async () => {
+  const file = makeLogFile('regex.log', [
+    '2024-01-01 00:00:00 [INFO] user_42 logged in',
+    '2024-01-01 00:00:01 [INFO] user_9001 logged in',
+    '2024-01-01 00:00:02 [INFO] anonymous visit',
+    '2024-01-01 00:00:03 [ERROR] boom: java.lang.NullPointerException',
+    '\tat com.app.Svc.run(Svc.java:7)',
+    '2024-01-01 00:00:04 [INFO] user_7 logged in',
+  ]);
+  const s = await openAndIndex(file);
+
+  // \d{4,} matches only the 9001 line
+  assert.equal((await s.setRegexSearch('user_\\d{4,}', false)).total, 1);
+  assert.deepEqual((await s.getRows(0, 10)).map((r) => r.lineNo), [1]);
+
+  // case-insensitive by default; matches three user_ lines
+  assert.equal((await s.setRegexSearch('USER_\\d+', false)).total, 3);
+
+  // regex matching a stack-trace continuation surfaces its record head when grouped
+  assert.equal((await s.setRegexSearch('Svc\\.java', true)).total, 1);
+  assert.deepEqual((await s.getRows(0, 10, 'asc', false, true)).map((r) => r.lineNo), [3]);
+
+  // invalid regex is reported
+  await assert.rejects(() => s.setRegexSearch('user_(', false), /Invalid regular expression/);
+
+  // clearing restores the full view
+  assert.equal((await s.setRegexSearch('', false)).total, 6);
+});
+
 test('nextMatch walks occurrences with wrap-around', async () => {
   const file = makeLogFile('nextmatch.log', appLogLines(50));
   const s = await openAndIndex(file);

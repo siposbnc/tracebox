@@ -283,6 +283,29 @@ export class IndexStore {
     return this.resultCount();
   }
 
+  /**
+   * Materialize the result set from an explicit list of matching physical lines
+   * (used by regex search, which post-filters off the index). When grouped, the
+   * matches are mapped to their record heads. `lineNos` must be ascending.
+   */
+  materializeLineSet(lineNos: number[], grouped: boolean): number {
+    this.db.exec(`DELETE FROM results; DELETE FROM sqlite_sequence WHERE name = 'results';`);
+    if (lineNos.length === 0) return 0;
+    this.db.exec(`CREATE TEMP TABLE IF NOT EXISTS _set(line_no INTEGER PRIMARY KEY); DELETE FROM _set;`);
+    const ins = this.db.prepare(`INSERT OR IGNORE INTO _set(line_no) VALUES (?)`);
+    this.db.exec('BEGIN');
+    for (const n of lineNos) ins.run(n);
+    this.db.exec('COMMIT');
+    if (grouped) {
+      this.db.exec(
+        `INSERT INTO results(line_no) SELECT DISTINCT l.head FROM lines l JOIN _set s ON s.line_no = l.line_no ORDER BY l.head`,
+      );
+    } else {
+      this.db.exec(`INSERT INTO results(line_no) SELECT line_no FROM _set ORDER BY line_no`);
+    }
+    return this.resultCount();
+  }
+
   /** Drop result rows for lines >= lineNo (before re-running an incremental search over them). */
   pruneResultsFrom(lineNo: number): void {
     this.db.prepare(`DELETE FROM results WHERE line_no >= ?`).run(lineNo);

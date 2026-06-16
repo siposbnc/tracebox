@@ -64,11 +64,11 @@ export const api = {
         columns && columns.length > 0 ? `&cols=${columns.map(encodeURIComponent).join(',')}` : ''
       }`,
     ),
-  search: (id: string, query: string, grouped = false, templateId: number | null = null) =>
+  search: (id: string, query: string, grouped = false, templateId: number | null = null, regex = false) =>
     request<{ total: number; durationMs: number }>(`/api/sessions/${id}/search`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query, grouped, templateId }),
+      body: JSON.stringify({ query, grouped, templateId, regex }),
     }),
   detail: (id: string, lineNo: number) => request<LineDetail>(`/api/sessions/${id}/line/${lineNo}`),
   context: (id: string, line: number, before: number, after: number) =>

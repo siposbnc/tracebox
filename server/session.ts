@@ -7,7 +7,7 @@ import { LineIndex, LineScanner, type LineSpan } from './lineIndex.ts';
 import { LineReader } from './reader.ts';
 import { detectFormat, RawParser, templateOf, type LogParser } from './parsers.ts';
 import { IndexStore } from './indexer.ts';
-import { parseQuery, type QueryNode } from './queryParser.ts';
+import { parseQuery, QuerySyntaxError, type QueryNode } from './queryParser.ts';
 import { getConfig } from './config.ts';
 
 const READ_CHUNK = 4 * 1024 * 1024;
@@ -92,6 +92,8 @@ export class LogSession extends EventEmitter {
   private searchDurationMs = 0;
   /** Whether the materialized result set holds record heads (grouped) or physical lines. */
   private searchGrouped = false;
+  /** Active regex search (post-filter mode); null when using the query language. */
+  private searchRegex: RegExp | null = null;
   /** Active cluster drill-down (a template id), ANDed with any text query. */
   private templateId: number | null = null;
   /** Lines below this number have been through the current search. */
@@ -317,6 +319,7 @@ export class LogSession extends EventEmitter {
     const trimmed = query.trim();
     this.searchGrouped = grouped;
     this.templateId = templateId;
+    this.searchRegex = null;
     if (trimmed === '' && templateId === null) {
       this.searchQuery = '';
       this.searchAst = null;
@@ -336,8 +339,58 @@ export class LogSession extends EventEmitter {
     return { total, durationMs: this.searchDurationMs };
   }
 
+  /**
+   * Regex search: scans line text and materializes matches (post-filter, since
+   * FTS5 can't do arbitrary regex). Combines with grouping (matches map to record
+   * heads). The result set is a snapshot — it does not auto-extend while tailing.
+   */
+  async setRegexSearch(pattern: string, grouped = false): Promise<{ total: number; durationMs: number }> {
+    const trimmed = pattern.trim();
+    this.searchGrouped = grouped;
+    this.templateId = null;
+    if (trimmed === '') {
+      this.searchAst = null;
+      this.searchRegex = null;
+      this.searchQuery = '';
+      this.searchTotal = 0;
+      this.searchDurationMs = 0;
+      return { total: grouped ? this.store.recordCount() : this.index.lineCount, durationMs: 0 };
+    }
+    let re: RegExp;
+    try {
+      re = new RegExp(trimmed, 'i'); // non-global so .test() has no lastIndex state
+    } catch (err) {
+      throw new QuerySyntaxError(`Invalid regular expression: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    const t0 = performance.now();
+    const matches = await this.scanRegex(re, 0);
+    this.searchTotal = this.store.materializeLineSet(matches, grouped);
+    this.searchDurationMs = Math.round(performance.now() - t0);
+    this.searchAst = null;
+    this.searchRegex = re;
+    this.searchQuery = trimmed;
+    this.searchedUpTo = this.index.lineCount;
+    return { total: this.searchTotal, durationMs: this.searchDurationMs };
+  }
+
+  /** Scan line text [from, lineCount) and return the physical line numbers matching `re`. */
+  private async scanRegex(re: RegExp, from: number): Promise<number[]> {
+    const matches: number[] = [];
+    const total = this.index.lineCount;
+    const BATCH = 4000;
+    for (let start = from; start < total; start += BATCH) {
+      if (this.closed) break;
+      const count = Math.min(BATCH, total - start);
+      const texts = await this.reader.readLines(start, count);
+      for (let i = 0; i < texts.length; i++) {
+        if (re.test(texts[i])) matches.push(start + i);
+      }
+    }
+    return matches;
+  }
+
   get hasSearch(): boolean {
-    return this.searchAst !== null;
+    return this.searchAst !== null || this.searchRegex !== null;
   }
 
   /** Total rows in the current view (search results or whole file). */

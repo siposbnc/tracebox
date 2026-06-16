@@ -164,9 +164,16 @@ export function createApp(distDir: string): TraceBoxApp {
 
   router.add('POST', '/api/sessions/:id/search', async (req, res, params) => {
     const s = getSession(params.id);
-    const body = (await readJsonBody(req)) as { query?: string; grouped?: boolean; templateId?: number | null };
+    const body = (await readJsonBody(req)) as {
+      query?: string;
+      grouped?: boolean;
+      templateId?: number | null;
+      regex?: boolean;
+    };
     try {
-      const result = s.setSearch(body.query ?? '', Boolean(body.grouped), body.templateId ?? null);
+      const result = body.regex
+        ? await s.setRegexSearch(body.query ?? '', Boolean(body.grouped))
+        : s.setSearch(body.query ?? '', Boolean(body.grouped), body.templateId ?? null);
       sendJson(res, 200, result);
     } catch (err) {
       if (err instanceof QuerySyntaxError) {
