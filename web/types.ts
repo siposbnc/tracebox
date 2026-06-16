@@ -12,9 +12,24 @@ export interface RowData {
   cols?: Record<string, string>;
 }
 
+export interface CaptureStatus {
+  command: string;
+  state: 'running' | 'exited' | 'failed';
+  pid: number | null;
+  exitCode: number | null;
+  bytes: number;
+  error: string | null;
+}
+
 export interface SessionStatus {
   id: string;
   file: string;
+  /** A plain file (or rotation group), or a live command/stdin capture. */
+  kind: 'file' | 'command';
+  /** For command sessions: the command line (or `(stdin)`); null for files. */
+  command: string | null;
+  /** Process state of a command session; null for files. */
+  capture: CaptureStatus | null;
   /** Number of source files (1 normally; >1 when a rotation group was opened as one stream). */
   sourceCount: number;
   fileSize: number;

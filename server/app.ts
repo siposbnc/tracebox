@@ -1,11 +1,13 @@
 import { createServer, type Server } from 'node:http';
 import { statSync } from 'node:fs';
 import { homedir } from 'node:os';
+import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { Router, sendJson, readJsonBody, serveStatic, SseConnection } from './http.ts';
 import { LogSession, indexCacheDir } from './session.ts';
+import { CaptureSource } from './capture.ts';
 import { MergedTimeline } from './merged.ts';
-import { listCache, evictCache, clearCache, pruneStaleCache } from './cache.ts';
+import { listCache, evictCache, clearCache, pruneStaleCache, sweepCaptureFiles } from './cache.ts';
 import { getConfig, setConfig, DEFAULT_CACHE_DIR } from './config.ts';
 import { getClientState, patchClientState } from './clientState.ts';
 import { mkdirSync } from 'node:fs';
@@ -34,6 +36,24 @@ export function createApp(distDir: string): TraceBoxApp {
     const s = sessions.get(id);
     if (!s) throw new Error(`Unknown session ${id}`);
     return s;
+  }
+
+  /**
+   * Spawn a command into a fresh capture file and open a session that indexes
+   * and tail-follows it. The capture file carries a unique nonce so its index is
+   * never reused or shared; it is deleted when the session closes.
+   */
+  async function openSource(opts: { command: string; mergeStderr?: boolean }): Promise<LogSession> {
+    const captureFile = path.join(indexCacheDir(), `cap-${randomUUID()}.data`);
+    const capture = new CaptureSource({
+      command: opts.command,
+      file: captureFile,
+      mergeStderr: opts.mergeStderr,
+    });
+    const session = new LogSession(captureFile, { capture });
+    sessions.set(session.id, session);
+    await session.start();
+    return session;
   }
 
   // ---------------------------------------------------------------------------
@@ -135,10 +155,22 @@ export function createApp(distDir: string): TraceBoxApp {
         return;
       }
     }
-    const session = group.length > 1 ? new LogSession(resolved, group) : new LogSession(resolved);
+    const session = new LogSession(resolved, { sources: group });
     sessions.set(session.id, session);
     addRecent(resolved);
     await session.start();
+    sendJson(res, 201, session.status());
+  });
+
+  // Run a command (or any shell pipeline) and follow its output as a live source.
+  router.add('POST', '/api/sources', async (req, res) => {
+    const body = (await readJsonBody(req)) as { command?: string; mergeStderr?: boolean };
+    const command = body.command?.trim();
+    if (!command) {
+      sendJson(res, 400, { error: 'Missing "command"' });
+      return;
+    }
+    const session = await openSource({ command, mergeStderr: body.mergeStderr });
     sendJson(res, 201, session.status());
   });
 
@@ -359,6 +391,13 @@ export function createApp(distDir: string): TraceBoxApp {
     sendJson(res, 200, s.status());
   });
 
+  // Stop a command session's producer, freezing the captured data (it stays searchable).
+  router.add('POST', '/api/sessions/:id/stop', (_req, res, params) => {
+    const s = getSession(params.id);
+    s.stopCapture();
+    sendJson(res, 200, s.status());
+  });
+
   router.add('POST', '/api/sessions/:id/tail', async (req, res, params) => {
     const s = getSession(params.id);
     const body = (await readJsonBody(req)) as { on?: boolean };
@@ -469,6 +508,14 @@ export function createApp(distDir: string): TraceBoxApp {
       if (!res.headersSent) res.writeHead(500).end();
     });
   });
+
+  // Clear capture spool files orphaned by a previous run (crash/force-quit).
+  // Safe here: no sessions exist yet, so every cap-*.data is stale.
+  try {
+    sweepCaptureFiles(indexCacheDir());
+  } catch {
+    // ignore
+  }
 
   // Evict cache entries unused past the retention window: once at startup and
   // every 6 hours after (skipping any indexes currently in use).

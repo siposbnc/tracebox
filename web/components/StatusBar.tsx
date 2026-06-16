@@ -16,12 +16,15 @@ export default function StatusBar({
   status,
   total,
   onLevelClick,
+  onStop,
 }: {
   status: SessionStatus;
   total: number;
   onLevelClick: (level: string) => void;
+  onStop: () => void;
 }) {
   const pct = status.fileSize > 0 ? Math.min(100, (status.bytesIndexed / status.fileSize) * 100) : 0;
+  const capture = status.capture;
 
   return (
     <div className="flex h-7 items-center gap-4 border-t border-edge bg-surface-1 px-3 text-[11px] text-gray-400">
@@ -46,9 +49,42 @@ export default function StatusBar({
         {status.phase === 'error' && <span className="text-red-400">error: {status.error}</span>}
       </div>
 
-      <span title={status.file} className="max-w-72 truncate text-gray-500">
-        {status.file}
-      </span>
+      {capture ? (
+        <span title={capture.command} className="flex max-w-72 items-center gap-1.5 truncate text-gray-500">
+          <span className="text-gray-600">▸</span>
+          <span className="truncate font-mono text-gray-400">{capture.command}</span>
+        </span>
+      ) : (
+        <span title={status.file} className="max-w-72 truncate text-gray-500">
+          {status.file}
+        </span>
+      )}
+
+      {capture &&
+        (capture.state === 'running' ? (
+          <span className="flex items-center gap-1.5">
+            <span className="flex items-center gap-1 text-sky-300">
+              <span className="h-1.5 w-1.5 animate-pulse-subtle rounded-full bg-sky-400" />
+              capturing
+            </span>
+            <button
+              onClick={onStop}
+              className="rounded bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-gray-300 hover:bg-surface-3 hover:text-white"
+              title="Stop the command and freeze the captured data"
+            >
+              ◼ Stop
+            </button>
+          </span>
+        ) : capture.state === 'failed' ? (
+          <span className="text-red-400" title={capture.error ?? undefined}>
+            ⚠ failed{capture.error ? `: ${capture.error}` : ''}
+          </span>
+        ) : (
+          <span className="text-gray-500">
+            ◼ stopped{capture.exitCode !== null ? ` · exit ${capture.exitCode}` : ''}
+          </span>
+        ))}
+
       <span>{formatBytes(status.fileSize)}</span>
       <span className="rounded bg-surface-2 px-1.5 py-0.5 font-mono text-[10px] uppercase text-gray-500">
         {status.format}

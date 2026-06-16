@@ -142,6 +142,30 @@ export function pruneStaleCache(
   return { removed, freed };
 }
 
+/**
+ * Delete orphaned capture spool files (`cap-*.data`) left behind by command or
+ * stdin sources that didn't shut down cleanly. Called once at startup — before
+ * any session exists — so every such file is stale.
+ */
+export function sweepCaptureFiles(dir: string): number {
+  let names: string[] = [];
+  try {
+    names = readdirSync(dir).filter((n) => n.startsWith('cap-') && n.endsWith('.data'));
+  } catch {
+    return 0;
+  }
+  let removed = 0;
+  for (const name of names) {
+    try {
+      rmSync(path.join(dir, name), { force: true });
+      removed++;
+    } catch {
+      // ignore
+    }
+  }
+  return removed;
+}
+
 /** Delete every cache db that isn't currently in use; returns bytes freed. */
 export function clearCache(dir: string, active: Map<string, string>): { freed: number } {
   let freed = 0;

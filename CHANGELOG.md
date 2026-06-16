@@ -12,6 +12,17 @@ date and start a fresh `Unreleased` section.
 
 ## [Unreleased]
 
+### Added
+
+- Command & pipe sources: open the live output of a command instead of a file.
+  A **Run a command** button on the welcome screen and in the tab bar opens a prompt
+  (e.g. `docker logs -f web`, `journalctl -f`, `kubectl logs -f pod`) — TraceBox runs
+  it through your shell, spools its output to a capture, and indexes and follows it
+  exactly like a tailed log (search, histogram, clustering, fields all work live).
+  stderr is captured alongside stdout (toggleable). A **Stop** control in the status
+  bar freezes the captured data while keeping it searchable; it also freezes
+  automatically when the process exits.
+
 ## [1.3.1] - 2026-06-16
 
 ### Removed

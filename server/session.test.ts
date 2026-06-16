@@ -516,7 +516,7 @@ test('opens a rotation group as one time-ordered stream', async () => {
   const older = makeLogFile('svc.log.1', all.slice(0, 100), false);
   const newer = makeLogFile('svc.log', all.slice(100));
 
-  const s = new LogSession(newer, [older, newer]); // oldest→newest
+  const s = new LogSession(newer, { sources: [older, newer] }); // oldest→newest
   openSessions.push(s);
   const done = new Promise<void>((resolve, reject) => {
     s.on('done', resolve);

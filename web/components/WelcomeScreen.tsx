@@ -6,10 +6,12 @@ import { Logo } from './Logo';
 export default function WelcomeScreen({
   onOpen,
   onOpenPath,
+  onRunCommand,
   onWhatsNew,
 }: {
   onOpen: () => void;
   onOpenPath: (path: string) => Promise<void>;
+  onRunCommand: () => void;
   onWhatsNew: () => void;
 }) {
   const [recents, setRecents] = useState<RecentFile[]>([]);
@@ -35,6 +37,12 @@ export default function WelcomeScreen({
           className="rounded-xl bg-sky-700 px-6 py-2.5 font-medium text-white shadow-lg shadow-sky-950 hover:bg-sky-600"
         >
           Open a log file…
+        </button>
+        <button
+          onClick={onRunCommand}
+          className="rounded-xl border border-edge bg-surface-1 px-4 py-2.5 text-sm font-medium text-gray-300 hover:bg-surface-2 hover:text-gray-100"
+        >
+          ▸ Run a command…
         </button>
         <button
           onClick={onWhatsNew}

@@ -232,6 +232,15 @@ export default function LogView({
     setFollowTail(next);
   }, [id]);
 
+  // Stop a command/stdin producer: freezes the captured data (stays searchable).
+  const stopSource = useCallback(async () => {
+    try {
+      setStatus(await api.stopSource(id));
+    } catch {
+      // already stopped/closed — ignore
+    }
+  }, [id]);
+
   const [refreshing, setRefreshing] = useState(false);
   const refresh = useCallback(async () => {
     setRefreshing(true);
@@ -479,7 +488,12 @@ export default function LogView({
         )}
       </div>
 
-      <StatusBar status={status} total={total} onLevelClick={(level) => submitQuery(`level:${level}`)} />
+      <StatusBar
+        status={status}
+        total={total}
+        onLevelClick={(level) => submitQuery(`level:${level}`)}
+        onStop={() => void stopSource()}
+      />
 
       {contextLine !== null && (
         <ContextPeek

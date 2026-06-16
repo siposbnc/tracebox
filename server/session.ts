@@ -11,6 +11,7 @@ import {
   closeSync,
   createReadStream,
   createWriteStream,
+  rmSync,
   type StatWatcher,
 } from 'node:fs';
 import { open, type FileHandle } from 'node:fs/promises';
@@ -23,6 +24,7 @@ import { detectFormat, RawParser, templateOf, type LogParser } from './parsers.t
 import { IndexStore } from './indexer.ts';
 import { parseQuery, QuerySyntaxError, type QueryNode } from './queryParser.ts';
 import { getConfig } from './config.ts';
+import { CaptureSource, type CaptureStatus } from './capture.ts';
 
 const READ_CHUNK = 4 * 1024 * 1024;
 const BATCH_LINES = 20_000;
@@ -45,6 +47,12 @@ export interface RowData {
 export interface SessionStatus {
   id: string;
   file: string;
+  /** A plain file (or rotation group), or a live command/stdin capture. */
+  kind: 'file' | 'command';
+  /** For command sessions: the command line (or `(stdin)`); null for files. */
+  command: string | null;
+  /** Process state of a command session; null for files. */
+  capture: CaptureStatus | null;
   /** Number of source files (1 normally; >1 when a rotation group was opened as one stream). */
   sourceCount: number;
   fileSize: number;
@@ -60,6 +68,13 @@ export interface SessionStatus {
   levelCounts: Record<string, number>;
   fieldNames: { key: string; count: number }[];
   search: { query: string; total: number; durationMs: number } | null;
+}
+
+export interface SessionOptions {
+  /** A rotation group, oldest→newest; its members are concatenated and indexed as one stream. */
+  sources?: string[];
+  /** A live command/stdin capture this session indexes and follows instead of a static file. */
+  capture?: CaptureSource;
 }
 
 export function indexCacheDir(): string {
@@ -100,6 +115,8 @@ export class LogSession extends EventEmitter {
   private dataPath: string;
   /** True when the data is served from a temp (gzip source, or a multi-file rotation group). */
   readonly compressed: boolean;
+  /** Set when this session follows a live command/stdin capture instead of a static file. */
+  readonly capture: CaptureSource | null;
   private index = new LineIndex();
   private store: IndexStore;
   private reader!: LineReader;
@@ -145,23 +162,35 @@ export class LogSession extends EventEmitter {
   private appendQueued = false;
 
   /**
-   * `file` is the primary/displayed path. `sources` (when given and longer than
+   * `file` is the primary/displayed path. `options.sources` (when longer than
    * one) is a rotation group — its members are concatenated oldest→newest into a
-   * single stream and indexed as one logical file.
+   * single stream and indexed as one logical file. `options.capture` instead
+   * makes this a live command/stdin session: `file` is the (initially empty)
+   * capture file the producer appends to, and the index is never reused.
    */
-  constructor(file: string, sources?: string[]) {
+  constructor(file: string, options: SessionOptions = {}) {
     super();
     this.id = String(nextId++);
     this.file = path.resolve(file);
-    const st = statSync(this.file);
-    if (!st.isFile()) throw new Error('Not a file');
-    this.fileSize = st.size;
-    this.sources = sources && sources.length > 1 ? sources.map((s) => path.resolve(s)) : [this.file];
+    this.capture = options.capture ?? null;
+    if (this.capture) {
+      // the capture file exists but is empty; its data arrives over time
+      this.fileSize = 0;
+      this.sources = [this.file];
+      this.compressed = false;
+    } else {
+      const st = statSync(this.file);
+      if (!st.isFile()) throw new Error('Not a file');
+      this.fileSize = st.size;
+      const sources = options.sources;
+      this.sources = sources && sources.length > 1 ? sources.map((s) => path.resolve(s)) : [this.file];
+      // a rotation group is concatenated to a plain temp; only a lone .gz is "compressed"
+      this.compressed = this.sources.length <= 1 && looksGzip(this.file);
+    }
     const rotation = this.sources.length > 1;
-    // a rotation group is concatenated to a plain temp; only a lone .gz is "compressed"
-    this.compressed = !rotation && looksGzip(this.file);
     // identity (and thus the index db) keys off the whole group, so reopening the
-    // same set reuses the index; a single file keeps its plain per-file hash
+    // same set reuses the index; a single file keeps its plain per-file hash. A
+    // capture's `file` carries a unique nonce, so its index is always fresh.
     const identity = rotation ? this.sources.join('|') : this.file;
     const hash = createHash('sha1').update(identity.toLowerCase()).digest('hex').slice(0, 16);
     const dbPath = path.join(indexCacheDir(), `${hash}.db`);
@@ -272,6 +301,24 @@ export class LogSession extends EventEmitter {
       this.error = err instanceof Error ? err.message : String(err);
       this.emit('error-event', this.error);
     });
+    if (this.capture) this.followCapture();
+  }
+
+  /**
+   * Drive appends for a command/stdin session off the capture's notifications
+   * instead of a file watcher: each `wrote` drains the new bytes; `exit` drains
+   * the tail and stops following (the captured data stays browsable/searchable).
+   */
+  private followCapture(): void {
+    if (!this.capture) return;
+    this.tail = true;
+    this.capture.on('wrote', () => void this.checkAppend());
+    this.capture.once('exit', () => {
+      void this.checkAppend().finally(() => {
+        this.tail = false;
+        this.emit('append'); // surface the terminal process state to the UI
+      });
+    });
   }
 
   private async restoreFromStore(): Promise<void> {
@@ -366,6 +413,8 @@ export class LogSession extends EventEmitter {
       this.persistMeta(pos);
       this.phase = 'ready';
       this.emit('done');
+      // a live capture may have written more while we were finalizing — drain it
+      if (this.capture) void this.checkAppend();
     } finally {
       await fd.close();
     }
@@ -746,6 +795,11 @@ export class LogSession extends EventEmitter {
     await this.checkAppend();
   }
 
+  /** Stop a command/stdin producer, freezing the captured data (no-op for files). */
+  stopCapture(): void {
+    this.capture?.stop();
+  }
+
   private async checkAppend(): Promise<void> {
     if (this.phase !== 'ready' || this.closed) return;
     if (this.appendRunning) {
@@ -871,6 +925,9 @@ export class LogSession extends EventEmitter {
     return {
       id: this.id,
       file: this.file,
+      kind: this.capture ? 'command' : 'file',
+      command: this.capture?.command ?? null,
+      capture: this.capture?.status() ?? null,
       sourceCount: this.sources.length,
       fileSize: this.fileSize,
       phase: this.phase,
@@ -923,7 +980,16 @@ export class LogSession extends EventEmitter {
   async close(): Promise<void> {
     this.closed = true;
     this.setTail(false);
+    if (this.capture) {
+      this.capture.stop();
+      this.capture.removeAllListeners();
+    }
     this.store.close();
     await this.reader.close();
+    // a capture's index and capture file are ephemeral — never reused, so drop them
+    if (this.capture) {
+      rmSync(this.store.dbPath, { force: true });
+      rmSync(this.file, { force: true });
+    }
   }
 }

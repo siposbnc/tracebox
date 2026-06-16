@@ -49,6 +49,13 @@ export const api = {
       body: JSON.stringify({ path, rotation }),
     }),
   rotation: (path: string) => request<{ members: RotationMember[] }>(`/api/rotation?path=${encodeURIComponent(path)}`),
+  runCommand: (command: string, mergeStderr = true) =>
+    request<SessionStatus>('/api/sources', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ command, mergeStderr }),
+    }),
+  stopSource: (id: string) => request<SessionStatus>(`/api/sessions/${id}/stop`, { method: 'POST' }),
   sessions: () => request<SessionStatus[]>('/api/sessions'),
   session: (id: string) => request<SessionStatus>(`/api/sessions/${id}`),
   closeSession: (id: string) => request<{ ok: boolean }>(`/api/sessions/${id}`, { method: 'DELETE' }),

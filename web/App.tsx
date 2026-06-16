@@ -3,6 +3,7 @@ import { api } from './api';
 import type { SessionStatus } from './types';
 import LogView from './components/LogView';
 import OpenFileDialog from './components/OpenFileDialog';
+import CommandDialog from './components/CommandDialog';
 import WelcomeScreen from './components/WelcomeScreen';
 import UpdateBanner from './components/UpdateBanner';
 import WhatsNew from './components/WhatsNew';
@@ -21,6 +22,7 @@ export default function App() {
   const [sessions, setSessions] = useState<SessionStatus[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [commandOpen, setCommandOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [openError, setOpenError] = useState<string | null>(null);
   // a freshly-opened lone file that has rotated siblings — offer to open them as one stream
@@ -91,6 +93,14 @@ export default function App() {
         })
         .catch(() => {});
     }
+  }, []);
+
+  // Run a command (or shell pipeline) and follow its output as a live source.
+  const openCommand = useCallback(async (command: string, mergeStderr: boolean) => {
+    const status = await api.runCommand(command, mergeStderr);
+    setSessions((prev) => (prev.some((s) => s.id === status.id) ? prev : [...prev, status]));
+    setActiveId(status.id);
+    setCommandOpen(false);
   }, []);
 
   // Re-open the offered file as its full rotation group, replacing the single-file tab.
@@ -239,7 +249,8 @@ export default function App() {
             <span className="text-sm font-semibold tracking-wide text-sky-300">TraceBox</span>
           </div>
           {sessions.map((s) => {
-            const name = s.file.split(/[\\/]/).pop();
+            const name =
+              s.kind === 'command' ? `▸ ${s.command ?? 'command'}` : s.file.split(/[\\/]/).pop();
             const isActive = s.id === activeId && !whatsNewOpen && !timelineOpen;
             return (
               <div
@@ -255,7 +266,13 @@ export default function App() {
                     ? 'border-edge bg-surface-0 text-gray-100'
                     : 'border-transparent bg-surface-2/50 text-gray-400 hover:bg-surface-2'
                 }`}
-                title={s.sourceCount > 1 ? `${s.file} (+${s.sourceCount - 1} rotated)` : s.file}
+                title={
+                  s.kind === 'command'
+                    ? (s.command ?? 'command')
+                    : s.sourceCount > 1
+                      ? `${s.file} (+${s.sourceCount - 1} rotated)`
+                      : s.file
+                }
               >
                 <span className="truncate">{name}</span>
                 {s.sourceCount > 1 && (
@@ -285,6 +302,13 @@ export default function App() {
             title="Open another file"
           >
             +
+          </button>
+          <button
+            onClick={() => setCommandOpen(true)}
+            className="mb-1.5 self-center rounded-md px-2.5 py-1 text-sm text-gray-400 hover:bg-surface-2 hover:text-gray-100"
+            title="Run a command and follow its output"
+          >
+            ▸ Run command
           </button>
           {sessions.length >= 2 && (
             <button
@@ -371,12 +395,14 @@ export default function App() {
           <WelcomeScreen
             onOpen={requestOpenFile}
             onOpenPath={openFile}
+            onRunCommand={() => setCommandOpen(true)}
             onWhatsNew={() => setWhatsNewOpen(true)}
           />
         )}
       </div>
 
       {dialogOpen && <OpenFileDialog onClose={() => setDialogOpen(false)} onOpen={openFile} />}
+      {commandOpen && <CommandDialog onClose={() => setCommandOpen(false)} onRun={openCommand} />}
     </div>
   );
 }
