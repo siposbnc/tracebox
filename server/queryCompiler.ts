@@ -56,6 +56,12 @@ function likePattern(glob: string): string {
 
 class Compiler {
   params: (string | number)[] = [];
+  /** Schema prefix for the fts/fields tables (e.g. `s0.` for an attached DB), '' for the local schema. */
+  private readonly p: string;
+
+  constructor(schema = '') {
+    this.p = schema;
+  }
 
   compile(node: QueryNode): string {
     switch (node.type) {
@@ -69,14 +75,15 @@ class Compiler {
         return `(NOT ${this.compile(node.child)})`;
       case 'text': {
         this.params.push(ftsQueryFor(node.value, node.phrase));
-        return `l.line_no IN (SELECT rowid FROM fts WHERE fts MATCH ?)`;
+        // column-form MATCH works whether or not the table is schema-qualified
+        return `l.line_no IN (SELECT rowid FROM ${this.p}fts WHERE content MATCH ?)`;
       }
       case 'exists': {
         const f = node.field.toLowerCase();
         if (LEVEL_FIELDS.has(f)) return `l.level IS NOT NULL`;
         if (TS_FIELDS.has(f)) return `l.ts IS NOT NULL`;
         this.params.push(node.field);
-        return `l.line_no IN (SELECT line_no FROM fields WHERE key = ?)`;
+        return `l.line_no IN (SELECT line_no FROM ${this.p}fields WHERE key = ?)`;
       }
       case 'fieldLike': {
         const f = node.field.toLowerCase();
@@ -88,7 +95,7 @@ class Compiler {
           throw new QuerySyntaxError('Wildcards are not supported on the timestamp field');
         }
         this.params.push(node.field, likePattern(node.pattern));
-        return `l.line_no IN (SELECT line_no FROM fields WHERE key = ? AND value LIKE ? ESCAPE '\\')`;
+        return `l.line_no IN (SELECT line_no FROM ${this.p}fields WHERE key = ? AND value LIKE ? ESCAPE '\\')`;
       }
       case 'field':
         return this.fieldCmp(node.field, node.op, node.value);
@@ -130,10 +137,10 @@ class Compiler {
     const num = value === '' ? NaN : Number(value);
     if (op !== 'eq' && Number.isFinite(num)) {
       this.params.push(field, num);
-      return `l.line_no IN (SELECT line_no FROM fields WHERE key = ? AND num ${SQL_OP[op]} ?)`;
+      return `l.line_no IN (SELECT line_no FROM ${this.p}fields WHERE key = ? AND num ${SQL_OP[op]} ?)`;
     }
     this.params.push(field, value);
-    return `l.line_no IN (SELECT line_no FROM fields WHERE key = ? AND value ${SQL_OP[op]} ?)`;
+    return `l.line_no IN (SELECT line_no FROM ${this.p}fields WHERE key = ? AND value ${SQL_OP[op]} ?)`;
   }
 }
 
@@ -145,8 +152,8 @@ const SQL_OP: Record<CmpOp, string> = {
   lte: '<=',
 };
 
-export function compileQuery(node: QueryNode): CompiledQuery {
-  const c = new Compiler();
+export function compileQuery(node: QueryNode, schema = ''): CompiledQuery {
+  const c = new Compiler(schema);
   const where = c.compile(node);
   return { where, params: c.params };
 }

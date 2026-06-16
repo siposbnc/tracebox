@@ -497,6 +497,22 @@ test('merged timeline interleaves files by timestamp', async () => {
     const h = m.histogram();
     assert.ok(h);
     assert.equal(h.buckets.reduce((acc, b) => acc + b.total, 0), 6);
+
+    // cross-file search: level filter narrows to one source
+    assert.equal(m.setSearch('level:ERROR').total, 3); // only file B
+    const filtered = await m.page(0, 10, 'asc');
+    assert.deepEqual(filtered.map((r) => r.source), [1, 1, 1]);
+
+    // text search across files (matches A's lines)
+    assert.equal(m.setSearch('"A event"').total, 3);
+
+    // highlight mode keeps all rows but flags matches
+    const hl = await m.page(0, 10, 'asc', true);
+    assert.equal(hl.length, 6);
+    assert.deepEqual(hl.map((r) => r.match), [true, false, true, false, true, false]);
+
+    // clearing the search restores the full timeline
+    assert.equal(m.setSearch('').total, 6);
   } finally {
     m.close();
   }

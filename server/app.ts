@@ -187,6 +187,20 @@ export function createApp(distDir: string): TraceBoxApp {
     sendJson(res, 201, { count: merged.count(), sources: merged.sourceList() });
   });
 
+  router.add('POST', '/api/merged/search', async (req, res) => {
+    if (!merged) {
+      sendJson(res, 404, { error: 'No merged timeline' });
+      return;
+    }
+    const body = (await readJsonBody(req)) as { query?: string };
+    try {
+      sendJson(res, 200, merged.setSearch(body.query ?? ''));
+    } catch (err) {
+      if (err instanceof QuerySyntaxError) sendJson(res, 400, { error: err.message });
+      else throw err;
+    }
+  });
+
   router.add('GET', '/api/merged/rows', async (_req, res, _params, query) => {
     if (!merged) {
       sendJson(res, 404, { error: 'No merged timeline' });
@@ -195,16 +209,18 @@ export function createApp(distDir: string): TraceBoxApp {
     const offset = Math.max(0, Number(query.get('offset') ?? 0));
     const limit = Math.min(1000, Math.max(1, Number(query.get('limit') ?? 200)));
     const order = query.get('order') === 'desc' ? 'desc' : 'asc';
-    const rows = await merged.page(offset, limit, order);
-    sendJson(res, 200, { rows, total: merged.count() });
+    const highlight = query.get('highlight') === '1';
+    const rows = await merged.page(offset, limit, order, highlight);
+    sendJson(res, 200, { rows, total: merged.count(highlight) });
   });
 
-  router.add('GET', '/api/merged/histogram', (_req, res) => {
-    sendJson(res, 200, merged ? merged.histogram() : null);
+  router.add('GET', '/api/merged/histogram', (_req, res, _params, query) => {
+    sendJson(res, 200, merged ? merged.histogram(query.get('highlight') === '1') : null);
   });
 
   router.add('GET', '/api/merged/seek', (_req, res, _params, query) => {
-    sendJson(res, 200, { seq: merged ? merged.seekTs(Number(query.get('ts') ?? 0)) : 0 });
+    const highlight = query.get('highlight') === '1';
+    sendJson(res, 200, { seq: merged ? merged.seekTs(Number(query.get('ts') ?? 0), highlight) : 0 });
   });
 
   router.add('DELETE', '/api/merged', (_req, res) => {
