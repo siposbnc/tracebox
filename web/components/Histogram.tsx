@@ -39,7 +39,8 @@ export default function Histogram({
   const containerRef = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<{ from: number; to: number } | null>(null);
   const [hover, setHover] = useState<number | null>(null);
-  const [showAnom, setShowAnom] = useState(true);
+  const [showSpikes, setShowSpikes] = useState(true);
+  const [showGaps, setShowGaps] = useState(true);
   const tz = useTz();
 
   const maxTotal = useMemo(() => Math.max(...data.buckets.map((b) => b.total), 1), [data]);
@@ -124,7 +125,7 @@ export default function Histogram({
           );
         })}
 
-        {showAnom &&
+        {showGaps &&
           anomalies.gaps.map((g, i) => (
             <div
               key={`gap-${i}`}
@@ -141,7 +142,7 @@ export default function Histogram({
             />
           ))}
 
-        {showAnom &&
+        {showSpikes &&
           anomalies.spikes.map((s) => (
             <button
               key={`spike-${s.index}`}
@@ -170,7 +171,7 @@ export default function Histogram({
             <span className="text-gray-500">{formatTs(hovered.start, tz)}</span>
             {' · '}
             <span className="font-semibold">{formatCount(hovered.total)} lines</span>
-            {hover !== null && spikeIdx.has(hover) && <span className="ml-1 font-semibold text-red-400">⚡ spike</span>}
+            {hover !== null && showSpikes && spikeIdx.has(hover) && <span className="ml-1 font-semibold text-red-400">⚡ spike</span>}
             {Object.entries(hovered.counts)
               .filter(([lv]) => lv !== 'NONE')
               .map(([lv, n]) => (
@@ -184,20 +185,26 @@ export default function Histogram({
       <div className="flex items-center justify-between font-mono text-[10px] text-gray-600">
         <span>{formatTs(data.minTs, tz)}</span>
         {anomalies.spikes.length > 0 || anomalies.gaps.length > 0 ? (
-          <button
-            onClick={() => setShowAnom((v) => !v)}
-            className="font-sans text-gray-500 hover:text-gray-300"
-            title={showAnom ? 'Hide spike/gap markers' : 'Show spike/gap markers'}
-          >
-            {showAnom ? '' : 'show '}
+          <span className="flex items-center gap-2 font-sans">
             {anomalies.spikes.length > 0 && (
-              <span className="text-red-400">⚡ {anomalies.spikes.length} spike{anomalies.spikes.length === 1 ? '' : 's'}</span>
+              <button
+                onClick={() => setShowSpikes((v) => !v)}
+                className={`hover:text-red-300 ${showSpikes ? 'text-red-400' : 'text-gray-600 line-through'}`}
+                title={showSpikes ? 'Hide spike markers' : 'Show spike markers'}
+              >
+                ⚡ {anomalies.spikes.length} spike{anomalies.spikes.length === 1 ? '' : 's'}
+              </button>
             )}
-            {anomalies.spikes.length > 0 && anomalies.gaps.length > 0 && ' · '}
             {anomalies.gaps.length > 0 && (
-              <span className="text-gray-400">⏸ {anomalies.gaps.length} gap{anomalies.gaps.length === 1 ? '' : 's'}</span>
+              <button
+                onClick={() => setShowGaps((v) => !v)}
+                className={`hover:text-gray-200 ${showGaps ? 'text-gray-400' : 'text-gray-600 line-through'}`}
+                title={showGaps ? 'Hide gap markers' : 'Show gap markers'}
+              >
+                ⏸ {anomalies.gaps.length} gap{anomalies.gaps.length === 1 ? '' : 's'}
+              </button>
             )}
-          </button>
+          </span>
         ) : (
           <span className="text-gray-500">{hint}</span>
         )}
