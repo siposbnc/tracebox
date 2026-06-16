@@ -48,6 +48,14 @@ export default function FacetPanel({
   // the field we last picked an automatic default view for (so result-set
   // refreshes don't override a manual Values/Range choice)
   const autoField = useRef<string | null>(null);
+  // field-list controls
+  const [fieldQuery, setFieldQuery] = useState('');
+  const [sort, setSort] = useState<'name' | 'count'>('name');
+
+  const q = fieldQuery.trim().toLowerCase();
+  const shownFields = fieldNames
+    .filter((f) => q === '' || f.key.toLowerCase().includes(q))
+    .sort((a, b) => (sort === 'name' ? a.key.localeCompare(b.key) : b.count - a.count || a.key.localeCompare(b.key)));
 
   // (re)load the expanded field whenever it changes or the result set does
   useEffect(() => {
@@ -123,11 +131,43 @@ export default function FacetPanel({
         </button>
       </div>
 
+      {fieldNames.length > 0 && (
+        <div className="flex items-center gap-1.5 border-b border-edge px-2 py-1.5">
+          <div className="relative min-w-0 flex-1">
+            <input
+              value={fieldQuery}
+              onChange={(e) => setFieldQuery(e.target.value)}
+              placeholder="Filter fields…"
+              spellCheck={false}
+              className="w-full rounded border border-edge bg-surface-0 py-1 pl-2 pr-6 text-xs text-gray-200 placeholder:text-gray-600 focus:border-sky-700 focus:outline-none"
+            />
+            {fieldQuery && (
+              <button
+                onClick={() => setFieldQuery('')}
+                className="absolute inset-y-0 right-1 px-1 text-gray-500 hover:text-gray-300"
+                title="Clear"
+              >
+                ×
+              </button>
+            )}
+          </div>
+          <button
+            onClick={() => setSort((s) => (s === 'name' ? 'count' : 'name'))}
+            className="shrink-0 rounded border border-edge px-1.5 py-1 text-[10px] text-gray-400 hover:bg-surface-2 hover:text-gray-200"
+            title={sort === 'name' ? 'Sorted A–Z · click to sort by count' : 'Sorted by count · click to sort A–Z'}
+          >
+            {sort === 'name' ? 'A–Z' : '#'}
+          </button>
+        </div>
+      )}
+
       <div className="min-h-0 flex-1 overflow-y-auto">
         {fieldNames.length === 0 ? (
           <div className="p-3 text-xs text-gray-600">No structured fields detected in this file.</div>
+        ) : shownFields.length === 0 ? (
+          <div className="p-3 text-xs text-gray-600">No fields match “{fieldQuery}”.</div>
         ) : (
-          fieldNames.map((f) => {
+          shownFields.map((f) => {
             const open = f.key === field;
             return (
               <div key={f.key} className="border-b border-edge/40">

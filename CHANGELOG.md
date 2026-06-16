@@ -14,6 +14,8 @@ date and start a fresh `Unreleased` section.
 
 ### Added
 
+- Field breakdown panel: a filter box to search the field list by name, and a
+  sort toggle (A–Z / by count). Fields are now ordered alphabetically by default.
 - Numeric / range faceting: for fields with numeric values, the field breakdown
   panel gains a **Range** view — min / median / average / p95 / max plus a
   clickable distribution histogram. Clicking a bar filters the search to that
