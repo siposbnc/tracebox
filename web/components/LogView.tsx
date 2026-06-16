@@ -42,6 +42,9 @@ export default function LogView({
   const [epoch, setEpoch] = useState(0);
   const [total, setTotal] = useState(initial.search?.total ?? initial.lineCount);
   const [selected, setSelected] = useState<number | null>(null);
+  // the detail panel is shown for the selected line; decoupled from selection so it
+  // can be toggled (Right arrow) without losing the row highlight / arrow navigation
+  const [detailOpen, setDetailOpen] = useState(false);
   const [contextLine, setContextLine] = useState<number | null>(null);
   const [pendingJump, setPendingJump] = useState<{ lineNo: number; nonce: number } | null>(null);
   const [histogram, setHistogram] = useState<HistogramData | null>(null);
@@ -307,6 +310,11 @@ export default function LogView({
           e.preventDefault();
           setGotoOpen(true);
           break;
+        case 'toggleDetail':
+          if (selected === null) return; // nothing selected to show detail for
+          e.preventDefault();
+          setDetailOpen((v) => !v);
+          break;
         case 'toggleBookmark':
           if (selected === null) return;
           e.preventDefault();
@@ -442,6 +450,10 @@ export default function LogView({
             followTail={status.tail && followTail}
             selected={selected}
             onSelect={setSelected}
+            onActivate={(lineNo) => {
+              setSelected(lineNo);
+              setDetailOpen(true);
+            }}
             onContext={setContextLine}
             showContext={status.search !== null}
             highlight={highlightActive}
@@ -456,12 +468,12 @@ export default function LogView({
             onScrolledToEnd={() => status.tail && setFollowTail(true)}
           />
         </div>
-        {selected !== null && (
+        {selected !== null && detailOpen && (
           <DetailPanel
             sessionId={id}
             file={status.file}
             lineNo={selected}
-            onClose={() => setSelected(null)}
+            onClose={() => setDetailOpen(false)}
             onAddFilter={addFilter}
           />
         )}

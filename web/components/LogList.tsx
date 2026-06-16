@@ -42,6 +42,7 @@ export default function LogList({
   followTail,
   selected,
   onSelect,
+  onActivate,
   onContext,
   showContext,
   highlight,
@@ -61,7 +62,10 @@ export default function LogList({
   total: number;
   followTail: boolean;
   selected: number | null;
+  /** Move the selection (keyboard nav); does not open the detail panel. */
   onSelect: (lineNo: number) => void;
+  /** Activate a row (click): select it and open the detail panel. */
+  onActivate: (lineNo: number) => void;
   onContext: (lineNo: number) => void;
   showContext: boolean;
   highlight: boolean;
@@ -356,7 +360,7 @@ export default function LogList({
                       row={row}
                       selected={selected === row.lineNo}
                       bookmarked={bookmarkSet.has(row.lineNo)}
-                      onSelect={onSelect}
+                      onActivate={onActivate}
                       onToggleBookmark={() => toggleBookmark(file, row.lineNo)}
                       columns={columns}
                       gutterWidth={gutterWidth}
@@ -397,7 +401,7 @@ export default function LogList({
                     row={row}
                     selected={selected === row.lineNo}
                     bookmarked={bookmarkSet.has(row.lineNo)}
-                    onSelect={onSelect}
+                    onActivate={onActivate}
                     onContext={onContext}
                     onToggleBookmark={() => toggleBookmark(file, row.lineNo)}
                     showContext={showContext}
@@ -425,7 +429,7 @@ const Row = memo(function Row({
   row,
   selected,
   bookmarked,
-  onSelect,
+  onActivate,
   onContext,
   onToggleBookmark,
   showContext,
@@ -438,7 +442,7 @@ const Row = memo(function Row({
   row: RowData;
   selected: boolean;
   bookmarked: boolean;
-  onSelect: (lineNo: number) => void;
+  onActivate: (lineNo: number) => void;
   onContext: (lineNo: number) => void;
   onToggleBookmark: () => void;
   showContext: boolean;
@@ -462,7 +466,7 @@ const Row = memo(function Row({
 
   return (
     <div
-      onClick={() => onSelect(row.lineNo)}
+      onClick={() => onActivate(row.lineNo)}
       className={`group row-text relative flex cursor-pointer gap-2 border-l-2 pr-3 font-mono text-[13px] leading-6 ${
         wrap ? 'min-h-6 items-start py-px' : 'h-full items-center'
       } ${
@@ -538,7 +542,7 @@ const GridRow = memo(function GridRow({
   row,
   selected,
   bookmarked,
-  onSelect,
+  onActivate,
   onToggleBookmark,
   columns,
   gutterWidth,
@@ -547,7 +551,7 @@ const GridRow = memo(function GridRow({
   row: RowData;
   selected: boolean;
   bookmarked: boolean;
-  onSelect: (lineNo: number) => void;
+  onActivate: (lineNo: number) => void;
   onToggleBookmark: () => void;
   columns: string[];
   gutterWidth: number;
@@ -556,7 +560,7 @@ const GridRow = memo(function GridRow({
   const levelClass = row.level ? (LEVEL_STYLES[row.level] ?? 'bg-slate-800 text-slate-300') : '';
   return (
     <div
-      onClick={() => onSelect(row.lineNo)}
+      onClick={() => onActivate(row.lineNo)}
       className={`group flex h-full cursor-pointer items-center gap-2 border-l-2 pr-3 font-mono text-[13px] leading-6 ${
         selected ? 'border-sky-400 bg-sky-950/60' : 'border-transparent hover:bg-surface-1'
       }`}

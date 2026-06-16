@@ -14,6 +14,10 @@ date and start a fresh `Unreleased` section.
 
 ### Added
 
+- Right arrow opens/closes the detail panel for the selected line (rebindable).
+  Selection (row highlight, ↑/↓ navigation) is now independent of the panel, so
+  you can close it without losing your place and reopen it in context.
+
 - Saved workspaces: a "Workspaces" menu in the header saves the open files and each
   file's active search as a named workspace, reopenable in one click (restores the
   files and re-applies their searches). Persisted locally; available even on a fresh

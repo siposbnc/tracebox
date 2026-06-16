@@ -23,6 +23,7 @@ export const COMMANDS: Command[] = [
   { id: 'pageDown', label: 'Jump down a page', defaultChord: 'PageDown' },
   { id: 'pageUpBig', label: 'Jump up a big page', defaultChord: 'Mod+PageUp' },
   { id: 'pageDownBig', label: 'Jump down a big page', defaultChord: 'Mod+PageDown' },
+  { id: 'toggleDetail', label: 'Open/close detail panel', defaultChord: 'ArrowRight' },
   { id: 'toggleBookmark', label: 'Toggle bookmark on selected line', defaultChord: 'Mod+B' },
   { id: 'nextBookmark', label: 'Next bookmark', defaultChord: 'F2' },
   { id: 'prevBookmark', label: 'Previous bookmark', defaultChord: 'Shift+F2' },
@@ -137,6 +138,10 @@ export function formatChord(chord: string): string {
       if (p === 'Mod') return IS_MAC ? '⌘' : 'Ctrl';
       if (p === 'Alt') return IS_MAC ? '⌥' : 'Alt';
       if (p === 'Shift') return IS_MAC ? '⇧' : 'Shift';
+      if (p === 'ArrowRight') return '→';
+      if (p === 'ArrowLeft') return '←';
+      if (p === 'ArrowUp') return '↑';
+      if (p === 'ArrowDown') return '↓';
       return p;
     })
     .join('+');
