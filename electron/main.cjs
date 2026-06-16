@@ -203,7 +203,7 @@ async function start() {
       title: 'Open log file',
       properties: ['openFile'],
       filters: [
-        { name: 'Log files', extensions: ['log', 'txt', 'json', 'jsonl', 'ndjson', 'out'] },
+        { name: 'Log files', extensions: ['log', 'txt', 'json', 'jsonl', 'ndjson', 'out', 'gz'] },
         { name: 'All files', extensions: ['*'] },
       ],
     });

@@ -1,6 +1,7 @@
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, appendFileSync, rmSync } from 'node:fs';
+import { gzipSync } from 'node:zlib';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { LogSession } from './session.ts';
@@ -493,6 +494,19 @@ test('tail mode re-indexes a growing unterminated line', async () => {
   assert.equal(rows[1].text, '2024-01-01 00:00:00 [ERROR] now the line is complete');
   assert.equal(s.setSearch('level:ERROR').total, 1);
   s.setTail(false);
+});
+
+test('opens a gzipped log transparently', async () => {
+  const file = path.join(dir, 'app.log.gz');
+  writeFileSync(file, gzipSync(Buffer.from(appLogLines(300).join('\n') + '\n')));
+  const s = await openAndIndex(file);
+
+  assert.equal(s.compressed, true);
+  assert.equal(s.lineCount, 300);
+  assert.equal(s.status().format, 'timestamped');
+  const rows = await s.getRows(0, 1);
+  assert.match(rows[0].text, /request 0 /);
+  assert.equal(s.setSearch('level:ERROR').total, Math.floor(300 / 6) + (300 % 6 > 4 ? 1 : 0));
 });
 
 test('index is reused on reopen of an unchanged file', async () => {

@@ -28,6 +28,12 @@ function isSessionDb(name: string): boolean {
   return name.endsWith('.db') && !name.startsWith('merged-');
 }
 
+/** Remove a cache db and its sibling decompressed temp (.data), if any. */
+function removeCacheDb(full: string): void {
+  rmSync(full, { force: true });
+  rmSync(full.replace(/\.db$/, '.data'), { force: true });
+}
+
 /** Read the source path + line count from a cache DB's meta (best effort). */
 function readMeta(dbPath: string): { path: string | null; lineCount: number } {
   try {
@@ -72,7 +78,14 @@ export function listCache(dir: string, active: Map<string, string>): CacheInfo {
     } catch {
       continue;
     }
-    totalSize += st.size;
+    // a compressed source is decompressed to a sibling .data temp; count it too
+    let size = st.size;
+    try {
+      size += statSync(full.replace(/\.db$/, '.data')).size;
+    } catch {
+      // no decompressed sibling
+    }
+    totalSize += size;
     const activeFile = active.get(full);
     // for in-use caches read the path from the live session (don't open the db);
     // otherwise read it from the cache file's meta
@@ -80,7 +93,7 @@ export function listCache(dir: string, active: Map<string, string>): CacheInfo {
     entries.push({
       name,
       path: meta.path ?? name,
-      size: st.size,
+      size,
       lineCount: meta.lineCount,
       mtimeMs: st.mtimeMs,
       inUse: activeFile !== undefined,
@@ -96,7 +109,7 @@ export function evictCache(dir: string, name: string, active: Map<string, string
   const full = path.join(dir, name);
   if (active.has(full)) return false;
   try {
-    rmSync(full, { force: true });
+    removeCacheDb(full);
     return true;
   } catch {
     return false;
@@ -116,7 +129,7 @@ export function pruneStaleCache(
   for (const e of listCache(dir, active).entries) {
     if (e.inUse || e.mtimeMs >= cutoff) continue;
     try {
-      rmSync(path.join(dir, e.name), { force: true });
+      removeCacheDb(path.join(dir, e.name));
       removed++;
       freed += e.size;
     } catch {
@@ -132,7 +145,7 @@ export function clearCache(dir: string, active: Map<string, string>): { freed: n
   for (const e of listCache(dir, active).entries) {
     if (e.inUse) continue;
     try {
-      rmSync(path.join(dir, e.name), { force: true });
+      removeCacheDb(path.join(dir, e.name));
       freed += e.size;
     } catch {
       // ignore

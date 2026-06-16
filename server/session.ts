@@ -1,7 +1,21 @@
 import { EventEmitter } from 'node:events';
 import { createHash } from 'node:crypto';
-import { mkdirSync, statSync, utimesSync, watchFile, unwatchFile, type StatWatcher } from 'node:fs';
+import {
+  mkdirSync,
+  statSync,
+  utimesSync,
+  watchFile,
+  unwatchFile,
+  openSync,
+  readSync,
+  closeSync,
+  createReadStream,
+  createWriteStream,
+  type StatWatcher,
+} from 'node:fs';
 import { open, type FileHandle } from 'node:fs/promises';
+import { createGunzip } from 'node:zlib';
+import { pipeline } from 'node:stream/promises';
 import path from 'node:path';
 import { LineIndex, LineScanner, type LineSpan } from './lineIndex.ts';
 import { LineReader } from './reader.ts';
@@ -54,6 +68,23 @@ export function indexCacheDir(): string {
 
 let nextId = 1;
 
+/** Whether a file is gzip-compressed (by extension or the 1f 8b magic bytes). */
+function looksGzip(file: string): boolean {
+  if (/\.(gz|gzip)$/i.test(file)) return true;
+  try {
+    const fd = openSync(file, 'r');
+    try {
+      const buf = Buffer.alloc(2);
+      readSync(fd, buf, 0, 2, 0);
+      return buf[0] === 0x1f && buf[1] === 0x8b;
+    } finally {
+      closeSync(fd);
+    }
+  } catch {
+    return false;
+  }
+}
+
 /**
  * One open log file: owns the sparse line index, the SQLite search index,
  * background indexing, the active search, and tail-follow state.
@@ -61,9 +92,13 @@ let nextId = 1;
 export class LogSession extends EventEmitter {
   readonly id: string;
   readonly file: string;
+  /** Path the reader/indexer actually read — same as `file`, or a decompressed temp for .gz. */
+  private dataPath: string;
+  /** True when `file` is gzip-compressed and served from a decompressed temp. */
+  readonly compressed: boolean;
   private index = new LineIndex();
   private store: IndexStore;
-  private reader: LineReader;
+  private reader!: LineReader;
   private parser: LogParser = new RawParser();
 
   phase: SessionStatus['phase'] = 'indexing';
@@ -112,10 +147,36 @@ export class LogSession extends EventEmitter {
     const st = statSync(this.file);
     if (!st.isFile()) throw new Error('Not a file');
     this.fileSize = st.size;
+    this.compressed = looksGzip(this.file);
     const hash = createHash('sha1').update(this.file.toLowerCase()).digest('hex').slice(0, 16);
     const dbPath = path.join(indexCacheDir(), `${hash}.db`);
     this.store = new IndexStore(dbPath);
-    this.reader = new LineReader(this.file, this.index);
+    // the reader is created in start(), once dataPath is known (decompress for .gz)
+    this.dataPath = this.file;
+  }
+
+  /** The temp path a compressed file is decompressed to (sibling of the index db). */
+  private get decompressedPath(): string {
+    return this.store.dbPath.replace(/\.db$/, '.data');
+  }
+
+  /** Ensure the readable data file exists; for .gz decompress to a temp (reused if still valid). */
+  private async prepareData(reusable: boolean): Promise<void> {
+    if (!this.compressed) {
+      this.dataPath = this.file;
+      return;
+    }
+    const temp = this.decompressedPath;
+    try {
+      if (reusable && statSync(temp).size > 0) {
+        this.dataPath = temp;
+        return; // decompressed copy from a previous open is still valid
+      }
+    } catch {
+      // temp missing — decompress below
+    }
+    await pipeline(createReadStream(this.file), createGunzip(), createWriteStream(temp));
+    this.dataPath = temp;
   }
 
   private fingerprint(size: number, mtimeMs: number): string {
@@ -123,11 +184,17 @@ export class LogSession extends EventEmitter {
   }
 
   async start(): Promise<void> {
-    await this.reader.openFile();
     const st = statSync(this.file);
     const fp = this.fingerprint(st.size, st.mtimeMs);
+    const reusable = this.store.isReusable(fp);
+    // decompress .gz to a temp (or reuse it) before reading; indexing/seeking
+    // then works on the decompressed data exactly as for a plain file
+    await this.prepareData(reusable);
+    this.fileSize = statSync(this.dataPath).size;
+    this.reader = new LineReader(this.dataPath, this.index);
+    await this.reader.openFile();
 
-    if (this.store.isReusable(fp)) {
+    if (reusable) {
       try {
         await this.restoreFromStore();
         this.reusedIndex = true;
@@ -157,7 +224,7 @@ export class LogSession extends EventEmitter {
     if (!Number.isFinite(lineCount) || !Number.isFinite(indexedBytes)) throw new Error('bad meta');
     const oldReader = this.reader;
     this.index = LineIndex.restore(this.store.loadCheckpoints(), lineCount, indexedBytes);
-    this.reader = new LineReader(this.file, this.index);
+    this.reader = new LineReader(this.dataPath, this.index);
     await this.reader.openFile();
     await oldReader.close();
     this.levelCounts = JSON.parse(this.store.getMeta('levelCounts') ?? '{}');
@@ -179,7 +246,7 @@ export class LogSession extends EventEmitter {
   // Initial background indexing
 
   private async indexLoop(): Promise<void> {
-    const fd = await open(this.file, 'r');
+    const fd = await open(this.dataPath, 'r');
     try {
       const buf = Buffer.allocUnsafe(READ_CHUNK);
       const scanner = new LineScanner(0);
@@ -598,10 +665,10 @@ export class LogSession extends EventEmitter {
     if (on === this.tail) return;
     this.tail = on;
     if (on) {
-      this.watcher = watchFile(this.file, { interval: 400 }, this.watchListener);
+      this.watcher = watchFile(this.dataPath, { interval: 400 }, this.watchListener);
       void this.checkAppend();
     } else if (this.watcher) {
-      unwatchFile(this.file, this.watchListener);
+      unwatchFile(this.dataPath, this.watchListener);
       this.watcher = null;
     }
   }
@@ -634,7 +701,7 @@ export class LogSession extends EventEmitter {
   private async appendOnce(): Promise<void> {
     let st;
     try {
-      st = statSync(this.file);
+      st = statSync(this.dataPath);
     } catch {
       return; // file temporarily gone (rotation) — keep waiting
     }
@@ -669,7 +736,7 @@ export class LogSession extends EventEmitter {
       return;
     }
 
-    const fd: FileHandle = await open(this.file, 'r');
+    const fd: FileHandle = await open(this.dataPath, 'r');
     try {
       const scanner = new LineScanner(startOffset);
       const buf = Buffer.allocUnsafe(READ_CHUNK);
