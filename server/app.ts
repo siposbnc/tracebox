@@ -228,6 +228,16 @@ export function createApp(distDir: string): TraceBoxApp {
     sendJson(res, 200, getSession(params.id).facet(field, limit));
   });
 
+  router.add('GET', '/api/sessions/:id/numeric-facet', (_req, res, params, query) => {
+    const field = query.get('field');
+    if (!field) {
+      sendJson(res, 400, { error: 'Missing "field"' });
+      return;
+    }
+    const buckets = Number(query.get('buckets') ?? 24);
+    sendJson(res, 200, getSession(params.id).numericFacet(field, buckets));
+  });
+
   router.add('GET', '/api/sessions/:id/clusters', (_req, res, params, query) => {
     const limit = Number(query.get('limit') ?? 50);
     sendJson(res, 200, getSession(params.id).clusters(limit));

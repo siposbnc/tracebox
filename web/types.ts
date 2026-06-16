@@ -70,6 +70,19 @@ export interface FacetResult {
   values: { value: string; count: number }[];
   distinctCount: number;
   covered: number;
+  /** Of `covered`, how many values parse as a number (enables the range view). */
+  numericCount: number;
+}
+
+export interface NumericFacet {
+  field: string;
+  count: number;
+  min: number;
+  max: number;
+  avg: number;
+  p50: number;
+  p95: number;
+  buckets: { lo: number; hi: number; count: number }[];
 }
 
 export interface ClustersResult {

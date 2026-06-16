@@ -535,6 +535,39 @@ test('opens a rotation group as one time-ordered stream', async () => {
   assert.equal(s.setSearch('level:ERROR').total, Math.floor(200 / 6) + (200 % 6 > 4 ? 1 : 0));
 });
 
+test('numericFacet summarizes a numeric field and facet reports numeric coverage', async () => {
+  const lines = Array.from(
+    { length: 100 },
+    (_, i) => `level=INFO duration=${i} status=${i % 2 === 0 ? 200 : 500} msg=req${i}`,
+  );
+  const s = await openAndIndex(makeLogFile('logfmt.log', lines));
+
+  const nf = s.numericFacet('duration', 10);
+  assert.ok(nf);
+  assert.equal(nf.count, 100);
+  assert.equal(nf.min, 0);
+  assert.equal(nf.max, 99);
+  assert.equal(nf.buckets.length, 10);
+  assert.equal(
+    nf.buckets.reduce((a, b) => a + b.count, 0),
+    100,
+  );
+  assert.ok(nf.p50 >= 49 && nf.p50 <= 51);
+  // the highest value lands in the last bucket, whose hi equals max
+  assert.equal(nf.buckets[nf.buckets.length - 1].hi, 99);
+
+  // a non-numeric field has no numeric distribution
+  assert.equal(s.numericFacet('msg'), null);
+  assert.equal(s.facet('duration').numericCount, 100);
+  assert.equal(s.facet('msg').numericCount, 0);
+
+  // restricted to a result set
+  s.setSearch('status:500');
+  const nf2 = s.numericFacet('duration', 10);
+  assert.ok(nf2);
+  assert.equal(nf2.count, 50); // odd i → status 500
+});
+
 test('index is reused on reopen of an unchanged file', async () => {
   const file = makeLogFile('reuse.log', appLogLines(2000));
   const s1 = await openAndIndex(file);

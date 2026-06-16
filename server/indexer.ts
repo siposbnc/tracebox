@@ -42,6 +42,22 @@ export interface Facet {
   distinctCount: number;
   /** Lines in the current scope that have this field at all. */
   covered: number;
+  /** Of `covered`, how many parse as a number (so the UI can offer a range view). */
+  numericCount: number;
+}
+
+export interface NumericFacet {
+  field: string;
+  /** Numeric values in the current scope (the basis for the distribution). */
+  count: number;
+  min: number;
+  max: number;
+  avg: number;
+  /** Median and 95th percentile. */
+  p50: number;
+  p95: number;
+  /** Equal-width distribution over [min, max]; the max value falls in the last bucket. */
+  buckets: { lo: number; hi: number; count: number }[];
 }
 
 export interface Stats {
@@ -527,15 +543,72 @@ export class IndexStore {
     const agg = (
       filtered
         ? this.db.prepare(
-            `SELECT COUNT(DISTINCT f.value) AS distinctCount, COUNT(*) AS covered
+            `SELECT COUNT(DISTINCT f.value) AS distinctCount, COUNT(*) AS covered,
+                    COUNT(f.num) AS numericCount
              FROM results r JOIN fields f ON f.line_no = r.line_no WHERE f.key = ?`,
           )
         : this.db.prepare(
-            `SELECT COUNT(DISTINCT value) AS distinctCount, COUNT(*) AS covered FROM fields WHERE key = ?`,
+            `SELECT COUNT(DISTINCT value) AS distinctCount, COUNT(*) AS covered,
+                    COUNT(num) AS numericCount FROM fields WHERE key = ?`,
           )
-    ).get(field) as { distinctCount: number; covered: number };
+    ).get(field) as { distinctCount: number; covered: number; numericCount: number };
 
-    return { field, values, distinctCount: agg.distinctCount, covered: agg.covered };
+    return {
+      field,
+      values,
+      distinctCount: agg.distinctCount,
+      covered: agg.covered,
+      numericCount: agg.numericCount,
+    };
+  }
+
+  /**
+   * Numeric distribution for one field: summary statistics plus an equal-width
+   * histogram over [min, max], optionally restricted to the current result set.
+   * Uses the `idx_fields_kn(key, num)` partial index. Returns null when the field
+   * has no numeric values in scope.
+   */
+  numericFacet(field: string, filtered: boolean, buckets = 24): NumericFacet | null {
+    buckets = Math.min(Math.max(Math.trunc(buckets), 1), 200);
+    const from = filtered
+      ? `results r JOIN fields f ON f.line_no = r.line_no WHERE f.key = ? AND f.num IS NOT NULL`
+      : `fields f WHERE f.key = ? AND f.num IS NOT NULL`;
+
+    const agg = this.db
+      .prepare(`SELECT COUNT(*) AS count, MIN(f.num) AS min, MAX(f.num) AS max, AVG(f.num) AS avg FROM ${from}`)
+      .get(field) as { count: number; min: number | null; max: number | null; avg: number | null };
+    if (!agg.count || agg.min === null || agg.max === null) return null;
+
+    // percentiles via an indexed ordered walk (OFFSET into the sorted values)
+    const pctSql = this.db.prepare(`SELECT f.num AS v FROM ${from} ORDER BY f.num LIMIT 1 OFFSET ?`);
+    const pct = (q: number): number => {
+      const off = Math.min(agg.count - 1, Math.max(0, Math.round(q * (agg.count - 1))));
+      const row = pctSql.get(field, off) as { v: number } | undefined;
+      return row?.v ?? agg.min!;
+    };
+    const p50 = pct(0.5);
+    const p95 = pct(0.95);
+
+    const lo = agg.min;
+    const hi = agg.max;
+    const out: NumericFacet = { field, count: agg.count, min: lo, max: hi, avg: agg.avg ?? lo, p50, p95, buckets: [] };
+    const width = (hi - lo) / buckets;
+    if (width <= 0) {
+      // a single distinct value — one bucket holding everything
+      out.buckets = [{ lo, hi, count: agg.count }];
+      return out;
+    }
+
+    // bucket index = clamp(floor((num - lo) / width), 0, buckets-1) so max lands in the last bin
+    const rows = this.db
+      .prepare(
+        `SELECT MIN(CAST((f.num - ?) / ? AS INTEGER), ?) AS b, COUNT(*) AS count FROM ${from} GROUP BY b`,
+      )
+      .all(lo, width, buckets - 1, field) as { b: number; count: number }[];
+    const counts = new Array<number>(buckets).fill(0);
+    for (const r of rows) counts[r.b] = r.count;
+    out.buckets = counts.map((count, i) => ({ lo: lo + i * width, hi: i === buckets - 1 ? hi : lo + (i + 1) * width, count }));
+    return out;
   }
 
   /**

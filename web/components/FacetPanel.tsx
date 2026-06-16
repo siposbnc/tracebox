@@ -1,11 +1,20 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api, formatCount } from '../api';
-import type { FacetResult } from '../types';
+import type { FacetResult, NumericFacet } from '../types';
 
 /** Quote a field value for the query language (empty value matches the empty string). */
 function filterValue(value: string): string {
   if (value === '') return '""';
   return /[\s:"()]/.test(value) ? `"${value.replaceAll('"', '\\"')}"` : value;
+}
+
+/** Compact number formatting for the range view (trims noisy decimals). */
+function fmtNum(n: number): string {
+  if (!Number.isFinite(n)) return '–';
+  if (Number.isInteger(n)) return n.toLocaleString();
+  const abs = Math.abs(n);
+  const digits = abs >= 100 ? 1 : abs >= 1 ? 2 : 4;
+  return n.toLocaleString(undefined, { maximumFractionDigits: digits });
 }
 
 /**
@@ -32,6 +41,13 @@ export default function FacetPanel({
   const [facet, setFacet] = useState<FacetResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 'values' = distinct-value list; 'range' = numeric distribution
+  const [mode, setMode] = useState<'values' | 'range'>('values');
+  const [numeric, setNumeric] = useState<NumericFacet | null>(null);
+  const [numLoading, setNumLoading] = useState(false);
+  // the field we last picked an automatic default view for (so result-set
+  // refreshes don't override a manual Values/Range choice)
+  const autoField = useRef<string | null>(null);
 
   // (re)load the expanded field whenever it changes or the result set does
   useEffect(() => {
@@ -45,7 +61,15 @@ export default function FacetPanel({
     void api
       .facet(sessionId, field, 50)
       .then((f) => {
-        if (!cancelled) setFacet(f);
+        if (cancelled) return;
+        setFacet(f);
+        // default to the range view for high-cardinality numeric fields, where a
+        // value list is useless; otherwise keep the value list
+        if (autoField.current !== field) {
+          autoField.current = field;
+          const numericish = f.numericCount >= f.covered * 0.9 && f.distinctCount > f.values.length;
+          setMode(numericish ? 'range' : 'values');
+        }
       })
       .catch((err: unknown) => {
         if (!cancelled) setError(err instanceof Error ? err.message : String(err));
@@ -57,6 +81,30 @@ export default function FacetPanel({
       cancelled = true;
     };
   }, [sessionId, field, epoch]);
+
+  // load the numeric distribution lazily, only while the range view is showing
+  useEffect(() => {
+    if (field === null || mode !== 'range') {
+      setNumeric(null);
+      return;
+    }
+    let cancelled = false;
+    setNumLoading(true);
+    void api
+      .numericFacet(sessionId, field, 24)
+      .then((n) => {
+        if (!cancelled) setNumeric(n);
+      })
+      .catch(() => {
+        if (!cancelled) setNumeric(null);
+      })
+      .finally(() => {
+        if (!cancelled) setNumLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId, field, mode, epoch]);
 
   const maxCount = facet && facet.values.length > 0 ? facet.values[0].count : 1;
 
@@ -100,7 +148,31 @@ export default function FacetPanel({
                   <div className="px-2 pb-2">
                     {loading && <div className="animate-pulse-subtle px-1 py-1 text-[11px] text-gray-500">Loading…</div>}
                     {error && <div className="px-1 py-1 text-[11px] text-red-400">{error}</div>}
-                    {facet && !loading && (
+                    {facet && !loading && facet.numericCount > 0 && (
+                      <div className="mb-1.5 flex overflow-hidden rounded border border-edge text-[10px]">
+                        <button
+                          className={`flex-1 py-0.5 ${mode === 'values' ? 'bg-surface-2 text-sky-300' : 'text-gray-500 hover:text-gray-300'}`}
+                          onClick={() => setMode('values')}
+                        >
+                          Values
+                        </button>
+                        <button
+                          className={`flex-1 py-0.5 ${mode === 'range' ? 'bg-surface-2 text-sky-300' : 'text-gray-500 hover:text-gray-300'}`}
+                          onClick={() => setMode('range')}
+                        >
+                          Range
+                        </button>
+                      </div>
+                    )}
+                    {facet && !loading && mode === 'range' && facet.numericCount > 0 ? (
+                      <NumericView
+                        data={numeric}
+                        loading={numLoading}
+                        onRange={(lo, hi, last) =>
+                          onAddFilter(`${f.key}:>=${lo} ${f.key}:${last ? '<=' : '<'}${hi}`)
+                        }
+                      />
+                    ) : facet && !loading ? (
                       <>
                         {facet.values.length === 0 ? (
                           <div className="px-1 py-1 text-[11px] text-gray-600">No values in the current view.</div>
@@ -143,7 +215,7 @@ export default function FacetPanel({
                           {facet.distinctCount > facet.values.length && ` · top ${facet.values.length}`}
                         </div>
                       </>
-                    )}
+                    ) : null}
                   </div>
                 )}
               </div>
@@ -152,5 +224,59 @@ export default function FacetPanel({
         )}
       </div>
     </aside>
+  );
+}
+
+/** Numeric distribution: summary stats plus a clickable bar histogram that filters
+ * the search to the clicked range. */
+function NumericView({
+  data,
+  loading,
+  onRange,
+}: {
+  data: NumericFacet | null;
+  loading: boolean;
+  onRange: (lo: string, hi: string, last: boolean) => void;
+}) {
+  if (loading && !data) return <div className="animate-pulse-subtle px-1 py-1 text-[11px] text-gray-500">Loading…</div>;
+  if (!data) return <div className="px-1 py-1 text-[11px] text-gray-600">No numeric values in the current view.</div>;
+
+  const maxCount = Math.max(1, ...data.buckets.map((b) => b.count));
+  const lastIdx = data.buckets.length - 1;
+  const stat = (label: string, value: number) => (
+    <div className="flex flex-col items-center">
+      <span className="text-[9px] uppercase tracking-wider text-gray-600">{label}</span>
+      <span className="font-mono text-[11px] text-gray-200">{fmtNum(value)}</span>
+    </div>
+  );
+
+  return (
+    <div>
+      <div className="mb-2 flex justify-between gap-1 rounded bg-surface-0 px-2 py-1.5">
+        {stat('min', data.min)}
+        {stat('p50', data.p50)}
+        {stat('avg', data.avg)}
+        {stat('p95', data.p95)}
+        {stat('max', data.max)}
+      </div>
+      <div className="flex h-16 items-end gap-px">
+        {data.buckets.map((b, i) => (
+          <button
+            key={i}
+            onClick={() => onRange(String(b.lo), String(b.hi), i === lastIdx)}
+            title={`${fmtNum(b.lo)} – ${fmtNum(b.hi)} · ${formatCount(b.count)}`}
+            className="group flex flex-1 items-end self-stretch"
+          >
+            <span
+              className="w-full rounded-t bg-sky-800/60 transition-colors group-hover:bg-sky-500"
+              style={{ height: `${Math.max(b.count > 0 ? 4 : 0, (b.count / maxCount) * 100)}%` }}
+            />
+          </button>
+        ))}
+      </div>
+      <div className="mt-1 px-0.5 text-[10px] text-gray-600">
+        {formatCount(data.count)} numeric value{data.count === 1 ? '' : 's'} · click a bar to filter
+      </div>
+    </div>
   );
 }

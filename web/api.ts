@@ -9,6 +9,7 @@ import type {
   LineDetail,
   MergedBuild,
   MergedRow,
+  NumericFacet,
   RecentFile,
   RotationMember,
   RowData,
@@ -85,6 +86,10 @@ export const api = {
     ),
   facet: (id: string, field: string, limit = 25) =>
     request<FacetResult>(`/api/sessions/${id}/facet?field=${encodeURIComponent(field)}&limit=${limit}`),
+  numericFacet: (id: string, field: string, buckets = 24) =>
+    request<NumericFacet | null>(
+      `/api/sessions/${id}/numeric-facet?field=${encodeURIComponent(field)}&buckets=${buckets}`,
+    ),
   clusters: (id: string, limit = 50) =>
     request<ClustersResult>(`/api/sessions/${id}/clusters?limit=${limit}`),
   stats: (id: string, grouped = false) =>

@@ -665,6 +665,11 @@ export class LogSession extends EventEmitter {
     return this.store.facet(field, this.hasSearch, limit);
   }
 
+  /** Numeric distribution for one field over the current view. */
+  numericFacet(field: string, buckets?: number): ReturnType<IndexStore['numericFacet']> {
+    return this.store.numericFacet(field, this.hasSearch, buckets);
+  }
+
   /** Top log patterns (clusters) over the current view (search results, or the whole file). */
   clusters(limit?: number): ReturnType<IndexStore['clusters']> {
     return this.store.clusters(this.hasSearch, limit);
