@@ -196,8 +196,25 @@ export default function SearchBar({
 
   return (
     <div className="relative border-b border-edge bg-surface-1 px-3 pb-2 pt-2">
-      {/* Row 1 — search + primary actions */}
+      {/* Row 1 — refresh + search + primary actions */}
       <div className="flex items-center gap-2">
+        <button
+          onClick={onRefresh}
+          disabled={refreshing}
+          className={`${toolCls(false)} disabled:opacity-60`}
+          title="Reload the file to pick up new lines"
+        >
+          <svg
+            className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`}
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
+            <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+            <path d="M21 3v6h-6" />
+          </svg>
+        </button>
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <div className="relative min-w-0 flex-1">
             <svg
@@ -545,11 +562,6 @@ export default function SearchBar({
         <Divider />
 
         {/* actions */}
-        <button onClick={onRefresh} disabled={refreshing} className={`${toolCls(false)} disabled:opacity-60`} title="Reload the file to pick up new lines">
-          <svg className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M21 12a9 9 0 1 1-2.64-6.36" /><path d="M21 3v6h-6" />
-          </svg>
-        </button>
         <div className="relative">
           <button onClick={() => setExportOpen((v) => !v)} onBlur={() => setTimeout(() => setExportOpen(false), 150)} className="rounded-lg border border-edge bg-surface-2 px-3 py-1.5 text-sm text-gray-400 hover:text-gray-100">
             Export ▾
