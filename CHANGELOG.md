@@ -77,9 +77,6 @@ date and start a fresh `Unreleased` section.
 
 ### Changed
 
-- Toolbar top row now centers the search bar as the focal point, with the file
-  reload on the left and the app/file actions (shortcuts, settings, Tail, Open)
-  balanced on the right.
 - Redesigned the toolbar into two clearer rows: search (with history and syntax
   help) plus the primary Tail / Open / shortcuts / settings actions on top, and a
   grouped control strip below — panels (histogram, fields, patterns, bookmarks),

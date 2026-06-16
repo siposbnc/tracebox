@@ -210,10 +210,8 @@ export default function SearchBar({
 
   return (
     <div className="relative border-b border-edge bg-surface-1 px-3 pb-2 pt-2">
-      {/* Row 1 — the centered search bar is the focus, flanked by file controls */}
+      {/* Row 1 — refresh + search + primary actions */}
       <div className="flex items-center gap-2">
-        {/* left flank: reload */}
-        <div className="flex flex-1 items-center gap-2">
         <button
           onClick={onRefresh}
           disabled={refreshing}
@@ -231,10 +229,7 @@ export default function SearchBar({
             <path d="M21 3v6h-6" />
           </svg>
         </button>
-        </div>
-
-        {/* center: the search — the toolbar's focal point */}
-        <div className="flex min-w-0 max-w-2xl flex-[2] items-center gap-2">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
           <div className="relative min-w-0 flex-1">
             <svg
               className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500"
@@ -473,8 +468,6 @@ export default function SearchBar({
           </button>
         </div>
 
-        {/* right flank: app utilities + file actions */}
-        <div className="flex flex-1 items-center justify-end gap-2">
         <button onClick={onShowShortcuts} className={toolCls(false)} title={`Keyboard shortcuts${bindings.showShortcuts ? ` (${formatChord(bindings.showShortcuts)})` : ''}`}>
           <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <rect x="2" y="6" width="20" height="12" rx="2" />
@@ -503,7 +496,6 @@ export default function SearchBar({
         <button onClick={onOpenFile} className="rounded-lg bg-sky-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-600">
           Open file
         </button>
-        </div>
       </div>
 
       {/* Row 2 — view & display controls */}
