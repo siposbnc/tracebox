@@ -1,64 +1,113 @@
 # Roadmap
 
-Possible future improvements for TraceBox, roughly grouped and ordered by
-expected value. Nothing here is committed — it's a backlog to pull from. See
+Possible future directions for TraceBox, roughly ordered by expected value within
+each group. Nothing here is committed — it's a backlog to pull from. See
 `CHANGELOG.md` for what has actually shipped.
 
 When picking up an item, keep the core constraints in mind: `server/` stays
 zero-dependency and `127.0.0.1`-only, and the design has to hold up on
 multi-gigabyte files (stream, page, and index — never load the whole file).
 
-## Recently done
+## Shipped
 
-- **Context around matches (grep -C).** Peek at the unfiltered lines surrounding
-  a search hit and jump into the full view. _(In `Unreleased`.)_
-- **Inline query autocomplete.** Field names, `level:` values, and boolean
-  operators suggested as you type. _(In `Unreleased`.)_
-- **Search history + saved searches.** Recent queries remembered; named queries
-  pinned for reuse. _(In `Unreleased`.)_
+The original backlog is essentially complete. Delivered so far (see `CHANGELOG.md`):
 
-## High value (do next)
+- **Search** — Kibana-style query language, full-text (FTS5), field/numeric/time
+  comparisons, wildcards; inline autocomplete; history & saved searches; regex
+  mode; highlight-without-filter.
+- **Navigation** — bookmarks, go-to-line, page/Home/End jumps, find-next, tab
+  cycling; fully rebindable keyboard shortcuts with a shortcuts overlay.
+- **Reading** — multi-line/stack-trace grouping, word wrap, context peek, columnar
+  view for structured logs, copy rows.
+- **Analysis** — time histogram, field faceting, log clustering (patterns), a
+  summary/stats panel, and a time-ordered **merged timeline** across files (with
+  its own search/highlight/detail).
+- **Platform & polish** — Windows / macOS / Linux desktop builds with auto-update,
+  a settings panel, local/UTC timezone toggle, a two-row toolbar, and index-cache
+  management (view/evict, configurable folder, auto-clear of stale caches).
 
-- **Compressed file support (`.gz` / `.zip`).** Logs are very often rotated and
-  gzipped; the reader currently streams raw bytes, so a `.gz` opens as garbage.
-  Add transparent decompression on open. The hard part is the line-offset index:
-  either decompress to a temp file once, or index over the decompressed stream
-  and store the mapping. Keep it offline and dependency-free (`node:zlib`).
-- **Field faceting / value breakdown.** Top values + counts per field
-  (`SELECT value, COUNT(*) ... GROUP BY value`) for the current result set —
-  turns a log into something you can pivot on ("which `status` codes? which
-  `host`s?"). The `fields` table and result set already exist.
-- **Local timezone toggle.** Everything is rendered in UTC (`formatTs` →
-  `toISOString`). Add a global toggle (like row order) for local time, with the
-  zone shown explicitly so it's never ambiguous.
+The one explicitly-deferred item from the original list is **compressed-file
+support**, carried forward below.
 
-## Search & navigation
+## Ideas (forward-looking)
 
-- **Highlight-without-filter.** Mark matching lines in place without hiding the
-  rest — complements context-around-matches for scanning.
-- **Bookmarks / go-to-line.** Mark lines and jump between them; a "go to line N"
-  affordance.
-- **Regex search.** A regex mode alongside the current query language (likely a
-  post-filter over candidate lines, since FTS5 can't do arbitrary regex).
-- **Word-wrap toggle & better copy.** Optional wrapping for long lines and
-  multi-line copy of the selected/filtered rows.
+### Ingest — meet logs where they actually live
 
-## Analysis
+- **Compressed files (`.gz` / `.zip`).** *(Highest-value real-world gap.)* Rotated
+  logs are almost always gzipped; today a `.gz` opens as garbage. Decompress to a
+  temp file once on open (reuses the whole existing index/seek/tail path) using
+  `node:zlib` — offline and dependency-free.
+- **Directory & rotation-aware open.** Open a folder or glob and treat
+  `app.log` + `app.log.1` + `app.log.2.gz` as one logical, time-ordered stream;
+  follow the rotation as it happens. This is how ops actually store logs, and it
+  pairs naturally with compression and the merged timeline.
+- **Pipe / command sources.** Read from stdin or `tracebox -- <command>` to view a
+  live process (`docker logs`, `journalctl`, `kubectl logs`) with the full toolset,
+  still fully offline.
 
-- **Multi-file merged timeline.** One time-ordered view across several open
-  files (e.g. correlating services). Needs a merge over per-file indexes.
-- **Stats panel.** Rate over time, error counts, top talkers — summary metrics
-  for the current view, building on the histogram/aggregation code.
-- **Log clustering / pattern grouping.** Collapse near-identical lines into
-  templates with counts (Drain-style) to surface what's actually happening.
-- **Columnar JSON view.** For JSON logs, a configurable column table over the
-  flattened fields instead of raw-line rendering.
+### Live — turn tailing into light monitoring
 
-## Platform & polish
+- **Live merged timeline.** The merged view is a snapshot today; make it follow
+  appended lines like the single-file tail does.
+- **Watch rules.** While tailing, flag (or fire a desktop notification) when a
+  pattern matches or a level/rate threshold is crossed — e.g. "ping me if ERRORs
+  exceed N/min." Makes TraceBox a lightweight, offline log monitor.
 
-- **macOS / Linux builds.** Currently Windows-only (NSIS). electron-builder can
-  target dmg/AppImage; auto-update would extend to those channels too.
-- **Settings panel.** A single place for order, timezone, theme, context
-  defaults, etc. (several settings are currently ad-hoc toggles).
-- **Index cache management UI.** Show and clear the on-disk index cache
-  (`%TEMP%/tracebox-index`); show per-file index size and let users evict.
+### Insight — answer "what's going on" faster
+
+- **Numeric field trends.** Chart a numeric field over time (`duration_ms`,
+  response bytes) with p50/p95, not just line volume. Builds on the histogram +
+  stats code; turns the tool into a mini offline observability view.
+- **Gap & spike detection.** Surface unusual silences (a service going quiet) and
+  bursts directly on the timeline — the histogram already has the data.
+- **Cluster correlation.** For a pattern or error spike, auto-surface the fields it
+  concentrates in ("80% of these are `host=web-03`, `status=503`").
+
+### Workflow — keep an investigation
+
+- **Saved workspaces.** Persist the open files, active searches, column layout, and
+  panel state as a named workspace, reopenable in one click. Debugging the same
+  system repeatedly is the norm.
+- **Notes & report export.** Annotate lines (beyond bookmarks) and export a
+  selection + notes as a shareable Markdown/HTML report — the artifact you paste
+  into an incident ticket.
+
+### Refine what's already there
+
+Often higher-value-per-effort than net-new features:
+
+- **Inline expand/collapse for grouped records.** Expand a stack trace in place in
+  the row list (today the full record only shows in the detail panel). The most
+  natural missing half of multi-line grouping; needs dynamic row measurement.
+- **Regex inside the query language.** Allow `level:error AND /timeout\d+/` so a
+  regex composes with field filters — which also lets the field filter *narrow*
+  the lines the regex has to scan, instead of regex being a whole-file mode.
+- **Columnar view as a real table.** Sortable, resizable, reorderable columns;
+  click a cell to filter to that value; remember widths per file.
+- **JSON tree in the detail panel.** A collapsible, syntax-highlighted tree for
+  JSON lines alongside the flattened `dot.path` fields.
+- **Numeric / range faceting.** For numeric fields (`status`, `duration_ms`), show
+  value ranges and a small distribution, not just the exact top values.
+- **Histogram interactions.** Click a level in the legend to filter, a clear/reset
+  for the drag range, and a selectable bucket resolution.
+- **Range row selection.** Shift-click / Shift+Arrow to select a span of rows for
+  copy/export (today copy is all-or-the-filtered-set; there's no arbitrary
+  multi-row selection).
+- **Wider format coverage.** CEF, more key=value/`:` delimiter variants, pretty-
+  printed (multi-line) JSON, and additional timestamp shapes in auto-detection.
+
+### Customization
+
+- **User-defined parsers.** Let users describe a proprietary format (a regex +
+  field mapping, with a live tester) and persist it, extending auto-detection
+  beyond the built-in formats.
+- **Appearance.** A light / high-contrast theme and adjustable font size; the UI is
+  dark-only today.
+
+### Performance & release
+
+- **Regex FTS-narrowing.** When a regex has a mandatory literal token, seed
+  candidates from FTS and regex-verify only those, instead of scanning the whole
+  file.
+- **macOS notarization & signing.** Complete the release story so macOS auto-update
+  works and Gatekeeper stops warning.
