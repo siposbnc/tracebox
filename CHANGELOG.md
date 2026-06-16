@@ -16,9 +16,10 @@ date and start a fresh `Unreleased` section.
 
 - Merged timeline: with two or more files open, the new "Timeline" tab shows
   every file's lines interleaved in timestamp order — each row tagged with its
-  source — for correlating events across services. Includes a combined
-  histogram (drag to jump to a time) and click-a-row to open it in its own tab
-  at that line. Built on demand from the per-file indexes; Refresh rebuilds.
+  source — for correlating events across services. A Files menu picks which open
+  files to include; includes a combined histogram (drag to jump to a time) and
+  click-a-row to open it in its own tab at that line. Built on demand from the
+  per-file indexes; Refresh rebuilds.
 - Columnar view (toolbar toggle): render structured logs as a grid of chosen
   fields instead of raw lines — line number, time, and level as fixed columns
   plus any flattened fields you pick from the Columns menu, with a sticky header

@@ -25,19 +25,23 @@ function baseName(file: string): string {
 }
 
 export default function MergedView({
-  sessionIds,
+  files,
   onJump,
 }: {
-  sessionIds: string[];
+  files: { id: string; file: string }[];
   onJump: (sessionId: string, lineNo: number) => void;
 }) {
   const order = useOrder();
   const tz = useTz();
+  const [selected, setSelected] = useState<Set<string>>(() => new Set(files.map((f) => f.id)));
+  const [picker, setPicker] = useState(false);
+  const pickerRef = useRef<HTMLDivElement>(null);
   const [sources, setSources] = useState<{ id: string; file: string }[]>([]);
   const [total, setTotal] = useState(0);
   const [histogram, setHistogram] = useState<HistogramData | null>(null);
-  const [phase, setPhase] = useState<'building' | 'ready' | 'error'>('building');
+  const [phase, setPhase] = useState<'building' | 'ready' | 'error' | 'none'>('building');
   const [error, setError] = useState<string | null>(null);
+  const selectedKey = useMemo(() => [...selected].sort().join(','), [selected]);
 
   const parentRef = useRef<HTMLDivElement>(null);
   const blocksRef = useRef(new Map<number, MergedRow[]>());
@@ -52,12 +56,20 @@ export default function MergedView({
   }
 
   const build = useCallback(async () => {
-    setPhase('building');
-    setError(null);
+    const ids = [...selected];
     blocksRef.current.clear();
     loadingRef.current.clear();
+    if (ids.length === 0) {
+      setPhase('none');
+      setTotal(0);
+      setSources([]);
+      setHistogram(null);
+      return;
+    }
+    setPhase('building');
+    setError(null);
     try {
-      const r = await api.buildMerged(sessionIds);
+      const r = await api.buildMerged(ids);
       setSources(r.sources);
       setTotal(r.count);
       setHistogram(await api.mergedHistogram());
@@ -67,11 +79,30 @@ export default function MergedView({
       setError(e instanceof Error ? e.message : String(e));
       setPhase('error');
     }
-  }, [sessionIds]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedKey]);
 
+  // rebuild whenever the selection changes
   useEffect(() => {
     void build();
   }, [build]);
+
+  useEffect(() => {
+    if (!picker) return;
+    const onDown = (e: MouseEvent): void => {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) setPicker(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [picker]);
+
+  const toggleFile = (id: string): void =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   const virtualizer = useVirtualizer({
     count: total,
@@ -130,6 +161,49 @@ export default function MergedView({
     <div className="flex h-full flex-col bg-surface-0">
       <div className="flex items-center gap-3 border-b border-edge bg-surface-1 px-3 py-2">
         <span className="text-sm font-semibold text-gray-200">Merged timeline</span>
+
+        <div className="relative" ref={pickerRef}>
+          <button
+            onClick={() => setPicker((v) => !v)}
+            className={`rounded-lg border border-edge px-2.5 py-1 text-sm ${
+              picker ? 'bg-surface-3 text-sky-300' : 'bg-surface-2 text-gray-400 hover:text-gray-100'
+            }`}
+            title="Choose which files to merge"
+          >
+            Files {selected.size}/{files.length} ▾
+          </button>
+          {picker && (
+            <div className="absolute left-0 top-full z-30 mt-1 w-72 rounded-lg border border-edge bg-surface-2 shadow-2xl">
+              <div className="flex items-center justify-between border-b border-edge px-2 py-1.5 text-[10px] uppercase tracking-wider text-gray-500">
+                <span>Files in timeline</span>
+                <span className="flex gap-2">
+                  <button className="hover:text-gray-300" onClick={() => setSelected(new Set(files.map((f) => f.id)))}>
+                    All
+                  </button>
+                  <button className="hover:text-gray-300" onClick={() => setSelected(new Set())}>
+                    None
+                  </button>
+                </span>
+              </div>
+              <div className="max-h-[60vh] overflow-y-auto p-1">
+                {files.map((f) => (
+                  <label key={f.id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 hover:bg-surface-3">
+                    <input
+                      type="checkbox"
+                      checked={selected.has(f.id)}
+                      onChange={() => toggleFile(f.id)}
+                      className="accent-sky-600"
+                    />
+                    <span className="min-w-0 flex-1 truncate text-xs text-gray-200" title={f.file}>
+                      {baseName(f.file)}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
         <div className="flex flex-wrap items-center gap-2">
           {sources.map((s, i) => (
             <span key={s.id} className="flex items-center gap-1 text-xs text-gray-400" title={s.file}>
@@ -159,6 +233,11 @@ export default function MergedView({
         <Histogram data={histogram} onSelectRange={onSeek} hint="drag to jump to a time" />
       )}
 
+      {phase === 'none' && (
+        <div className="flex flex-1 items-center justify-center text-sm text-gray-500">
+          Select at least one file from the Files menu.
+        </div>
+      )}
       {phase === 'building' && (
         <div className="flex flex-1 items-center justify-center text-sm text-gray-500">Building timeline…</div>
       )}

@@ -225,7 +225,7 @@ export default function App() {
       <div className="min-h-0 flex-1">
         {timelineOpen ? (
           <MergedView
-            sessionIds={sessions.map((s) => s.id)}
+            files={sessions.map((s) => ({ id: s.id, file: s.file }))}
             onJump={(sessionId, lineNo) => {
               setActiveId(sessionId);
               setTimelineOpen(false);
