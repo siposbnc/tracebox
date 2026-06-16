@@ -1,6 +1,6 @@
 {
   "name": "tracebox",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "description": "TraceBox — a fast, offline log reader with complex search for huge files",
   "author": "TraceBox",
   "private": true,
@@ -23,7 +23,6 @@
     "app:dev": "npm run build:electron && electron .",
     "dist": "npm run build && npm run build:electron && electron-builder --win",
     "dist:dir": "npm run build && npm run build:electron && electron-builder --win --dir",
-    "dist:mac": "npm run build && npm run build:electron && electron-builder --mac",
     "dist:linux": "npm run build && npm run build:electron && electron-builder --linux",
     "release": "npm run build && npm run build:electron && electron-builder --publish always"
   },

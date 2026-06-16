@@ -77,5 +77,5 @@ Often higher-value-per-effort than net-new features:
 - **Regex FTS-narrowing.** When a regex has a mandatory literal token, seed
   candidates from FTS and regex-verify only those, instead of scanning the whole
   file.
-- **macOS notarization & signing.** Complete the release story so macOS auto-update
-  works and Gatekeeper stops warning.
+- **Windows code signing.** Ship a signed installer so SmartScreen stops warning on
+  first run (the signing plumbing is already env-var driven; see `SIGNING.md`).

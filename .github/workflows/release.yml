@@ -1,9 +1,9 @@
 name: Release
 
-# Builds the desktop apps for Windows, macOS, and Linux and publishes them to a
-# GitHub release whenever a version tag (e.g. v1.0.1) is pushed. Windows/macOS
-# signing happens only if the CSC_LINK / CSC_KEY_PASSWORD secrets are set;
-# without them the builds still succeed and are unsigned.
+# Builds the desktop apps for Windows (primary) and Linux and publishes them to a
+# GitHub release whenever a version tag (e.g. v1.0.1) is pushed. Windows signing
+# happens only if the CSC_LINK / CSC_KEY_PASSWORD secrets are set; without them the
+# builds still succeed and are unsigned.
 on:
   push:
     tags:
@@ -41,7 +41,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest, ubuntu-latest]
+        os: [windows-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
@@ -65,6 +65,3 @@ jobs:
           # Optional code signing — see SIGNING.md. Absent secrets => unsigned build.
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-          # On macOS, don't probe the (empty) CI keychain for a signing identity:
-          # produce a clean unsigned build unless CSC_LINK provides a certificate.
-          CSC_IDENTITY_AUTO_DISCOVERY: false

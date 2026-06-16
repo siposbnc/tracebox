@@ -3,6 +3,18 @@ import type { PatchNote } from './types';
 
 export const patchNotes: PatchNote[] = [
   {
+    "version": "1.3.1",
+    "date": "2026-06-16",
+    "sections": [
+      {
+        "title": "Removed",
+        "items": [
+          "macOS desktop build. The release pipeline now builds **Windows** (primary) and **Linux** (extra) only — the macOS job was failing CI and isn't a supported target."
+        ]
+      }
+    ]
+  },
+  {
     "version": "1.3.0",
     "date": "2026-06-16",
     "sections": [

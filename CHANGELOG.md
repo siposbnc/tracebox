@@ -12,6 +12,14 @@ date and start a fresh `Unreleased` section.
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-06-16
+
+### Removed
+
+- macOS desktop build. The release pipeline now builds **Windows** (primary) and
+  **Linux** (extra) only — the macOS job was failing CI and isn't a supported
+  target.
+
 ## [1.3.0] - 2026-06-16
 
 ### Added
