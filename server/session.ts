@@ -724,7 +724,7 @@ export class LogSession extends EventEmitter {
         .sort((a, b) => b[1] - a[1])
         .slice(0, 200)
         .map(([key, count]) => ({ key, count })),
-      search: this.searchAst
+      search: this.hasSearch
         ? { query: this.searchQuery, total: this.searchTotal, durationMs: this.searchDurationMs }
         : null,
     };
