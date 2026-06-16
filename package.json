@@ -16,6 +16,7 @@
     "genpatchnotes": "node scripts/gen-patchnotes.mjs",
     "test": "node --test \"server/**/*.test.ts\"",
     "genlog": "node scripts/genlog.mjs",
+    "genlogs": "node scripts/gen-multi.mjs",
     "build:electron": "node scripts/build-electron.mjs",
     "app": "npm run build && npm run build:electron && electron .",
     "app:dev": "npm run build:electron && electron .",
