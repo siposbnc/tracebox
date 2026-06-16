@@ -12,6 +12,8 @@ date and start a fresh `Unreleased` section.
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-06-16
+
 ### Added
 
 - Right arrow opens/closes the detail panel for the selected line (rebindable).
@@ -74,17 +76,6 @@ date and start a fresh `Unreleased` section.
   and protected; everything else re-indexes on next open. The cache folder is
   configurable, and stale entries are auto-cleared after a configurable number
   of days unused (default 7; 0 disables) — checked at launch and every 6 hours.
-
-### Changed
-
-- Redesigned the toolbar into two clearer rows: search (with history and syntax
-  help) plus the primary Tail / Open / shortcuts / settings actions on top, and a
-  grouped control strip below — panels (histogram, fields, patterns, bookmarks),
-  view modes (group, highlight, wrap, columnar), display (timezone, order), and
-  actions (refresh, export) — separated by dividers. Nothing was removed; the
-  controls are just organized and labelled more clearly.
-
-### Added
 
 - Merged timeline: with two or more files open, the new "Timeline" tab shows
   every file's lines interleaved in timestamp order — each row tagged with its
@@ -151,6 +142,12 @@ date and start a fresh `Unreleased` section.
 
 ### Changed
 
+- Redesigned the toolbar into two clearer rows: search (with history and syntax
+  help) plus the primary Tail / Open / shortcuts / settings actions on top, and a
+  grouped control strip below — panels (histogram, fields, patterns, bookmarks),
+  view modes (group, highlight, wrap, columnar), display (timezone, order), and
+  actions (refresh, export) — separated by dividers. Nothing was removed; the
+  controls are just organized and labelled more clearly.
 - Client state (workspaces, bookmarks, notes, saved searches, settings, column
   layouts, keybindings) is now stored on disk by the backend
   (`~/.tracebox/state.json`) instead of browser localStorage. localStorage is keyed
