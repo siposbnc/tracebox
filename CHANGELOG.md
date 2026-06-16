@@ -14,6 +14,13 @@ date and start a fresh `Unreleased` section.
 
 ### Added
 
+- Regex search: a toolbar toggle (.*) switches the search box to regular-
+  expression mode — lines are matched against the pattern (case-insensitive) and
+  the matches are highlighted in place. Works with grouping (a match inside a
+  stack trace surfaces its record), highlight mode, faceting, and clustering.
+  Being a post-filter it scans the file rather than using the index, so it's
+  slower than the query language on very large files, and the result set is a
+  snapshot while tailing (re-run to refresh).
 - Index cache management (Settings → Manage cache): see the on-disk index cache
   with per-file sizes, line counts, and total, and evict entries individually or
   clear all unused with one click. Indexes for currently-open files are flagged

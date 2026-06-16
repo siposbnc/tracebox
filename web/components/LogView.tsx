@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api';
 import { getBookmarks, toggleBookmark } from '../bookmarks';
 import { matchCommand, eventToChord, isEditableTarget } from '../keybindings';
+import { extractHighlightTerms } from '../highlightTerms';
 import type { HistogramData, SessionStatus } from '../types';
 import SearchBar from './SearchBar';
 import LogList from './LogList';
@@ -48,6 +49,9 @@ export default function LogView({
   // on cluster drill-down — so the patterns panel stays stable while drilling
   const [clusterEpoch, setClusterEpoch] = useState(0);
   const [highlightMode, setHighlightMode] = useState(false);
+  const [regexMode, setRegexMode] = useState(false);
+  const regexRef = useRef(regexMode);
+  regexRef.current = regexMode;
   const [grouped, setGrouped] = useState(true);
   const [gotoOpen, setGotoOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -124,7 +128,7 @@ export default function LogView({
       setSearching(true);
       setSearchError(null);
       try {
-        const r = await api.search(id, q, groupingActiveRef.current, templateRef.current);
+        const r = await api.search(id, q, groupingActiveRef.current, templateRef.current, regexRef.current);
         setTotal(r.total);
         setSelected(null);
         setEpoch((e) => e + 1);
@@ -180,6 +184,14 @@ export default function LogView({
     if (statusRef.current.search) void runSearch(statusRef.current.search.query);
     else setEpoch((e) => e + 1);
   }, [groupingActive, runSearch]);
+
+  // re-materialize when switching between regex and query-language mode
+  const prevRegexRef = useRef(regexMode);
+  useEffect(() => {
+    if (prevRegexRef.current === regexMode) return;
+    prevRegexRef.current = regexMode;
+    void runSearch(query);
+  }, [regexMode, runSearch, query]);
 
   const addFilter = useCallback(
     (clause: string) => {
@@ -314,26 +326,14 @@ export default function LogView({
   }, [selected, toggleHighlight, jumpBookmark]);
 
   // highlight terms extracted from the active query
-  const highlightTerms = useMemo(() => {
-    const active = status.search?.query ?? '';
-    const terms: string[] = [];
-    const re = /"([^"]+)"|(\S+)/g;
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(active)) !== null) {
-      if (m[1] !== undefined) {
-        const phrase = m[1];
-        // field:"phrase" — the previous token ended with a colon; skip values of field filters
-        terms.push(phrase);
-      } else {
-        const word = m[2];
-        if (/^(AND|OR|NOT)$/i.test(word)) continue;
-        if (word.includes(':')) continue;
-        const clean = word.replace(/^[-(]+|[)]+$/g, '');
-        if (clean.length >= 2) terms.push(clean.replaceAll('*', ''));
-      }
-    }
-    return terms.filter((t) => t.length >= 2);
-  }, [status.search?.query]);
+  // literal terms to highlight (skipped in regex mode — the row list highlights
+  // the regex pattern directly instead)
+  const highlightTerms = useMemo(
+    () => (regexMode ? [] : extractHighlightTerms(status.search?.query ?? '')),
+    [regexMode, status.search?.query],
+  );
+  // the active regex pattern, for the row list to highlight matches in place
+  const regexPattern = regexMode && status.search ? (status.search.query ?? null) : null;
 
   // Highlight mode only takes effect when there is an active search to mark.
   const highlightActive = highlightMode && status.search !== null;
@@ -368,6 +368,8 @@ export default function LogView({
         onColumnsChange={(cols) => setColumns(status.file, cols)}
         highlightMode={highlightMode}
         onToggleHighlight={toggleHighlight}
+        regexMode={regexMode}
+        onToggleRegex={() => setRegexMode((v) => !v)}
         grouped={grouped}
         onToggleGrouped={() => setGrouped((v) => !v)}
         file={status.file}
@@ -423,6 +425,7 @@ export default function LogView({
             columns={columns}
             scrollTo={pendingJump}
             highlightTerms={highlightTerms}
+            regexPattern={regexPattern}
             onUserScroll={() => setFollowTail(false)}
             onScrolledToEnd={() => status.tail && setFollowTail(true)}
           />

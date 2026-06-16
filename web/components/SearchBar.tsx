@@ -69,6 +69,8 @@ export default function SearchBar({
   onColumnsChange,
   highlightMode,
   onToggleHighlight,
+  regexMode,
+  onToggleRegex,
   grouped,
   onToggleGrouped,
   file,
@@ -102,6 +104,8 @@ export default function SearchBar({
   onColumnsChange: (cols: string[]) => void;
   highlightMode: boolean;
   onToggleHighlight: () => void;
+  regexMode: boolean;
+  onToggleRegex: () => void;
   grouped: boolean;
   onToggleGrouped: () => void;
   file: string;
@@ -137,6 +141,10 @@ export default function SearchBar({
   const levelKeys = useMemo(() => Object.keys(levelCounts), [levelCounts]);
 
   const refreshSuggestions = (value: string, cursor: number): void => {
+    if (regexMode) {
+      setSuggestOpen(false); // the query language autocomplete doesn't apply to regex
+      return;
+    }
     const { token } = tokenBounds(value, cursor);
     const next = computeSuggestions(token, fieldKeys, levelKeys);
     setSuggestions(next);
@@ -280,7 +288,11 @@ export default function SearchBar({
               }}
               onBlur={() => setTimeout(() => setSuggestOpen(false), 150)}
               onFocus={() => setHelpOpen(false)}
-              placeholder='Search…  e.g.  level:error AND "connection failed"  ·  status:>=500  ·  press Enter'
+              placeholder={
+                regexMode
+                  ? 'Regex search…  e.g.  user_\\d{4,}  ·  ERROR.*timeout  ·  press Enter'
+                  : 'Search…  e.g.  level:error AND "connection failed"  ·  status:>=500  ·  press Enter'
+              }
               spellCheck={false}
               autoComplete="off"
               className={`w-full rounded-lg border bg-surface-0 py-1.5 pl-9 pr-24 font-mono text-sm text-gray-100 outline-none placeholder:font-sans placeholder:text-gray-600 focus:border-sky-600 ${
@@ -510,6 +522,13 @@ export default function SearchBar({
           <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="m9 11-6 6v3h3l6-6" /><path d="m17 7 3-3 1 1-3 3" /><path d="m13 7 4 4" /><path d="M14 6l4 4" />
           </svg>
+        </button>
+        <button
+          onClick={onToggleRegex}
+          className={toolCls(regexMode)}
+          title="Regex search — match lines against a regular expression (scans the file)"
+        >
+          <span className="font-mono text-sm leading-4">.*</span>
         </button>
         <button
           onClick={() => setWrap(!wrap)}

@@ -51,6 +51,7 @@ export default function LogList({
   columns,
   scrollTo,
   highlightTerms,
+  regexPattern,
   onUserScroll,
   onScrolledToEnd,
 }: {
@@ -70,6 +71,7 @@ export default function LogList({
   columns: string[];
   scrollTo: { lineNo: number; nonce: number } | null;
   highlightTerms: string[];
+  regexPattern: string | null;
   onUserScroll: () => void;
   onScrolledToEnd: () => void;
 }) {
@@ -266,6 +268,14 @@ export default function LogList({
   }, [selected, total, onSelect, virtualizer, highlight, grouped, sessionId]);
 
   const highlightRegex = useMemo(() => {
+    // in regex mode, highlight the pattern itself; otherwise the literal terms
+    if (regexPattern) {
+      try {
+        return new RegExp(`(${regexPattern})`, 'gi');
+      } catch {
+        return null;
+      }
+    }
     if (highlightTerms.length === 0) return null;
     const escaped = highlightTerms
       .filter((t) => t.length > 0)
@@ -276,7 +286,7 @@ export default function LogList({
     } catch {
       return null;
     }
-  }, [highlightTerms]);
+  }, [highlightTerms, regexPattern]);
 
   const onScroll = useCallback(() => {
     const el = parentRef.current;
