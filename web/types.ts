@@ -94,6 +94,8 @@ export interface MergedRow {
   level: string | null;
   text: string;
   truncated: boolean;
+  span: number;
+  match?: boolean;
 }
 
 export interface MergedBuild {

@@ -22,6 +22,7 @@ function load(): Store {
 }
 
 let store: Store = load();
+let version = 0;
 const listeners = new Set<() => void>();
 
 function emit(): void {
@@ -29,6 +30,7 @@ function emit(): void {
 }
 
 function persist(): void {
+  version++;
   localStorage.setItem(KEY, JSON.stringify(store));
   emit();
 }
@@ -67,4 +69,9 @@ export function useBookmarks(file: string): number[] {
     subscribe,
     useCallback(() => getBookmarks(file), [file]),
   );
+}
+
+/** A counter that changes whenever any bookmark changes (for views spanning files). */
+export function useBookmarkVersion(): number {
+  return useSyncExternalStore(subscribe, () => version);
 }

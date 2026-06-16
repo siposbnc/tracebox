@@ -91,10 +91,20 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ sessionIds }),
     }),
-  mergedRows: (offset: number, limit: number, order: 'asc' | 'desc' = 'asc') =>
-    request<{ rows: MergedRow[]; total: number }>(`/api/merged/rows?offset=${offset}&limit=${limit}&order=${order}`),
-  mergedHistogram: () => request<HistogramData | null>('/api/merged/histogram'),
-  mergedSeek: (ts: number) => request<{ seq: number }>(`/api/merged/seek?ts=${ts}`),
+  mergedRows: (offset: number, limit: number, order: 'asc' | 'desc' = 'asc', highlight = false) =>
+    request<{ rows: MergedRow[]; total: number }>(
+      `/api/merged/rows?offset=${offset}&limit=${limit}&order=${order}${highlight ? '&highlight=1' : ''}`,
+    ),
+  mergedSearch: (query: string) =>
+    request<{ total: number; durationMs: number }>('/api/merged/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query }),
+    }),
+  mergedHistogram: (highlight = false) =>
+    request<HistogramData | null>(`/api/merged/histogram${highlight ? '?highlight=1' : ''}`),
+  mergedSeek: (ts: number, highlight = false) =>
+    request<{ seq: number }>(`/api/merged/seek?ts=${ts}${highlight ? '&highlight=1' : ''}`),
   closeMerged: () => request<{ ok: boolean }>('/api/merged', { method: 'DELETE' }),
 
   /** Subscribe to session events; returns an unsubscribe function. */
