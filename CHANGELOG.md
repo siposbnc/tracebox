@@ -14,6 +14,10 @@ date and start a fresh `Unreleased` section.
 
 ### Added
 
+- Gap & spike detection on the histogram: unusual volume bursts are marked with a
+  red caret (click to zoom to that range) and notable silences are shown as
+  hatched bands, with a summary in the histogram footer. Detection is robust
+  (median + MAD with a noise gate) so flat or sparse series stay quiet.
 - Line notes & report export: add a free-text note to any line from the detail
   panel (persisted per file, like bookmarks). The bookmarks menu lists noted lines
   and gains **Export report…**, which gathers the bookmarked and noted lines into a
