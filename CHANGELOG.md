@@ -17,7 +17,9 @@ date and start a fresh `Unreleased` section.
 - Index cache management (Settings → Manage cache): see the on-disk index cache
   with per-file sizes, line counts, and total, and evict entries individually or
   clear all unused with one click. Indexes for currently-open files are flagged
-  and protected; everything else re-indexes on next open.
+  and protected; everything else re-indexes on next open. The cache folder is
+  configurable, and stale entries are auto-cleared after a configurable number
+  of days unused (default 7; 0 disables) — checked at launch and every 6 hours.
 
 ### Changed
 

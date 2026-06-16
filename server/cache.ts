@@ -1,7 +1,6 @@
 import { readdirSync, statSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { indexCacheDir } from './session.ts';
 
 /**
  * Management of the on-disk index cache (`%TEMP%/tracebox-index/`). Each open
@@ -56,8 +55,7 @@ function readMeta(dbPath: string): { path: string | null; lineCount: number } {
 }
 
 /** `active` maps an in-use cache db path to its source file. */
-export function listCache(active: Map<string, string>): CacheInfo {
-  const dir = indexCacheDir();
+export function listCache(dir: string, active: Map<string, string>): CacheInfo {
   let names: string[] = [];
   try {
     names = readdirSync(dir).filter(isSessionDb);
@@ -93,9 +91,9 @@ export function listCache(active: Map<string, string>): CacheInfo {
 }
 
 /** Delete one cache db by name. Refuses path traversal, non-caches, and in-use entries. */
-export function evictCache(name: string, active: Map<string, string>): boolean {
+export function evictCache(dir: string, name: string, active: Map<string, string>): boolean {
   if (name.includes('/') || name.includes('\\') || !isSessionDb(name)) return false;
-  const full = path.join(indexCacheDir(), name);
+  const full = path.join(dir, name);
   if (active.has(full)) return false;
   try {
     rmSync(full, { force: true });
@@ -105,13 +103,36 @@ export function evictCache(name: string, active: Map<string, string>): boolean {
   }
 }
 
-/** Delete every cache db that isn't currently in use; returns bytes freed. */
-export function clearCache(active: Map<string, string>): { freed: number } {
+/** Delete cache dbs not used (mtime) within `retentionDays` and not in use. */
+export function pruneStaleCache(
+  dir: string,
+  retentionDays: number,
+  active: Map<string, string>,
+): { removed: number; freed: number } {
+  if (!retentionDays || retentionDays <= 0) return { removed: 0, freed: 0 };
+  const cutoff = Date.now() - retentionDays * 86_400_000;
+  let removed = 0;
   let freed = 0;
-  for (const e of listCache(active).entries) {
+  for (const e of listCache(dir, active).entries) {
+    if (e.inUse || e.mtimeMs >= cutoff) continue;
+    try {
+      rmSync(path.join(dir, e.name), { force: true });
+      removed++;
+      freed += e.size;
+    } catch {
+      // ignore
+    }
+  }
+  return { removed, freed };
+}
+
+/** Delete every cache db that isn't currently in use; returns bytes freed. */
+export function clearCache(dir: string, active: Map<string, string>): { freed: number } {
+  let freed = 0;
+  for (const e of listCache(dir, active).entries) {
     if (e.inUse) continue;
     try {
-      rmSync(path.join(indexCacheDir(), e.name), { force: true });
+      rmSync(path.join(dir, e.name), { force: true });
       freed += e.size;
     } catch {
       // ignore

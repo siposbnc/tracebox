@@ -99,6 +99,16 @@ export interface CacheInfo {
   totalSize: number;
 }
 
+export interface ServerConfig {
+  cacheDir: string;
+  cacheRetentionDays: number;
+}
+
+export interface ConfigInfo {
+  config: ServerConfig;
+  defaultCacheDir: string;
+}
+
 export interface MergedRow {
   seq: number;
   source: number;

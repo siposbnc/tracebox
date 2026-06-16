@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, formatBytes, formatCount } from '../api';
-import type { CacheInfo } from '../types';
+import type { CacheInfo, ConfigInfo } from '../types';
 
 function baseName(file: string): string {
   return file.split(/[\\/]/).pop() ?? file;
 }
 
-/** View and evict the on-disk index cache. */
+/** View and evict the on-disk index cache, and configure its location/retention. */
 export default function CachePanel({ onClose }: { onClose: () => void }) {
   const [data, setData] = useState<CacheInfo | null>(null);
+  const [cfg, setCfg] = useState<ConfigInfo | null>(null);
+  const [dirInput, setDirInput] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -18,6 +20,10 @@ export default function CachePanel({ onClose }: { onClose: () => void }) {
       .cache()
       .then(setData)
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
+    void api.config().then((c) => {
+      setCfg(c);
+      setDirInput(c.config.cacheDir);
+    });
   }, []);
 
   useEffect(() => {
@@ -28,6 +34,24 @@ export default function CachePanel({ onClose }: { onClose: () => void }) {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [load, onClose]);
+
+  const saveDir = (dir: string): void => {
+    setBusy(true);
+    setError(null);
+    void api
+      .setConfig({ cacheDir: dir })
+      .then((c) => {
+        setCfg(c);
+        setDirInput(c.config.cacheDir);
+        load();
+      })
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setBusy(false));
+  };
+
+  const saveRetention = (days: number): void => {
+    void api.setConfig({ cacheRetentionDays: days }).then(setCfg);
+  };
 
   const evict = (name: string): void => {
     setBusy(true);
@@ -70,6 +94,53 @@ export default function CachePanel({ onClose }: { onClose: () => void }) {
         <div className="border-b border-edge px-4 py-1.5 text-[11px] text-gray-500">
           Cached so reopening an unchanged file is instant. Safe to evict — files re-index on next open. Open files can't be evicted.
         </div>
+
+        {cfg && (
+          <div className="space-y-2 border-b border-edge px-4 py-2.5">
+            <div className="flex items-center gap-2">
+              <span className="w-24 shrink-0 text-xs text-gray-400">Cache folder</span>
+              <input
+                value={dirInput}
+                onChange={(e) => setDirInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') saveDir(dirInput);
+                }}
+                spellCheck={false}
+                className="min-w-0 flex-1 rounded border border-edge bg-surface-0 px-2 py-1 font-mono text-xs text-gray-100 outline-none focus:border-sky-600"
+              />
+              <button
+                onClick={() => saveDir(dirInput)}
+                disabled={busy || dirInput.trim() === cfg.config.cacheDir}
+                className="shrink-0 rounded border border-edge bg-surface-2 px-2 py-1 text-xs text-gray-300 hover:text-gray-100 disabled:opacity-50"
+              >
+                Save
+              </button>
+              <button
+                onClick={() => saveDir(cfg.defaultCacheDir)}
+                disabled={busy || cfg.config.cacheDir === cfg.defaultCacheDir}
+                title={`Reset to ${cfg.defaultCacheDir}`}
+                className="shrink-0 rounded px-1.5 py-1 text-xs text-gray-500 hover:text-gray-300 disabled:opacity-30"
+              >
+                Default
+              </button>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-24 shrink-0 text-xs text-gray-400">Auto-clear</span>
+              <span className="text-xs text-gray-500">unused for</span>
+              <input
+                type="number"
+                min={0}
+                value={cfg.config.cacheRetentionDays}
+                onChange={(e) => saveRetention(Math.max(0, Number(e.target.value)))}
+                className="w-16 rounded border border-edge bg-surface-0 px-2 py-1 text-right font-mono text-xs text-gray-100 outline-none focus:border-sky-600"
+              />
+              <span className="text-xs text-gray-500">days (0 = never)</span>
+            </div>
+            <div className="text-[11px] text-gray-600">
+              Changing the folder applies to files opened from now on; existing caches stay where they are.
+            </div>
+          </div>
+        )}
 
         <div className="min-h-0 flex-1 overflow-y-auto">
           {error && <div className="px-4 py-3 text-sm text-red-400">{error}</div>}

@@ -3,9 +3,11 @@ import { statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { Router, sendJson, readJsonBody, serveStatic, SseConnection } from './http.ts';
-import { LogSession } from './session.ts';
+import { LogSession, indexCacheDir } from './session.ts';
 import { MergedTimeline } from './merged.ts';
-import { listCache, evictCache, clearCache } from './cache.ts';
+import { listCache, evictCache, clearCache, pruneStaleCache } from './cache.ts';
+import { getConfig, setConfig, DEFAULT_CACHE_DIR } from './config.ts';
+import { mkdirSync } from 'node:fs';
 import { listRoots, listDir, getRecents, addRecent } from './files.ts';
 import { QuerySyntaxError } from './queryParser.ts';
 
@@ -58,12 +60,30 @@ export function createApp(distDir: string): TraceBoxApp {
   const activeDbs = (): Map<string, string> =>
     new Map([...sessions.values()].map((s) => [s.dbPath, s.file]));
 
-  router.add('GET', '/api/cache', (_req, res) => sendJson(res, 200, listCache(activeDbs())));
+  router.add('GET', '/api/cache', (_req, res) => sendJson(res, 200, listCache(indexCacheDir(), activeDbs())));
 
-  router.add('DELETE', '/api/cache', (_req, res) => sendJson(res, 200, clearCache(activeDbs())));
+  router.add('DELETE', '/api/cache', (_req, res) => sendJson(res, 200, clearCache(indexCacheDir(), activeDbs())));
 
   router.add('DELETE', '/api/cache/:name', (_req, res, params) => {
-    sendJson(res, 200, { ok: evictCache(params.name, activeDbs()) });
+    sendJson(res, 200, { ok: evictCache(indexCacheDir(), params.name, activeDbs()) });
+  });
+
+  router.add('GET', '/api/config', (_req, res) => {
+    sendJson(res, 200, { config: getConfig(), defaultCacheDir: DEFAULT_CACHE_DIR });
+  });
+
+  router.add('POST', '/api/config', async (req, res) => {
+    const body = (await readJsonBody(req)) as { cacheDir?: string; cacheRetentionDays?: number };
+    if (typeof body.cacheDir === 'string' && body.cacheDir.trim()) {
+      // reject a location we can't create
+      try {
+        mkdirSync(path.resolve(body.cacheDir.trim()), { recursive: true });
+      } catch {
+        sendJson(res, 400, { error: `Cannot use that folder: ${body.cacheDir}` });
+        return;
+      }
+    }
+    sendJson(res, 200, { config: setConfig(body), defaultCacheDir: DEFAULT_CACHE_DIR });
   });
 
   // ---------------------------------------------------------------------------
@@ -387,10 +407,24 @@ export function createApp(distDir: string): TraceBoxApp {
     });
   });
 
+  // Evict cache entries unused past the retention window: once at startup and
+  // every 6 hours after (skipping any indexes currently in use).
+  const prune = (): void => {
+    try {
+      pruneStaleCache(indexCacheDir(), getConfig().cacheRetentionDays, activeDbs());
+    } catch {
+      // ignore
+    }
+  };
+  prune();
+  const pruneTimer = setInterval(prune, 6 * 60 * 60 * 1000);
+  pruneTimer.unref?.();
+
   return {
     server,
     sessions,
     async shutdown(): Promise<void> {
+      clearInterval(pruneTimer);
       merged?.close();
       await Promise.allSettled([...sessions.values()].map((s) => s.close()));
       await new Promise<void>((resolve) => server.close(() => resolve()));

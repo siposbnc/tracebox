@@ -1,14 +1,14 @@
 import { EventEmitter } from 'node:events';
 import { createHash } from 'node:crypto';
-import { mkdirSync, statSync, watchFile, unwatchFile, type StatWatcher } from 'node:fs';
+import { mkdirSync, statSync, utimesSync, watchFile, unwatchFile, type StatWatcher } from 'node:fs';
 import { open, type FileHandle } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { LineIndex, LineScanner, type LineSpan } from './lineIndex.ts';
 import { LineReader } from './reader.ts';
 import { detectFormat, RawParser, templateOf, type LogParser } from './parsers.ts';
 import { IndexStore } from './indexer.ts';
 import { parseQuery, type QueryNode } from './queryParser.ts';
+import { getConfig } from './config.ts';
 
 const READ_CHUNK = 4 * 1024 * 1024;
 const BATCH_LINES = 20_000;
@@ -47,7 +47,7 @@ export interface SessionStatus {
 }
 
 export function indexCacheDir(): string {
-  const dir = path.join(tmpdir(), 'tracebox-index');
+  const dir = getConfig().cacheDir;
   mkdirSync(dir, { recursive: true });
   return dir;
 }
@@ -130,6 +130,11 @@ export class LogSession extends EventEmitter {
         await this.restoreFromStore();
         this.reusedIndex = true;
         this.phase = 'ready';
+        // mark the cache as used now, so retention is measured from last open
+        try {
+          const now = new Date();
+          utimesSync(this.store.dbPath, now, now);
+        } catch {}
         this.emit('done');
         return;
       } catch {
