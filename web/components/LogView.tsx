@@ -98,10 +98,9 @@ export default function LogView({
       status: apply,
       progress: apply,
       done: (s) => {
-        apply(s);
+        apply(s); // flips status.phase to 'ready', which triggers the histogram load
         setEpoch((e) => e + 1);
         setClusterEpoch((e) => e + 1);
-        refreshHistogram();
       },
       append: (s) => {
         apply(s);
@@ -119,10 +118,12 @@ export default function LogView({
     };
   }, [id, refreshHistogram]);
 
-  // initial histogram once the index is ready
+  // load the histogram once the index is ready — keyed off the live status, so it
+  // also fires when a session finishes indexing before the SSE 'done' event is
+  // observed (e.g. a small rotation group whose index builds almost instantly)
   useEffect(() => {
-    if (initial.phase === 'ready') refreshHistogram();
-  }, [initial.phase, refreshHistogram]);
+    if (status.phase === 'ready') refreshHistogram();
+  }, [status.phase, refreshHistogram]);
 
   // --- search ---------------------------------------------------------------
   const runSearch = useCallback(
