@@ -1,4 +1,5 @@
 import { createServer, type Server } from 'node:http';
+import { EventEmitter } from 'node:events';
 import { statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { randomUUID } from 'node:crypto';
@@ -30,7 +31,25 @@ export interface TraceBoxApp {
 export function createApp(distDir: string): TraceBoxApp {
   const sessions = new Map<string, LogSession>();
   let merged: MergedTimeline | null = null;
+  // Stable bus so a merged-events SSE subscriber survives the timeline being
+  // rebuilt (each new MergedTimeline pipes its `update` here).
+  const mergedBus = new EventEmitter();
+  mergedBus.setMaxListeners(0);
   const router = new Router();
+
+  /** Replace the current timeline, wiring its live `update` to the stable bus. */
+  function setMerged(next: MergedTimeline | null): void {
+    if (merged) merged.close();
+    merged = next;
+    if (next) {
+      next.on('update', () => mergedBus.emit('update', mergedTotals(next)));
+      next.on('error-event', (msg: string) => mergedBus.emit('update', { ...mergedTotals(next), error: msg }));
+    }
+  }
+
+  function mergedTotals(m: MergedTimeline): { total: number; filtered: number } {
+    return { total: m.count(true), filtered: m.count(false) };
+  }
 
   function getSession(id: string): LogSession {
     const s = sessions.get(id);
@@ -203,10 +222,7 @@ export function createApp(distDir: string): TraceBoxApp {
     if (s) {
       sessions.delete(params.id);
       // the merged timeline may reference this session; drop it
-      if (merged) {
-        merged.close();
-        merged = null;
-      }
+      if (merged) setMerged(null);
       await s.close();
     }
     sendJson(res, 200, { ok: true });
@@ -312,9 +328,8 @@ export function createApp(distDir: string): TraceBoxApp {
       sendJson(res, 400, { error: 'No open files to merge' });
       return;
     }
-    if (merged) merged.close();
-    merged = new MergedTimeline(list);
-    sendJson(res, 201, { count: merged.count(), sources: merged.sourceList() });
+    setMerged(new MergedTimeline(list));
+    sendJson(res, 201, { count: merged!.count(), sources: merged!.sourceList() });
   });
 
   router.add('POST', '/api/merged/search', async (req, res) => {
@@ -353,11 +368,17 @@ export function createApp(distDir: string): TraceBoxApp {
     sendJson(res, 200, { seq: merged ? merged.seekTs(Number(query.get('ts') ?? 0), highlight) : 0 });
   });
 
+  // Live updates as the merged timeline follows its (tailed/captured) sources.
+  router.add('GET', '/api/merged/events', (_req, res) => {
+    const sse = new SseConnection(res);
+    const onUpdate = (payload: unknown): void => sse.send('update', payload);
+    mergedBus.on('update', onUpdate);
+    if (merged) sse.send('update', mergedTotals(merged));
+    sse.onClose(() => mergedBus.off('update', onUpdate));
+  });
+
   router.add('DELETE', '/api/merged', (_req, res) => {
-    if (merged) {
-      merged.close();
-      merged = null;
-    }
+    setMerged(null);
     sendJson(res, 200, { ok: true });
   });
 

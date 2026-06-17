@@ -26,8 +26,6 @@ desktop app is the primary target.
 
 ## Live — turn tailing into light monitoring
 
-- **Live merged timeline.** The merged view is a snapshot today; make it follow
-  appended lines like the single-file tail does.
 - **Watch rules.** While tailing, flag (or fire a desktop notification) when a
   pattern matches or a level/rate threshold is crossed — e.g. "ping me if ERRORs
   exceed N/min." Makes TraceBox a lightweight, offline log monitor.

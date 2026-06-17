@@ -178,6 +178,15 @@ export interface MergedBuild {
   sources: { id: string; file: string }[];
 }
 
+/** Pushed over SSE as the merged timeline follows its sources. */
+export interface MergedUpdate {
+  /** Whole-timeline row count. */
+  total: number;
+  /** Rows in the active search (equals `total` when no search). */
+  filtered: number;
+  error?: string;
+}
+
 export interface PatchNoteSection {
   title: string;
   items: string[];

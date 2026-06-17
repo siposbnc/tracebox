@@ -10,6 +10,7 @@ import type {
   LineDetail,
   MergedBuild,
   MergedRow,
+  MergedUpdate,
   NumericFacet,
   RecentFile,
   RotationMember,
@@ -139,6 +140,15 @@ export const api = {
   mergedSeek: (ts: number, highlight = false) =>
     request<{ seq: number }>(`/api/merged/seek?ts=${ts}${highlight ? '&highlight=1' : ''}`),
   closeMerged: () => request<{ ok: boolean }>('/api/merged', { method: 'DELETE' }),
+
+  /** Subscribe to live merged-timeline updates as it follows its sources; returns an unsubscribe. */
+  mergedEvents(handlers: { update?: (p: MergedUpdate) => void }): () => void {
+    const es = new EventSource('/api/merged/events');
+    if (handlers.update) {
+      es.addEventListener('update', (e) => handlers.update!(JSON.parse((e as MessageEvent).data) as MergedUpdate));
+    }
+    return () => es.close();
+  },
 
   /** Subscribe to session events; returns an unsubscribe function. */
   events(id: string, handlers: { [event: string]: (status: SessionStatus) => void }): () => void {

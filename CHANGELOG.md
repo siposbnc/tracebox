@@ -12,6 +12,14 @@ date and start a fresh `Unreleased` section.
 
 ## [Unreleased]
 
+### Changed
+
+- The merged timeline is now **live**: while its files are tailing (or are
+  command/capture sources), appended lines fold into the timeline as they arrive
+  and slot into their place in time order — no manual Refresh needed. The view
+  sticks to the live edge when you're already scrolled there, an active search
+  keeps matching new lines, and the histogram updates as data streams in.
+
 ### Added
 
 - Command & pipe sources: open the live output of a command instead of a file.

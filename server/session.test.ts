@@ -678,6 +678,58 @@ test('merged timeline interleaves files by timestamp', async () => {
   }
 });
 
+test('merged timeline follows lines appended to its sources', async () => {
+  const fileA = makeLogFile('live-a.log', [0, 2].map((s) => `2024-01-01 00:00:0${s} [INFO] A event ${s}`));
+  const fileB = makeLogFile('live-b.log', [1, 3].map((s) => `2024-01-01 00:00:0${s} [ERROR] B event ${s}`));
+  const sa = await openAndIndex(fileA);
+  const sb = await openAndIndex(fileB);
+  const m = new MergedTimeline([sa, sb]);
+  try {
+    assert.equal(m.count(), 4);
+    // an active search that should grow as matching lines arrive (B's two errors so far)
+    assert.equal(m.setSearch('level:ERROR').total, 2);
+
+    sa.setTail(true);
+    sb.setTail(true);
+
+    // append a matching line to A and a non-matching line to B
+    const aDone = new Promise<void>((r) => sa.once('append', () => r()));
+    appendFileSync(fileA, '2024-01-01 00:00:04 [ERROR] A event 4\n');
+    await aDone;
+    const bDone = new Promise<void>((r) => sb.once('append', () => r()));
+    appendFileSync(fileB, '2024-01-01 00:00:05 [INFO] B event 5\n');
+    await bDone;
+
+    // the whole timeline grew by both lines; the search picked up only A's new error
+    assert.equal(m.count(true), 6);
+    assert.equal(m.count(false), 3);
+
+    // the whole timeline (highlight mode keeps every row) stays in strict
+    // timestamp order with the appended lines slotted in, newest last
+    const rows = await m.page(0, 10, 'asc', true);
+    assert.deepEqual(
+      rows.map((r) => r.ts),
+      [0, 1, 2, 3, 4, 5].map((s) => Date.UTC(2024, 0, 1, 0, 0, s)),
+    );
+    assert.match(rows.at(-1)!.text, /B event 5/);
+    assert.deepEqual(
+      rows.map((r) => r.match),
+      [false, true, false, true, true, false], // the three ERROR lines flagged
+    );
+
+    // the filtered view is the three errors, in time order
+    const filtered = await m.page(0, 10, 'asc');
+    assert.deepEqual(
+      filtered.map((r) => r.text.match(/[AB] event \d/)?.[0]),
+      ['B event 1', 'B event 3', 'A event 4'],
+    );
+  } finally {
+    sa.setTail(false);
+    sb.setTail(false);
+    m.close();
+  }
+});
+
 test('export iteration covers all results in order', async () => {
   const file = makeLogFile('export.log', appLogLines(500));
   const s = await openAndIndex(file);

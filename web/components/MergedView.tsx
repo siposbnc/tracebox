@@ -90,6 +90,21 @@ export default function MergedView({
     void api.mergedHistogram(highlightActiveRef.current).then(setHistogram).catch(() => setHistogram(null));
   }, []);
 
+  // live updates from the server arrive in bursts while sources tail; coalesce
+  // the (relatively expensive) histogram refresh so it runs at most ~4×/s
+  const histoTimerRef = useRef<number | null>(null);
+  const scheduleHistogram = useCallback(() => {
+    if (histoTimerRef.current !== null) return;
+    histoTimerRef.current = window.setTimeout(() => {
+      histoTimerRef.current = null;
+      refreshHistogram();
+    }, 250);
+  }, [refreshHistogram]);
+
+  // when an update grows the view, stick to the live edge only if the user was
+  // already there (bottom in oldest-first, top in newest-first)
+  const followEdgeRef = useRef(false);
+
   const build = useCallback(async () => {
     const ids = [...selectedFiles];
     blocksRef.current.clear();
@@ -127,6 +142,35 @@ export default function MergedView({
   useEffect(() => {
     void build();
   }, [build]);
+
+  // Follow the sources live: as any participating session tails/captures new
+  // lines, the server folds them into the timeline and pushes an update.
+  useEffect(() => {
+    if (phase !== 'ready') return;
+    const off = api.mergedEvents({
+      update: (p) => {
+        // decide whether to keep pinned to the live edge before the list grows
+        const el = parentRef.current;
+        const slack = ROW_HEIGHT * 3;
+        followEdgeRef.current = el
+          ? orderRef.current === 'asc'
+            ? el.scrollHeight - el.scrollTop - el.clientHeight <= slack
+            : el.scrollTop <= slack
+          : false;
+        setTotal(p.total);
+        setSearch((prev) => (prev ? { ...prev, total: p.filtered } : prev));
+        blocksRef.current.clear();
+        loadingRef.current.clear();
+        setEpoch((e) => e + 1);
+        scheduleHistogram();
+      },
+    });
+    return off;
+  }, [phase, scheduleHistogram]);
+
+  useEffect(() => () => {
+    if (histoTimerRef.current !== null) clearTimeout(histoTimerRef.current);
+  }, []);
 
   useEffect(() => {
     if (!picker) return;
@@ -202,6 +246,14 @@ export default function MergedView({
     const last = Math.floor(items[items.length - 1].index / BLOCK);
     for (let b = first; b <= last; b++) fetchBlock(b);
   }, [items, fetchBlock, phase, listTotal, epoch, order]);
+
+  // after a live update, keep the live edge in view if we were following it
+  useEffect(() => {
+    if (!followEdgeRef.current) return;
+    followEdgeRef.current = false;
+    if (listTotal === 0) return;
+    virtualizer.scrollToIndex(order === 'asc' ? listTotal - 1 : 0, { align: 'end' });
+  }, [epoch, listTotal, order, virtualizer]);
 
   const rowAt = (index: number): MergedRow | null => {
     const block = blocksRef.current.get(Math.floor(index / BLOCK));
