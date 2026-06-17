@@ -44,6 +44,23 @@ desktop app is the primary target.
   today; also persist the column layout and open-panel state so a workspace
   restores the full view, not just the filters.
 
+## AI access — let agents drive TraceBox
+
+- **MCP server.** Expose TraceBox's index and query engine over the Model Context
+  Protocol so AI tools (Claude, IDE agents) can investigate logs efficiently
+  instead of `grep`-ing raw files into their context. Tools would cover the things
+  the UI already does well: open/attach a source, run a query (the full language —
+  fields, levels, time ranges, clustering), fetch a page or a record's context,
+  pull the histogram/stats and gap/spike summary, and list detected fields. The
+  point is that an agent searches and pages like the UI does — returning only the
+  matching lines and aggregates — rather than streaming a multi-gigabyte file
+  through a context window.
+- **Stays offline and zero-dependency.** Reuse the existing session/query layer;
+  the server keeps the `127.0.0.1`-only, no-runtime-deps guarantees (a hand-rolled
+  MCP endpoint over the current HTTP/SSE plumbing, not an added SDK). Built for the
+  big-file design — every tool streams, pages, and indexes; none load the whole
+  file.
+
 ## Refine what's already there
 
 Often higher-value-per-effort than net-new features:
