@@ -46,6 +46,9 @@ export default function MergedView({
   const selectedKey = useMemo(() => [...selectedFiles].sort().join(','), [selectedFiles]);
 
   const [sources, setSources] = useState<{ id: string; file: string }[]>([]);
+  // Tail mode of each source in the timeline, so the Tail button can reflect
+  // and drive them together. Off (mixed) unless every source is tailing.
+  const [tailState, setTailState] = useState<Map<string, boolean>>(() => new Map());
   const [total, setTotal] = useState(0); // whole-timeline row count
   const [histogram, setHistogram] = useState<HistogramData | null>(null);
   const [phase, setPhase] = useState<'building' | 'ready' | 'error' | 'none'>('building');
@@ -171,6 +174,37 @@ export default function MergedView({
   useEffect(() => () => {
     if (histoTimerRef.current !== null) clearTimeout(histoTimerRef.current);
   }, []);
+
+  // Seed the per-source tail state from current statuses whenever the set of
+  // timeline sources changes (e.g. after a rebuild or a file-selection change).
+  useEffect(() => {
+    if (sources.length === 0) {
+      setTailState(new Map());
+      return;
+    }
+    let cancelled = false;
+    void api
+      .sessions()
+      .then((list) => {
+        if (cancelled) return;
+        const byId = new Map(list.map((s) => [s.id, s.tail]));
+        setTailState(new Map(sources.map((s) => [s.id, byId.get(s.id) ?? false])));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [sources]);
+
+  const allTailing = sources.length > 0 && sources.every((s) => tailState.get(s.id));
+
+  // Toggle tail for every file in the timeline at once: enabling turns them all
+  // on; with mixed/off state the button reads "off", so a click enables all.
+  const toggleTimelineTail = useCallback(async () => {
+    const next = !allTailing;
+    setTailState(new Map(sources.map((s) => [s.id, next])));
+    await Promise.all(sources.map((s) => api.setTail(s.id, next)));
+  }, [allTailing, sources]);
 
   useEffect(() => {
     if (!picker) return;
@@ -458,6 +492,21 @@ export default function MergedView({
           title="Toggle row order"
         >
           {order === 'asc' ? 'Oldest' : 'Newest'}
+        </button>
+        <button
+          onClick={() => void toggleTimelineTail()}
+          disabled={sources.length === 0}
+          className={`flex items-center gap-1.5 rounded-lg border border-edge px-2.5 py-1.5 text-sm disabled:opacity-50 ${
+            allTailing ? 'bg-surface-3 text-emerald-300' : 'bg-surface-2 text-gray-400 hover:text-gray-100'
+          }`}
+          title={
+            allTailing
+              ? 'Stop tailing every file in the timeline'
+              : 'Tail every file in the timeline (follow new lines live)'
+          }
+        >
+          <span className={`h-2 w-2 rounded-full ${allTailing ? 'animate-pulse bg-emerald-400' : 'bg-gray-600'}`} />
+          Tail all
         </button>
         <button
           onClick={() => void build()}

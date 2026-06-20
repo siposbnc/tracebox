@@ -3,7 +3,7 @@ import { api } from '../api';
 import { getBookmarks, toggleBookmark } from '../bookmarks';
 import { matchCommand, eventToChord, isEditableTarget } from '../keybindings';
 import { extractHighlightTerms } from '../highlightTerms';
-import type { HistogramData, SessionStatus } from '../types';
+import type { HistogramData, SessionStatus, WatchTrigger } from '../types';
 import SearchBar from './SearchBar';
 import LogList from './LogList';
 import DetailPanel from './DetailPanel';
@@ -11,11 +11,10 @@ import ReportDialog from './ReportDialog';
 import FacetPanel from './FacetPanel';
 import ClusterPanel from './ClusterPanel';
 import StatsPanel from './StatsPanel';
+import WatchPanel from './WatchPanel';
 import ContextPeek from './ContextPeek';
 import GoToLine from './GoToLine';
 import ShortcutsHelp from './ShortcutsHelp';
-import SettingsPanel from './SettingsPanel';
-import CachePanel from './CachePanel';
 import Histogram from './Histogram';
 import StatusBar from './StatusBar';
 import { getHistogramDefault, useWrap, getWrap, setWrap, getOrder, useColumnar } from '../settings';
@@ -25,13 +24,25 @@ export default function LogView({
   initial,
   onOpenFile,
   onViewState,
+  onTailChange,
   jumpTo,
+  watchTriggers = [],
+  watchUnseen = 0,
+  onWatchSeen,
 }: {
   initial: SessionStatus;
   onOpenFile: () => void;
   /** Reports the file's search state up to the app for workspace saving. */
   onViewState?: (id: string, vs: { query: string; regex: boolean; grouped: boolean }) => void;
+  /** Reports tail (live-follow) state up so the tab can show a live indicator. */
+  onTailChange?: (id: string, tail: boolean) => void;
   jumpTo?: { lineNo: number; nonce: number } | null;
+  /** This file's recent watch-rule alerts, newest first. */
+  watchTriggers?: WatchTrigger[];
+  /** Count of alerts not yet seen in the watch panel (for the toolbar badge). */
+  watchUnseen?: number;
+  /** Called when the watch panel is shown, to clear the unseen count. */
+  onWatchSeen?: () => void;
 }) {
   const id = initial.id;
   const [status, setStatus] = useState<SessionStatus>(initial);
@@ -40,6 +51,9 @@ export default function LogView({
   const [searching, setSearching] = useState(false);
   /** Bumped whenever the visible data set changes (new search, appended lines). */
   const [epoch, setEpoch] = useState(0);
+  /** Bumped alongside epoch only on a live append, so the row list keeps its
+   * loaded blocks and refetches just the tail instead of clearing everything. */
+  const [appendEpoch, setAppendEpoch] = useState(0);
   const [total, setTotal] = useState(initial.search?.total ?? initial.lineCount);
   const [selected, setSelected] = useState<number | null>(null);
   // the detail panel is shown for the selected line; decoupled from selection so it
@@ -52,6 +66,7 @@ export default function LogView({
   const [facetsOpen, setFacetsOpen] = useState(false);
   const [clustersOpen, setClustersOpen] = useState(false);
   const [statsOpen, setStatsOpen] = useState(false);
+  const [watchOpen, setWatchOpen] = useState(false);
   const [activeTemplate, setActiveTemplate] = useState<number | null>(null);
   const templateRef = useRef<number | null>(null);
   // bumped only when the cluster set changes (new text search / index ready), not
@@ -65,8 +80,6 @@ export default function LogView({
   const [gotoOpen, setGotoOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [cacheOpen, setCacheOpen] = useState(false);
   const [followTail, setFollowTail] = useState(initial.tail);
   const statusRef = useRef(status);
   statusRef.current = status;
@@ -112,6 +125,7 @@ export default function LogView({
       },
       append: (s) => {
         apply(s);
+        setAppendEpoch((e) => e + 1);
         setEpoch((e) => e + 1);
         scheduleHistogram();
       },
@@ -125,6 +139,16 @@ export default function LogView({
       if (histogramTimer) clearTimeout(histogramTimer);
     };
   }, [id, refreshHistogram]);
+
+  // Start following the live edge whenever tail turns on — whether toggled here
+  // or enabled externally (e.g. the merged timeline's "Tail all"), which only
+  // reaches us as a status change. Fires on the off→on edge so it never fights a
+  // user who has scrolled away while tailing is already running.
+  const prevTailRef = useRef(status.tail);
+  useEffect(() => {
+    if (status.tail && !prevTailRef.current) setFollowTail(true);
+    prevTailRef.current = status.tail;
+  }, [status.tail]);
 
   // load the histogram once the index is ready — keyed off the live status, so it
   // also fires when a session finishes indexing before the SSE 'done' event is
@@ -208,6 +232,17 @@ export default function LogView({
   useEffect(() => {
     onViewState?.(id, { query, regex: regexMode, grouped });
   }, [id, query, regexMode, grouped, onViewState]);
+
+  // report tail state up so the file's tab can show a live-tailing indicator
+  useEffect(() => {
+    onTailChange?.(id, status.tail);
+  }, [id, status.tail, onTailChange]);
+
+  // clear the unseen-alert badge while the watch panel is open (and as new
+  // alerts arrive into the open panel)
+  useEffect(() => {
+    if (watchOpen) onWatchSeen?.();
+  }, [watchOpen, watchTriggers, onWatchSeen]);
 
   const addFilter = useCallback(
     (clause: string) => {
@@ -396,6 +431,9 @@ export default function LogView({
         onToggleClusters={() => setClustersOpen((v) => !v)}
         statsOpen={statsOpen}
         onToggleStats={() => setStatsOpen((v) => !v)}
+        watchOpen={watchOpen}
+        onToggleWatch={() => setWatchOpen((v) => !v)}
+        watchUnseen={watchUnseen}
         columns={columns}
         onColumnsChange={(cols) => setColumns(status.file, cols)}
         highlightMode={highlightMode}
@@ -409,7 +447,6 @@ export default function LogView({
         onGoToLine={() => setGotoOpen(true)}
         onExportReport={() => setReportOpen(true)}
         onShowShortcuts={() => setShortcutsOpen(true)}
-        onOpenSettings={() => setSettingsOpen(true)}
         fieldNames={status.fieldNames}
         levelCounts={status.levelCounts}
       />
@@ -449,12 +486,22 @@ export default function LogView({
             onClose={() => setStatsOpen(false)}
           />
         )}
+        {watchOpen && (
+          <WatchPanel
+            file={status.file}
+            tailing={status.tail}
+            triggers={watchTriggers}
+            onJumpToLine={(lineNo) => void jumpToLine(lineNo)}
+            onClose={() => setWatchOpen(false)}
+          />
+        )}
         <div className="min-w-0 flex-1">
           <LogList
             key={`${columnar ? `c:${columns.join(',')}` : 'r'}:${wrap ? 'w' : 'n'}:${groupingActive ? 'g' : 'u'}:${highlightActive ? `hl:${status.search?.query ?? ''}` : 'flt'}`}
             sessionId={id}
             file={status.file}
             epoch={epoch}
+            appendEpoch={appendEpoch}
             total={listTotal}
             followTail={status.tail && followTail}
             selected={selected}
@@ -465,6 +512,8 @@ export default function LogView({
             }}
             onContext={setContextLine}
             showContext={status.search !== null}
+            indexing={status.phase === 'indexing' || status.phase === 'finalizing'}
+            hasSearch={status.search !== null}
             highlight={highlightActive}
             grouped={groupingActive}
             wrap={wrap}
@@ -524,22 +573,6 @@ export default function LogView({
       )}
 
       {shortcutsOpen && <ShortcutsHelp onClose={() => setShortcutsOpen(false)} />}
-
-      {settingsOpen && (
-        <SettingsPanel
-          onClose={() => setSettingsOpen(false)}
-          onShowShortcuts={() => {
-            setSettingsOpen(false);
-            setShortcutsOpen(true);
-          }}
-          onManageCache={() => {
-            setSettingsOpen(false);
-            setCacheOpen(true);
-          }}
-        />
-      )}
-
-      {cacheOpen && <CachePanel onClose={() => setCacheOpen(false)} />}
     </div>
   );
 }

@@ -67,6 +67,9 @@ export default function SearchBar({
   onToggleClusters,
   statsOpen,
   onToggleStats,
+  watchOpen,
+  onToggleWatch,
+  watchUnseen,
   columns,
   onColumnsChange,
   highlightMode,
@@ -80,7 +83,6 @@ export default function SearchBar({
   onGoToLine,
   onExportReport,
   onShowShortcuts,
-  onOpenSettings,
   fieldNames,
   levelCounts,
 }: {
@@ -105,6 +107,10 @@ export default function SearchBar({
   onToggleClusters: () => void;
   statsOpen: boolean;
   onToggleStats: () => void;
+  watchOpen: boolean;
+  onToggleWatch: () => void;
+  /** Number of watch-rule alerts not yet seen (drives the toolbar badge). */
+  watchUnseen: number;
   columns: string[];
   onColumnsChange: (cols: string[]) => void;
   highlightMode: boolean;
@@ -118,7 +124,6 @@ export default function SearchBar({
   onGoToLine: () => void;
   onExportReport: () => void;
   onShowShortcuts: () => void;
-  onOpenSettings: () => void;
   fieldNames: { key: string; count: number }[];
   levelCounts: Record<string, number>;
 }) {
@@ -474,12 +479,6 @@ export default function SearchBar({
             <path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10" />
           </svg>
         </button>
-        <button onClick={onOpenSettings} className={toolCls(false)} title="Settings">
-          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <circle cx="12" cy="12" r="3" />
-            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-          </svg>
-        </button>
 
         <Divider />
 
@@ -524,6 +523,21 @@ export default function SearchBar({
             <path d="M21 12a9 9 0 1 1-9-9v9z" />
             <path d="M21 8a9 9 0 0 0-4-4" />
           </svg>
+        </button>
+        <button
+          onClick={onToggleWatch}
+          className={`relative ${toolCls(watchOpen, 'amber')}`}
+          title="Watch rules — alert on matching lines or rate thresholds while tailing"
+        >
+          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
+            <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+          </svg>
+          {watchUnseen > 0 && (
+            <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-semibold text-gray-950">
+              {watchUnseen > 99 ? '99+' : watchUnseen}
+            </span>
+          )}
         </button>
         <BookmarksMenu
           file={file}

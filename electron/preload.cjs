@@ -20,4 +20,10 @@ contextBridge.exposeInMainWorld('tracebox', {
   downloadUpdate: () => ipcRenderer.send('tracebox:download-update'),
   /** Quit and install a downloaded update. */
   installUpdate: () => ipcRenderer.send('tracebox:install-update'),
+  /** Raise a native OS notification for a fired watch rule. */
+  notify: (payload) => ipcRenderer.send('tracebox:notify', payload),
+  /** A clicked watch notification asks the UI to jump to its source line. */
+  onNotifyClick: (callback) => {
+    ipcRenderer.on('tracebox:notify-click', (_event, payload) => callback(payload));
+  },
 });

@@ -30,6 +30,11 @@ export interface TraceBoxApp {
  */
 export function createApp(distDir: string): TraceBoxApp {
   const sessions = new Map<string, LogSession>();
+  // Stable bus carrying every session's watch-rule triggers, so a single
+  // app-wide SSE subscriber receives alerts from all open files (including
+  // background tabs) rather than only the one the UI is currently looking at.
+  const watchBus = new EventEmitter();
+  watchBus.setMaxListeners(0);
   let merged: MergedTimeline | null = null;
   // Stable bus so a merged-events SSE subscriber survives the timeline being
   // rebuilt (each new MergedTimeline pipes its `update` here).
@@ -57,6 +62,12 @@ export function createApp(distDir: string): TraceBoxApp {
     return s;
   }
 
+  /** Register a new session and forward its watch triggers onto the shared bus. */
+  function track(session: LogSession): void {
+    sessions.set(session.id, session);
+    session.on('watch', (trigger) => watchBus.emit('trigger', { sessionId: session.id, trigger }));
+  }
+
   /**
    * Spawn a command into a fresh capture file and open a session that indexes
    * and tail-follows it. The capture file carries a unique nonce so its index is
@@ -70,7 +81,7 @@ export function createApp(distDir: string): TraceBoxApp {
       mergeStderr: opts.mergeStderr,
     });
     const session = new LogSession(captureFile, { capture });
-    sessions.set(session.id, session);
+    track(session);
     await session.start();
     return session;
   }
@@ -175,7 +186,7 @@ export function createApp(distDir: string): TraceBoxApp {
       }
     }
     const session = new LogSession(resolved, { sources: group });
-    sessions.set(session.id, session);
+    track(session);
     addRecent(resolved);
     await session.start();
     sendJson(res, 201, session.status());
@@ -426,6 +437,14 @@ export function createApp(distDir: string): TraceBoxApp {
     sendJson(res, 200, { tail: s.tail });
   });
 
+  // Replace a session's watch rules (evaluated against appended lines while tailing).
+  router.add('PUT', '/api/sessions/:id/watch', async (req, res, params) => {
+    const s = getSession(params.id);
+    const body = (await readJsonBody(req)) as { rules?: unknown };
+    const rules = s.setWatchRules(body.rules);
+    sendJson(res, 200, { rules });
+  });
+
   // ---------------------------------------------------------------------------
   // Events (SSE)
 
@@ -450,6 +469,19 @@ export function createApp(distDir: string): TraceBoxApp {
       s.off('truncated', onTruncated);
       s.off('error-event', onError);
     });
+  });
+
+  // App-wide watch-rule alerts. One subscriber receives triggers from every open
+  // session; on connect it replays each session's recent triggers so a reload
+  // (or a freshly opened panel) shows the alert history, not just future ones.
+  router.add('GET', '/api/watch/events', (_req, res) => {
+    const sse = new SseConnection(res);
+    const onTrigger = (payload: unknown): void => sse.send('trigger', payload);
+    watchBus.on('trigger', onTrigger);
+    for (const s of sessions.values()) {
+      for (const trigger of s.recentTriggers()) sse.send('trigger', { sessionId: s.id, trigger });
+    }
+    sse.onClose(() => watchBus.off('trigger', onTrigger));
   });
 
   // ---------------------------------------------------------------------------

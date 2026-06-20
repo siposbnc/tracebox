@@ -25,6 +25,7 @@ import { IndexStore } from './indexer.ts';
 import { parseQuery, QuerySyntaxError, type QueryNode } from './queryParser.ts';
 import { getConfig } from './config.ts';
 import { CaptureSource, type CaptureStatus } from './capture.ts';
+import { compileRules, type CompiledRule, type WatchRule, type WatchTrigger } from './watch.ts';
 
 const READ_CHUNK = 4 * 1024 * 1024;
 const BATCH_LINES = 20_000;
@@ -160,6 +161,13 @@ export class LogSession extends EventEmitter {
   private watcher: StatWatcher | null = null;
   private appendRunning = false;
   private appendQueued = false;
+
+  // watch rules (light monitoring while tailing)
+  private watchRules: CompiledRule[] = [];
+  /** Per-rate-rule sliding-window state, keyed by rule id. */
+  private rateState = new Map<string, { events: { t: number; n: number }[]; lastLine: number | null; firing: boolean }>();
+  /** Recent triggers, so a (re)connecting client can repopulate its panel. */
+  private triggerLog: WatchTrigger[] = [];
 
   /**
    * `file` is the primary/displayed path. `options.sources` (when longer than
@@ -800,6 +808,98 @@ export class LogSession extends EventEmitter {
     this.capture?.stop();
   }
 
+  // ---------------------------------------------------------------------------
+  // Watch rules — evaluated against newly-appended lines while tailing
+
+  /** Replace this session's watch rules (sanitized + parsed). Drops rate-window
+   * state for rules that no longer exist; keeps it for ones still present. */
+  setWatchRules(raw: unknown): WatchRule[] {
+    this.watchRules = compileRules(raw);
+    const live = new Set(this.watchRules.map((c) => c.rule.id));
+    for (const id of this.rateState.keys()) {
+      if (!live.has(id)) this.rateState.delete(id);
+    }
+    return this.watchRules.map((c) => c.rule);
+  }
+
+  /** Recent triggers (oldest→newest) for a client repopulating its panel on connect. */
+  recentTriggers(): WatchTrigger[] {
+    return this.triggerLog.slice();
+  }
+
+  /**
+   * Evaluate every enabled rule against the newly-appended lines [fromLine, toLine)
+   * and emit a `watch` event for each that fires. Called at the end of an append.
+   */
+  private async evaluateWatch(fromLine: number): Promise<void> {
+    if (this.watchRules.length === 0) return;
+    const toLine = this.index.lineCount;
+    if (toLine <= fromLine) return;
+    const now = Date.now();
+    for (const { rule, ast } of this.watchRules) {
+      if (!rule.enabled || ast === null) continue;
+      const { count, lastLine } = this.store.evalRange(ast, fromLine, toLine);
+      if (rule.kind === 'match') {
+        if (count > 0) await this.fireTrigger(rule, count, lastLine, now);
+        continue;
+      }
+      // rate: accumulate matches over a sliding wall-clock window, edge-triggered
+      let st = this.rateState.get(rule.id);
+      if (!st) {
+        st = { events: [], lastLine: null, firing: false };
+        this.rateState.set(rule.id, st);
+      }
+      if (count > 0) {
+        st.events.push({ t: now, n: count });
+        st.lastLine = lastLine;
+      }
+      const cutoff = now - rule.windowSec * 1000;
+      st.events = st.events.filter((e) => e.t >= cutoff);
+      const sum = st.events.reduce((a, e) => a + e.n, 0);
+      if (sum >= rule.threshold) {
+        if (!st.firing) {
+          st.firing = true;
+          await this.fireTrigger(rule, sum, st.lastLine, now);
+        }
+      } else {
+        st.firing = false;
+      }
+    }
+  }
+
+  /** Build a {@link WatchTrigger} (reading the sample line) and emit it. */
+  private async fireTrigger(rule: WatchRule, count: number, lastLine: number | null, at: number): Promise<void> {
+    let sample: WatchTrigger['sample'] = null;
+    if (lastLine !== null) {
+      try {
+        const text = await this.reader.readLine(lastLine);
+        const meta = this.store.lineMeta([lastLine]).get(lastLine);
+        sample = {
+          lineNo: lastLine,
+          ts: meta?.ts ?? null,
+          level: meta?.level ?? null,
+          text: text.length > 300 ? text.slice(0, 300) : text,
+        };
+      } catch {
+        // line briefly unreadable (rotation) — fire without a preview
+      }
+    }
+    const trigger: WatchTrigger = {
+      ruleId: rule.id,
+      ruleName: rule.name.trim() || rule.query,
+      kind: rule.kind,
+      at,
+      count,
+      threshold: rule.kind === 'rate' ? rule.threshold : null,
+      windowSec: rule.kind === 'rate' ? rule.windowSec : null,
+      desktop: rule.desktop,
+      sample,
+    };
+    this.triggerLog.push(trigger);
+    if (this.triggerLog.length > 100) this.triggerLog.shift();
+    this.emit('watch', trigger);
+  }
+
   private async checkAppend(): Promise<void> {
     if (this.phase !== 'ready' || this.closed) return;
     if (this.appendRunning) {
@@ -914,6 +1014,11 @@ export class LogSession extends EventEmitter {
       }
       this.persistMeta(st.size);
       this.emit('append');
+
+      // evaluate watch rules over just the lines this append added
+      if (this.watchRules.length > 0 && this.index.lineCount > firstNewLine) {
+        await this.evaluateWatch(firstNewLine);
+      }
     } finally {
       await fd.close();
     }

@@ -22,6 +22,52 @@ date and start a fresh `Unreleased` section.
 
 ### Added
 
+- **Watch rules** turn live tailing into light monitoring. Define per-file alerts
+  that fire as new lines arrive: a **match** rule on any query (e.g.
+  `level:error AND timeout`), or a **rate** rule that fires when matches cross a
+  threshold within a sliding window (e.g. "20 errors in 60s"). A new bell button
+  on the toolbar opens the rules panel, where you add/enable rules and review
+  recent alerts (click one to jump to the matching line). Triggers surface as
+  in-app toasts and a per-tab badge — and, in the desktop app, as native OS
+  notifications you can opt into per rule. Rules are evaluated by the backend for
+  every tailing file, including background tabs, and are saved per file so they
+  come back when you reopen it.
+- Settings are now reachable without a file open — from a gear button on the
+  welcome screen and in the top bar. The settings panel moved out of the per-file
+  toolbar to this single global location.
+- A **Tail all** button on the merged timeline toggles live tailing for every
+  file in the timeline at once. It reads "on" only when all of them are tailing;
+  with mixed states it shows off, and clicking it enables tailing on all of them.
+- Each open file's tab now shows a blinking green dot while that file is tailing,
+  so you can tell at a glance which sources are following live output.
+- Clear feedback while a file is opening and indexing. Selecting a file now adds a
+  **pending tab with a spinner** immediately (and a loading screen for the very
+  first file) instead of leaving you staring at an unchanged tab bar while the
+  index spins up, and the row list shows a spinning "Indexing the file…" state
+  until the first lines are read — instead of a blank area or a misleading
+  "No matching log lines" message.
+
+### Fixed
+
+- Running a search now filters the row list immediately. The list previously kept
+  showing unfiltered rows until you toggled Highlight matches on and off again:
+  the row blocks loaded before the search were only being invalidated as if data
+  had been appended to the tail, so the stale unfiltered rows lingered. Full
+  data-set changes (search, grouping, refresh) now discard every loaded block.
+- Reopening a file whose contents changed since it was last indexed no longer
+  fails with "table templates already exists". The index rebuild now drops the
+  `templates` table along with the others before recreating the schema. This
+  most often hit regenerated/live test logs, which change between every run.
+- A file tab now follows the live edge whenever its tail mode is on — including
+  when tailing was enabled from the merged timeline's **Tail all** — instead of
+  only when toggled from that tab's own Tail button. Appended lines were being
+  indexed (the histogram updated) but the row list stayed put.
+- Tailing in **newest-first** order now keeps the view live. Appended lines were
+  indexed and the histogram and counts updated, but the row list froze on the
+  newest rows. In newest-first order an appended line shifts every display
+  position, so the whole loaded set is stale — the tail refresh was only
+  discarding the last block (correct for oldest-first), leaving the visible
+  newest rows cached. It now drops the full set in newest-first order.
 - Command & pipe sources: open the live output of a command instead of a file.
   A **Run a command** button on the welcome screen and in the tab bar opens a prompt
   (e.g. `docker logs -f web`, `journalctl -f`, `kubectl logs -f pod`) — TraceBox runs

@@ -24,12 +24,6 @@ desktop app is the primary target.
   live process (`docker logs`, `journalctl`, `kubectl logs`) with the full toolset,
   still fully offline.
 
-## Live — turn tailing into light monitoring
-
-- **Watch rules.** While tailing, flag (or fire a desktop notification) when a
-  pattern matches or a level/rate threshold is crossed — e.g. "ping me if ERRORs
-  exceed N/min." Makes TraceBox a lightweight, offline log monitor.
-
 ## Insight — answer "what's going on" faster
 
 - **Numeric field trends.** Chart a numeric field over time (`duration_ms`,

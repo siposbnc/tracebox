@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api';
-import type { SessionStatus } from './types';
+import type { SessionStatus, WatchEvent } from './types';
 import LogView from './components/LogView';
 import OpenFileDialog from './components/OpenFileDialog';
 import CommandDialog from './components/CommandDialog';
@@ -8,10 +8,15 @@ import WelcomeScreen from './components/WelcomeScreen';
 import UpdateBanner from './components/UpdateBanner';
 import WhatsNew from './components/WhatsNew';
 import MergedView from './components/MergedView';
+import WatchToasts, { type Toast } from './components/WatchToasts';
 import WorkspacesMenu from './components/WorkspacesMenu';
+import SettingsPanel from './components/SettingsPanel';
+import ShortcutsHelp from './components/ShortcutsHelp';
+import CachePanel from './components/CachePanel';
 import { Logo } from './components/Logo';
 import { saveWorkspace, useWorkspaces, type ViewState, type Workspace } from './workspaces';
 import { clientStore } from './clientStore';
+import { getWatchRules, useWatchRulesVersion } from './watchRules';
 import { patchNotes } from './patchnotes';
 import { compareVersions } from './version';
 import { matchCommand } from './keybindings';
@@ -25,12 +30,25 @@ export default function App() {
   const [commandOpen, setCommandOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [openError, setOpenError] = useState<string | null>(null);
+  // a file/command open in flight (the request before its session exists), so the
+  // UI can show "opening…" instead of sitting silent while a big/.gz file spins up
+  const [opening, setOpening] = useState<string | null>(null);
   // a freshly-opened lone file that has rotated siblings — offer to open them as one stream
   const [rotationOffer, setRotationOffer] = useState<{ path: string; count: number; sessionId: string } | null>(null);
   const [whatsNewOpen, setWhatsNewOpen] = useState(false);
   const [timelineOpen, setTimelineOpen] = useState(false);
+  // Settings (and the dialogs it links to) live at the app level so they're
+  // reachable without a file open — from the welcome screen or the top bar.
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [cacheOpen, setCacheOpen] = useState(false);
   // pending jump from the merged timeline: open a file's tab at a specific line
   const [jumpTarget, setJumpTarget] = useState<{ id: string; lineNo: number; nonce: number } | null>(null);
+  // watch-rule alerts: a flat log across all sessions, per-session unseen counts,
+  // and a transient toast stack
+  const [watchEvents, setWatchEvents] = useState<WatchEvent[]>([]);
+  const [watchUnseen, setWatchUnseen] = useState<Record<string, number>>({});
+  const [toasts, setToasts] = useState<Toast[]>([]);
   // the newest version the user had seen before this launch (for "New" badges)
   const [sinceVersion] = useState<string | null>(() => clientStore.getItem(LAST_SEEN_VERSION_KEY));
   // last-known search state per session, for saving workspaces (sessions report it up)
@@ -38,7 +56,79 @@ export default function App() {
   const captureViewState = useCallback((id: string, vs: ViewState) => {
     viewStateRef.current.set(id, vs);
   }, []);
+  // keep the tab's live-tailing indicator in sync with the active view
+  const handleTailChange = useCallback((id: string, tail: boolean) => {
+    setSessions((prev) => prev.map((s) => (s.id === id && s.tail !== tail ? { ...s, tail } : s)));
+  }, []);
   const workspaces = useWorkspaces();
+  const watchRulesVersion = useWatchRulesVersion();
+  const sessionsRef = useRef(sessions);
+  sessionsRef.current = sessions;
+
+  // Short label for a session (file name or command), used in alert toasts.
+  const sourceLabel = useCallback((id: string): string => {
+    const s = sessionsRef.current.find((x) => x.id === id);
+    if (!s) return '';
+    return s.kind === 'command' ? `▸ ${s.command ?? 'command'}` : (s.file.split(/[\\/]/).pop() ?? s.file);
+  }, []);
+
+  // Switch to a file's tab and (optionally) jump to a line — from a toast or a
+  // clicked desktop notification.
+  const openAt = useCallback((sessionId: string, lineNo: number | null) => {
+    setActiveId(sessionId);
+    setWhatsNewOpen(false);
+    setTimelineOpen(false);
+    if (lineNo !== null) setJumpTarget({ id: sessionId, lineNo, nonce: Date.now() });
+  }, []);
+
+  // Subscribe once to the app-wide watch-alert stream. Triggers replayed on
+  // connect (older than mount) populate the panel silently; only genuinely live
+  // ones raise a toast / desktop notification and bump the unseen badge.
+  useEffect(() => {
+    const mountedAt = Date.now();
+    const seen = new Set<string>();
+    let toastKey = 0;
+    return api.watchEvents((e) => {
+      const key = `${e.sessionId}:${e.trigger.ruleId}:${e.trigger.at}:${e.trigger.sample?.lineNo ?? ''}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      setWatchEvents((prev) => [...prev, e].slice(-300));
+      if (e.trigger.at < mountedAt - 2000) return; // historical replay — list only
+      setWatchUnseen((u) => ({ ...u, [e.sessionId]: (u[e.sessionId] ?? 0) + 1 }));
+      setToasts((prev) =>
+        [...prev, { key: ++toastKey, sessionId: e.sessionId, source: sourceLabel(e.sessionId), trigger: e.trigger }].slice(-4),
+      );
+      if (e.trigger.desktop) {
+        window.tracebox?.notify?.({
+          title: e.trigger.ruleName,
+          body: e.trigger.sample?.text ?? `${e.trigger.count} matches`,
+          sessionId: e.sessionId,
+          lineNo: e.trigger.sample?.lineNo ?? null,
+        });
+      }
+    });
+  }, [sourceLabel]);
+
+  // Push each open session's persisted watch rules to the backend whenever the
+  // sessions or the rules change, so background tabs are monitored too.
+  const pushedRules = useRef<Map<string, string>>(new Map());
+  useEffect(() => {
+    for (const s of sessions) {
+      const rules = getWatchRules(s.file);
+      const serial = JSON.stringify(rules);
+      if (pushedRules.current.get(s.id) === serial) continue;
+      pushedRules.current.set(s.id, serial);
+      void api.setWatchRules(s.id, rules).catch(() => {});
+    }
+    for (const id of [...pushedRules.current.keys()]) {
+      if (!sessions.some((s) => s.id === id)) pushedRules.current.delete(id);
+    }
+  }, [sessions, watchRulesVersion]);
+
+  // A clicked desktop notification jumps to its source line.
+  useEffect(() => {
+    window.tracebox?.onNotifyClick?.(({ sessionId, lineNo }) => openAt(sessionId, lineNo));
+  }, [openAt]);
 
   useEffect(() => {
     void api.sessions().then((list) => {
@@ -80,10 +170,23 @@ export default function App() {
 
   const openFile = useCallback(async (path: string) => {
     setRotationOffer(null);
-    const status = await api.openFile(path);
+    setOpenError(null);
+    // close the picker right away and show a pending tab, so the user gets
+    // immediate feedback instead of staring at a frozen dialog / empty tab bar
+    // while the (possibly multi-second) index spin-up happens
+    setDialogOpen(false);
+    setOpening(path.split(/[\\/]/).pop() ?? path);
+    let status;
+    try {
+      status = await api.openFile(path);
+    } catch (err) {
+      setOpenError(err instanceof Error ? err.message : String(err));
+      return;
+    } finally {
+      setOpening(null);
+    }
     setSessions((prev) => (prev.some((s) => s.id === status.id) ? prev : [...prev, status]));
     setActiveId(status.id);
-    setDialogOpen(false);
     // if this lone file is part of a rotation set, offer to open the whole group
     if (status.sourceCount === 1) {
       void api
@@ -97,10 +200,20 @@ export default function App() {
 
   // Run a command (or shell pipeline) and follow its output as a live source.
   const openCommand = useCallback(async (command: string, mergeStderr: boolean) => {
-    const status = await api.runCommand(command, mergeStderr);
+    setOpenError(null);
+    setCommandOpen(false);
+    setOpening(`▸ ${command}`);
+    let status;
+    try {
+      status = await api.runCommand(command, mergeStderr);
+    } catch (err) {
+      setOpenError(err instanceof Error ? err.message : String(err));
+      return;
+    } finally {
+      setOpening(null);
+    }
     setSessions((prev) => (prev.some((s) => s.id === status.id) ? prev : [...prev, status]));
     setActiveId(status.id);
-    setCommandOpen(false);
   }, []);
 
   // Re-open the offered file as its full rotation group, replacing the single-file tab.
@@ -179,11 +292,28 @@ export default function App() {
         setActiveId((cur) => (cur === id ? (next[0]?.id ?? null) : cur));
         return next;
       });
+      // drop the closed file's alerts and badge
+      setWatchEvents((prev) => prev.filter((e) => e.sessionId !== id));
+      setWatchUnseen((u) => {
+        if (!(id in u)) return u;
+        const { [id]: _drop, ...rest } = u;
+        return rest;
+      });
+      setToasts((prev) => prev.filter((t) => t.sessionId !== id));
     },
     [],
   );
 
   const active = sessions.find((s) => s.id === activeId) ?? null;
+
+  // the active file's alerts, newest first, for its watch panel
+  const activeTriggers = useMemo(
+    () => watchEvents.filter((e) => e.sessionId === activeId).map((e) => e.trigger).reverse(),
+    [watchEvents, activeId],
+  );
+  const clearUnseen = useCallback((id: string) => {
+    setWatchUnseen((u) => (u[id] ? { ...u, [id]: 0 } : u));
+  }, []);
 
   // snapshot the open files + their searches as a named workspace
   const saveCurrentWorkspace = useCallback(
@@ -275,6 +405,20 @@ export default function App() {
                 }
               >
                 <span className="truncate">{name}</span>
+                {s.tail && (
+                  <span
+                    className="h-2 w-2 shrink-0 rounded-full bg-emerald-400 animate-tail-blink"
+                    title="Tailing — following new lines live"
+                  />
+                )}
+                {(watchUnseen[s.id] ?? 0) > 0 && (
+                  <span
+                    className="flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-semibold text-gray-950"
+                    title={`${watchUnseen[s.id]} watch-rule ${watchUnseen[s.id] === 1 ? 'alert' : 'alerts'}`}
+                  >
+                    {watchUnseen[s.id] > 99 ? '99+' : watchUnseen[s.id]}
+                  </span>
+                )}
                 {s.sourceCount > 1 && (
                   <span
                     className="rounded bg-surface-2 px-1 text-[10px] font-medium text-sky-300"
@@ -296,6 +440,18 @@ export default function App() {
               </div>
             );
           })}
+          {opening && (
+            <div
+              role="tab"
+              className="flex max-w-64 items-center gap-2 rounded-t-md border border-b-0 border-edge bg-surface-0 px-3 py-1.5 text-sm text-gray-200"
+              title={`Opening ${opening}`}
+            >
+              <svg className="h-3.5 w-3.5 shrink-0 animate-spin text-sky-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M21 12a9 9 0 1 1-6.22-8.56" />
+              </svg>
+              <span className="truncate">{opening}</span>
+            </div>
+          )}
           <button
             onClick={requestOpenFile}
             className="mb-1.5 ml-1 self-center rounded-md px-2.5 py-1 text-sm text-gray-400 hover:bg-surface-2 hover:text-gray-100"
@@ -333,6 +489,16 @@ export default function App() {
               title="What's new"
             >
               ✨ What's new
+            </button>
+            <button
+              onClick={() => setSettingsOpen(true)}
+              className="mb-1.5 self-center rounded-md px-2 py-1 text-gray-400 hover:bg-surface-2 hover:text-gray-100"
+              title="Settings"
+            >
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="3" />
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+              </svg>
             </button>
           </div>
         </div>
@@ -389,20 +555,60 @@ export default function App() {
             initial={active}
             onOpenFile={requestOpenFile}
             onViewState={captureViewState}
+            onTailChange={handleTailChange}
             jumpTo={jumpTarget && jumpTarget.id === active.id ? jumpTarget : null}
+            watchTriggers={activeTriggers}
+            watchUnseen={watchUnseen[active.id] ?? 0}
+            onWatchSeen={() => clearUnseen(active.id)}
           />
+        ) : opening ? (
+          <div className="flex h-full flex-col items-center justify-center gap-4 bg-surface-0 text-gray-400">
+            <svg className="h-7 w-7 animate-spin text-sky-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <path d="M21 12a9 9 0 1 1-6.22-8.56" />
+            </svg>
+            <div className="text-center">
+              <div className="text-sm font-medium text-gray-200">Opening {opening}</div>
+              <div className="mt-1 text-xs text-gray-500">Preparing the file — this can take a moment for large or compressed logs.</div>
+            </div>
+          </div>
         ) : (
           <WelcomeScreen
             onOpen={requestOpenFile}
             onOpenPath={openFile}
             onRunCommand={() => setCommandOpen(true)}
             onWhatsNew={() => setWhatsNewOpen(true)}
+            onSettings={() => setSettingsOpen(true)}
           />
         )}
       </div>
 
       {dialogOpen && <OpenFileDialog onClose={() => setDialogOpen(false)} onOpen={openFile} />}
       {commandOpen && <CommandDialog onClose={() => setCommandOpen(false)} onRun={openCommand} />}
+
+      {settingsOpen && (
+        <SettingsPanel
+          onClose={() => setSettingsOpen(false)}
+          onShowShortcuts={() => {
+            setSettingsOpen(false);
+            setShortcutsOpen(true);
+          }}
+          onManageCache={() => {
+            setSettingsOpen(false);
+            setCacheOpen(true);
+          }}
+        />
+      )}
+      {shortcutsOpen && <ShortcutsHelp onClose={() => setShortcutsOpen(false)} />}
+      {cacheOpen && <CachePanel onClose={() => setCacheOpen(false)} />}
+
+      <WatchToasts
+        toasts={toasts}
+        onDismiss={(key) => setToasts((prev) => prev.filter((t) => t.key !== key))}
+        onOpen={(sessionId, lineNo) => {
+          openAt(sessionId, lineNo);
+          setToasts([]);
+        }}
+      />
     </div>
   );
 }

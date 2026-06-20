@@ -38,6 +38,7 @@ export default function LogList({
   sessionId,
   file,
   epoch,
+  appendEpoch,
   total,
   followTail,
   selected,
@@ -45,6 +46,8 @@ export default function LogList({
   onActivate,
   onContext,
   showContext,
+  indexing,
+  hasSearch,
   highlight,
   grouped,
   wrap,
@@ -59,6 +62,8 @@ export default function LogList({
   sessionId: string;
   file: string;
   epoch: number;
+  /** Bumped (alongside epoch) only on a live append, so the tail is kept. */
+  appendEpoch: number;
   total: number;
   followTail: boolean;
   selected: number | null;
@@ -68,6 +73,10 @@ export default function LogList({
   onActivate: (lineNo: number) => void;
   onContext: (lineNo: number) => void;
   showContext: boolean;
+  /** The file is still being indexed — an empty list means "loading", not "empty". */
+  indexing: boolean;
+  /** Whether a search is active, so the empty state can distinguish no-matches. */
+  hasSearch: boolean;
   highlight: boolean;
   grouped: boolean;
   wrap: boolean;
@@ -84,6 +93,7 @@ export default function LogList({
   const loadingRef = useRef(new Set<number>());
   const [, forceRender] = useState(0);
   const epochRef = useRef(epoch);
+  const appendEpochRef = useRef(appendEpoch);
   const order = useOrder();
   const tz = useTz();
   const bookmarks = useBookmarks(file);
@@ -97,14 +107,33 @@ export default function LogList({
     loadingRef.current.clear();
   }
 
-  // a new search invalidates everything; appended data only the incomplete tail blocks
+  // A full reset (new search, grouping change, refresh, finalize) replaces the
+  // whole data set, so every loaded block is stale. A live append only grows the
+  // tail, so we keep loaded blocks and drop just the previously-incomplete ones.
   const prevTotalRef = useRef(total);
-  const searchEpochRef = useRef(0);
   if (epoch !== epochRef.current) {
+    const wasAppend = appendEpoch !== appendEpochRef.current;
     epochRef.current = epoch;
-    const lastBlock = Math.floor(Math.max(0, prevTotalRef.current - 1) / BLOCK);
-    for (const [idx, block] of blocksRef.current) {
-      if (idx >= lastBlock || block.rows.length < BLOCK) blocksRef.current.delete(idx);
+    appendEpochRef.current = appendEpoch;
+    if (wasAppend) {
+      if (order === 'desc') {
+        // Newest-first: an append remaps every display position (display index d
+        // shows line total-1-d), so every cached block is now stale — drop them
+        // all and let the visible window refetch. Without this the top (newest)
+        // rows freeze while the file keeps growing.
+        blocksRef.current.clear();
+        loadingRef.current.clear();
+      } else {
+        // Oldest-first: appended lines only extend the tail, so keep earlier
+        // blocks and refetch just the last (now-grown) block and any partials.
+        const lastBlock = Math.floor(Math.max(0, prevTotalRef.current - 1) / BLOCK);
+        for (const [idx, block] of blocksRef.current) {
+          if (idx >= lastBlock || block.rows.length < BLOCK) blocksRef.current.delete(idx);
+        }
+      }
+    } else {
+      blocksRef.current.clear();
+      loadingRef.current.clear();
     }
   }
   prevTotalRef.current = total;
@@ -318,8 +347,19 @@ export default function LogList({
       }`}
     >
       {total === 0 ? (
-        <div className="flex h-full items-center justify-center text-sm text-gray-500">
-          No matching log lines
+        <div className="flex h-full flex-col items-center justify-center gap-3 text-sm text-gray-500">
+          {indexing ? (
+            <>
+              <svg className="h-5 w-5 animate-spin text-sky-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M21 12a9 9 0 1 1-6.22-8.56" />
+              </svg>
+              <span>Indexing the file — lines appear here as they're read…</span>
+            </>
+          ) : hasSearch ? (
+            'No matching log lines'
+          ) : (
+            'No log lines'
+          )}
         </div>
       ) : columnar ? (
         <div style={{ minWidth: gridMinWidth }}>

@@ -145,6 +145,7 @@ export class IndexStore {
       DROP TABLE IF EXISTS fts;
       DROP TABLE IF EXISTS results;
       DROP TABLE IF EXISTS records;
+      DROP TABLE IF EXISTS templates;
       DROP TABLE IF EXISTS checkpoints;
       CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT);
       CREATE TABLE lines(line_no INTEGER PRIMARY KEY, ts INTEGER, level TEXT, head INTEGER, is_head INTEGER, tmpl INTEGER);
@@ -346,6 +347,28 @@ export class IndexStore {
       this.db.exec(`INSERT INTO results(line_no) SELECT line_no FROM _set ORDER BY line_no`);
     }
     return this.resultCount();
+  }
+
+  /**
+   * Evaluate a query over the half-open line range [fromLine, toLine) without
+   * touching the materialized `results` table — used by watch rules to count
+   * matches among newly-appended lines while a user's active search is intact.
+   * Returns the exact match count and the most recent matching line (for a
+   * trigger preview / jump target), or null when nothing matched.
+   */
+  evalRange(node: QueryNode, fromLine: number, toLine: number): { count: number; lastLine: number | null } {
+    const { where, params } = compileQuery(node);
+    const cond = `l.line_no >= ? AND l.line_no < ? AND (${where})`;
+    const count = (
+      this.db.prepare(`SELECT COUNT(*) AS n FROM lines l WHERE ${cond}`).get(fromLine, toLine, ...params) as {
+        n: number;
+      }
+    ).n;
+    if (count === 0) return { count: 0, lastLine: null };
+    const row = this.db
+      .prepare(`SELECT MAX(l.line_no) AS m FROM lines l WHERE ${cond}`)
+      .get(fromLine, toLine, ...params) as { m: number };
+    return { count, lastLine: row.m };
   }
 
   /** Drop result rows for lines >= lineNo (before re-running an incremental search over them). */

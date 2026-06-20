@@ -187,6 +187,43 @@ export interface MergedUpdate {
   error?: string;
 }
 
+export type WatchRuleKind = 'match' | 'rate';
+
+/** A watch rule: fires an alert when tailed lines match (or cross a rate). */
+export interface WatchRule {
+  id: string;
+  name: string;
+  kind: WatchRuleKind;
+  /** Query-language condition selecting matching lines. */
+  query: string;
+  /** Rate rules: fire when the windowed match count reaches this. */
+  threshold: number;
+  /** Rate rules: sliding window length, in seconds. */
+  windowSec: number;
+  enabled: boolean;
+  /** Also raise a desktop (OS) notification, not just an in-app toast. */
+  desktop: boolean;
+}
+
+/** An alert pushed over SSE when a watch rule fires. */
+export interface WatchTrigger {
+  ruleId: string;
+  ruleName: string;
+  kind: WatchRuleKind;
+  at: number;
+  count: number;
+  threshold: number | null;
+  windowSec: number | null;
+  desktop: boolean;
+  sample: { lineNo: number; ts: number | null; level: string | null; text: string } | null;
+}
+
+/** A trigger tagged with the session it came from (the watch SSE payload). */
+export interface WatchEvent {
+  sessionId: string;
+  trigger: WatchTrigger;
+}
+
 export interface PatchNoteSection {
   title: string;
   items: string[];

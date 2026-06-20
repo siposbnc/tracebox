@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { LogSession } from './session.ts';
 import { MergedTimeline } from './merged.ts';
+import type { WatchTrigger } from './watch.ts';
 
 const dir = mkdtempSync(path.join(tmpdir(), 'tracebox-test-'));
 const openSessions: LogSession[] = [];
@@ -496,6 +497,95 @@ test('tail mode re-indexes a growing unterminated line', async () => {
   s.setTail(false);
 });
 
+// Let an append's watch evaluation (which reads the sample line asynchronously)
+// settle after the 'append' event has fired.
+const settle = (): Promise<void> => new Promise((r) => setTimeout(r, 40));
+
+test('watch match rule fires on appended lines that match its query', async () => {
+  const file = makeLogFile('watch-match.log', appLogLines(10));
+  const s = await openAndIndex(file);
+  s.setWatchRules([{ id: 'r1', name: 'errors', kind: 'match', query: 'level:ERROR', enabled: true }]);
+
+  const triggers: WatchTrigger[] = [];
+  s.on('watch', (t: WatchTrigger) => triggers.push(t));
+  s.setTail(true);
+
+  const fired = new Promise<WatchTrigger>((resolve) => s.once('watch', (t: WatchTrigger) => resolve(t)));
+  appendFileSync(file, '2024-01-01 01:00:00 [ERROR] boom\n2024-01-01 01:00:01 [INFO] fine\n');
+  const t = await fired;
+
+  assert.equal(t.ruleId, 'r1');
+  assert.equal(t.kind, 'match');
+  assert.equal(t.count, 1); // only the ERROR line, not the INFO one
+  assert.match(t.sample?.text ?? '', /boom/);
+  assert.equal(t.sample?.level, 'ERROR');
+
+  // a later append with no match produces no further trigger
+  const appended = new Promise<void>((resolve) => s.once('append', () => resolve()));
+  appendFileSync(file, '2024-01-01 01:00:02 [INFO] quiet\n');
+  await appended;
+  await settle();
+  assert.equal(triggers.length, 1);
+  s.setTail(false);
+});
+
+test('watch rate rule fires once when matches cross the threshold, then re-arms', async () => {
+  const file = makeLogFile('watch-rate.log', appLogLines(5));
+  const s = await openAndIndex(file);
+  s.setWatchRules([
+    { id: 'rate1', name: 'error storm', kind: 'rate', query: 'level:ERROR', threshold: 3, windowSec: 3600, enabled: true },
+  ]);
+
+  const triggers: WatchTrigger[] = [];
+  s.on('watch', (t: WatchTrigger) => triggers.push(t));
+  s.setTail(true);
+
+  // two ERRORs — still below the threshold of 3
+  let appended = new Promise<void>((resolve) => s.once('append', () => resolve()));
+  appendFileSync(file, '2024-01-01 01:00:00 [ERROR] e1\n2024-01-01 01:00:01 [ERROR] e2\n');
+  await appended;
+  await settle();
+  assert.equal(triggers.length, 0);
+
+  // a third ERROR crosses the threshold — fires exactly once with the windowed count
+  appended = new Promise<void>((resolve) => s.once('append', () => resolve()));
+  appendFileSync(file, '2024-01-01 01:00:02 [ERROR] e3\n');
+  await appended;
+  await settle();
+  assert.equal(triggers.length, 1);
+  assert.equal(triggers[0].kind, 'rate');
+  assert.equal(triggers[0].count, 3);
+  assert.equal(triggers[0].threshold, 3);
+
+  // still above the threshold, so a further ERROR does not re-fire (edge-triggered)
+  appended = new Promise<void>((resolve) => s.once('append', () => resolve()));
+  appendFileSync(file, '2024-01-01 01:00:03 [ERROR] e4\n');
+  await appended;
+  await settle();
+  assert.equal(triggers.length, 1);
+  s.setTail(false);
+});
+
+test('disabled and unparseable watch rules are ignored', async () => {
+  const file = makeLogFile('watch-off.log', appLogLines(5));
+  const s = await openAndIndex(file);
+  s.setWatchRules([
+    { id: 'off', kind: 'match', query: 'level:ERROR', enabled: false },
+    { id: 'bad', kind: 'match', query: 'level:(', enabled: true }, // syntax error → skipped
+  ]);
+
+  const triggers: WatchTrigger[] = [];
+  s.on('watch', (t: WatchTrigger) => triggers.push(t));
+  s.setTail(true);
+
+  const appended = new Promise<void>((resolve) => s.once('append', () => resolve()));
+  appendFileSync(file, '2024-01-01 01:00:00 [ERROR] boom\n');
+  await appended;
+  await settle();
+  assert.equal(triggers.length, 0);
+  s.setTail(false);
+});
+
 test('opens a gzipped log transparently', async () => {
   const file = path.join(dir, 'app.log.gz');
   writeFileSync(file, gzipSync(Buffer.from(appLogLines(300).join('\n') + '\n')));
@@ -608,6 +698,23 @@ test('index is reused on reopen of an unchanged file', async () => {
   assert.equal(s2.setSearch('level:ERROR').total, Math.ceil((2000 - 4) / 6));
   const rows = await s2.getRows(0, 1);
   assert.match(rows[0].text, /request 4 /);
+});
+
+test('reopening a changed file rebuilds the index in place without error', async () => {
+  // The index db is keyed by file path, so a changed file reuses the same db
+  // file and rebuilds its schema over the old one — every table must be dropped
+  // first (regression: `templates` was left behind, failing the rebuild).
+  const file = makeLogFile('rebuild.log', appLogLines(50));
+  const s1 = await openAndIndex(file);
+  assert.equal(s1.reusedIndex, false);
+  await s1.close();
+  openSessions.splice(openSessions.indexOf(s1), 1);
+
+  // change the contents so the fingerprint no longer matches the cached index
+  writeFileSync(file, appLogLines(80).join('\n') + '\n');
+  const s2 = await openAndIndex(file); // would throw "table templates already exists"
+  assert.equal(s2.reusedIndex, false);
+  assert.equal(s2.lineCount, 80);
 });
 
 test('copyText returns the current view as multi-line text, capped and ordered', async () => {

@@ -5,7 +5,7 @@
 // BrowserWindow loads the UI from it. File paths arriving via CLI arguments,
 // "Open with TraceBox", second instances, or drag-and-drop are forwarded to
 // the renderer, which opens them through the regular HTTP API.
-const { app, BrowserWindow, dialog, ipcMain, utilityProcess, Menu } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, utilityProcess, Menu, Notification } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -208,6 +208,27 @@ async function start() {
       ],
     });
     return result.canceled ? null : result.filePaths[0];
+  });
+
+  // Native OS notification for a fired watch rule; clicking it focuses the
+  // window and asks the renderer to jump to the matching line.
+  ipcMain.on('tracebox:notify', (_event, payload) => {
+    if (!payload || !Notification.isSupported()) return;
+    const notification = new Notification({
+      title: String(payload.title ?? 'TraceBox'),
+      body: String(payload.body ?? ''),
+    });
+    notification.on('click', () => {
+      if (mainWindow) {
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.focus();
+        mainWindow.webContents.send('tracebox:notify-click', {
+          sessionId: payload.sessionId ?? null,
+          lineNo: payload.lineNo ?? null,
+        });
+      }
+    });
+    notification.show();
   });
 
   try {

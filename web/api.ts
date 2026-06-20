@@ -17,6 +17,8 @@ import type {
   RowData,
   SessionStatus,
   StatsResult,
+  WatchEvent,
+  WatchRule,
 } from './types';
 import { getTz, type Tz } from './settings';
 
@@ -112,6 +114,12 @@ export const api = {
       body: JSON.stringify({ on }),
     }),
   refresh: (id: string) => request<SessionStatus>(`/api/sessions/${id}/refresh`, { method: 'POST' }),
+  setWatchRules: (id: string, rules: WatchRule[]) =>
+    request<{ rules: WatchRule[] }>(`/api/sessions/${id}/watch`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rules }),
+    }),
   exportUrl: (id: string, format: 'csv' | 'json') => `/api/sessions/${id}/export?format=${format}`,
   copyText: (id: string, limit: number, order: 'asc' | 'desc', grouped: boolean) =>
     request<{ text: string; count: number; total: number }>(
@@ -147,6 +155,13 @@ export const api = {
     if (handlers.update) {
       es.addEventListener('update', (e) => handlers.update!(JSON.parse((e as MessageEvent).data) as MergedUpdate));
     }
+    return () => es.close();
+  },
+
+  /** Subscribe to app-wide watch-rule alerts (from every open session); returns an unsubscribe. */
+  watchEvents(onTrigger: (e: WatchEvent) => void): () => void {
+    const es = new EventSource('/api/watch/events');
+    es.addEventListener('trigger', (e) => onTrigger(JSON.parse((e as MessageEvent).data) as WatchEvent));
     return () => es.close();
   },
 
