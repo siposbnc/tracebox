@@ -5,6 +5,7 @@ import {
   LogfmtParser,
   RawParser,
   RegexParser,
+  compileCustomParsers,
   detectFormat,
   looksLikeContinuation,
   normalizeLevel,
@@ -103,6 +104,33 @@ test('detectFormat picks syslog', () => {
 test('detectFormat falls back to raw on plain text', () => {
   const lines = Array.from({ length: 20 }, (_, i) => `free text line number ${i} with nothing special`);
   assert.equal(detectFormat(lines).name, 'raw');
+});
+
+test('a custom parser wins detection and its groups become fields', () => {
+  // a proprietary format the built-ins can't field-extract (level first, no kv pairs)
+  const lines = Array.from({ length: 20 }, (_, i) => `INFO 2024-01-01T00:00:0${i % 10}Z api-${i % 3} handled request ${i} in ${i * 5}ms`);
+  assert.equal(detectFormat(lines).name, 'raw'); // no built-in matches
+
+  const custom = compileCustomParsers([
+    { name: 'myfmt', pattern: '^(?<level>\\w+) (?<timestamp>\\S+) (?<service>\\S+) handled request (?<req>\\d+) in (?<dur>\\d+)ms$' },
+  ]);
+  const parser = detectFormat(lines, custom);
+  assert.equal(parser.name, 'myfmt');
+
+  const p = parser.parse('INFO 2024-01-01T00:00:05Z api-2 handled request 7 in 35ms');
+  assert.equal(p.level, 'INFO');
+  assert.equal(p.ts, Date.UTC(2024, 0, 1, 0, 0, 5));
+  assert.equal(p.fields?.service, 'api-2');
+  assert.equal(p.fields?.dur, '35'); // bare number → numeric-comparable downstream
+});
+
+test('compileCustomParsers skips an invalid regex without throwing', () => {
+  const compiled = compileCustomParsers([
+    { name: 'good', pattern: '^(?<message>.*)$' },
+    { name: 'bad', pattern: '(?<unclosed' },
+  ]);
+  assert.equal(compiled.length, 1);
+  assert.equal(compiled[0].name, 'good');
 });
 
 test('looksLikeContinuation flags wrapped / stack-trace lines', () => {

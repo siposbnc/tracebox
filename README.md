@@ -17,7 +17,9 @@ WPF application, re-imagined as a local web app with a Node.js backend.
   `AND` / `OR` / `NOT`, parentheses, phrases, field filters, comparisons, wildcards.
 - **Structured parsing with format auto-detection** — JSON lines (nested fields flattened to
   `dot.paths`), classic timestamped app logs, Apache/nginx access logs, syslog, logfmt,
-  Python logging, plus a raw fallback that still sniffs levels and timestamps.
+  Python logging, plus a raw fallback that still sniffs levels and timestamps. **User-defined
+  parsers** extend detection to proprietary formats: a named regex whose capture groups become
+  fields (`timestamp`/`level`/`message` are treated as metadata).
 - **Live tail (`tail -f`)** — appended lines are indexed incrementally and an active search
   keeps extending over them; unterminated trailing lines are handled correctly. A **manual
   refresh** button reloads the file on demand, and rows can be ordered **oldest- or
@@ -131,9 +133,50 @@ npm start -- --port 8080          # different port
 npm start -- C:\logs\app.log      # open a file immediately
 npm start -- --no-open            # don't launch the browser
 npm run dev                       # development: vite dev server + auto-restarting API
-npm test                          # backend test suite (39 tests)
+npm test                          # backend test suite
 node scripts/genlog.mjs big.log 1gb app   # generate a synthetic test log (app|json|access)
 ```
+
+## MCP server (let AI agents drive TraceBox)
+
+TraceBox ships an [MCP](https://modelcontextprotocol.io) server so AI tools (Claude,
+IDE agents) can investigate logs through the same index and query engine the UI uses —
+searching and paging over a multi-gigabyte file instead of streaming it into a context
+window. It's a stdio server, hand-rolled with **no SDK and no runtime dependencies**,
+and opens no network sockets of its own, so the offline guarantee holds.
+
+```powershell
+npm run mcp            # start the MCP server on stdio (node server/mcp-main.ts)
+```
+
+Register it with an MCP client. For Claude Code:
+
+```powershell
+claude mcp add tracebox -- node D:\path\to\tracebox\server\mcp-main.ts
+```
+
+Tools:
+
+| Tool | Purpose |
+|---|---|
+| `open_log` | Index a file (or rotation group); returns a session id, format, counts, levels, fields |
+| `list_sessions` / `close_log` | Manage open sessions |
+| `search` | Run the query language (below); returns a page of matching rows + the total |
+| `get_lines` | Read a raw line range by number (browse / tail), ignoring any active search |
+| `get_context` | Surrounding lines for a hit (like `grep -C`), with matches flagged |
+| `get_record` | One line's parsed fields and full multi-line record |
+| `fields` | Detected structured fields with counts |
+| `facet` | Value breakdown for a field over the current view |
+| `stats` / `histogram` / `clusters` | Summary metrics, time-volume histogram, and top log patterns |
+| `test_parser` / `add_parser` / `remove_parser` / `list_parsers` | Build, save, and manage user-defined parsers |
+
+An agent typically calls `open_log`, then `search`/`stats`/`clusters` to narrow down,
+then `get_context`/`get_record` to read the relevant lines — returning only matching
+lines and aggregates. Line numbers are 0-based. `stats`, `histogram`, `facet`, and
+`clusters` take an optional `query` to scope themselves in one call (pass `""` for the
+whole file); omit it and they reuse the active `search` (which scopes the view until you
+search again). If a log's fields aren't extracted, `test_parser` dry-runs a regex and
+`add_parser` saves it so a reopen indexes the format.
 
 ## Query language
 

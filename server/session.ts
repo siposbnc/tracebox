@@ -20,10 +20,10 @@ import { pipeline } from 'node:stream/promises';
 import path from 'node:path';
 import { LineIndex, LineScanner, type LineSpan } from './lineIndex.ts';
 import { LineReader } from './reader.ts';
-import { detectFormat, RawParser, templateOf, type LogParser } from './parsers.ts';
+import { compileCustomParsers, detectFormat, RawParser, templateOf, type LogParser } from './parsers.ts';
 import { IndexStore } from './indexer.ts';
 import { parseQuery, QuerySyntaxError, type QueryNode } from './queryParser.ts';
-import { getConfig } from './config.ts';
+import { getConfig, parsersSignature } from './config.ts';
 import { CaptureSource, type CaptureStatus } from './capture.ts';
 import { compileRules, type CompiledRule, type WatchRule, type WatchTrigger } from './watch.ts';
 
@@ -122,6 +122,8 @@ export class LogSession extends EventEmitter {
   private store: IndexStore;
   private reader!: LineReader;
   private parser: LogParser = new RawParser();
+  /** User-defined parsers active for this session, loaded from config at start(). */
+  private customParsers: LogParser[] = [];
 
   phase: SessionStatus['phase'] = 'indexing';
   error: string | null = null;
@@ -266,18 +268,23 @@ export class LogSession extends EventEmitter {
     }
   }
 
-  /** Fingerprint of every source file; reflects any member changing, so an
-   * altered rotation group rebuilds rather than reusing a stale index. */
+  /** Fingerprint of every source file (plus the active custom-parser set); reflects
+   * any member changing, so an altered rotation group rebuilds rather than reusing a
+   * stale index — and editing a custom parser re-indexes to re-extract its fields. */
   private fingerprint(): string {
-    return this.sources
+    const files = this.sources
       .map((s) => {
         const st = statSync(s);
         return `${s.toLowerCase()}|${st.size}|${Math.round(st.mtimeMs)}`;
       })
       .join(';');
+    const sig = parsersSignature();
+    return sig ? `${files}#parsers:${sig}` : files;
   }
 
   async start(): Promise<void> {
+    // snapshot the user's custom parsers for this open; detection prefers them
+    this.customParsers = compileCustomParsers(getConfig().parsers);
     const fp = this.fingerprint();
     const reusable = this.store.isReusable(fp);
     // decompress .gz to a temp (or reuse it) before reading; indexing/seeking
@@ -349,7 +356,7 @@ export class LogSession extends EventEmitter {
     // re-detect the parser on a sample (detection is deterministic; avoids
     // having to serialize regexes into the index database)
     const sample = await this.reader.readLines(0, Math.min(100, lineCount));
-    this.parser = sample.length > 0 ? detectFormat(sample) : new RawParser();
+    this.parser = sample.length > 0 ? detectFormat(sample, this.customParsers) : new RawParser();
     this.store.prepareForAppend();
   }
 
@@ -369,7 +376,7 @@ export class LogSession extends EventEmitter {
       const flushBatch = (): void => {
         if (batch.length === 0) return;
         if (!parserChosen) {
-          this.parser = detectFormat(batch.slice(0, 100).map((s) => s.text));
+          this.parser = detectFormat(batch.slice(0, 100).map((s) => s.text), this.customParsers);
           parserChosen = true;
         }
         this.store.begin();
@@ -713,8 +720,8 @@ export class LogSession extends EventEmitter {
     return { center: lineNo, rows, matchLines };
   }
 
-  histogram(): ReturnType<IndexStore['histogram']> {
-    return this.store.histogram(this.hasSearch);
+  histogram(bucketCount?: number): ReturnType<IndexStore['histogram']> {
+    return this.store.histogram(this.hasSearch, bucketCount);
   }
 
   /** Value breakdown for one field over the current view (search results, or the whole file). */

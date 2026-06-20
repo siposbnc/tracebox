@@ -150,14 +150,35 @@ export interface CacheInfo {
   totalSize: number;
 }
 
+export interface CustomParserSpec {
+  name: string;
+  pattern: string;
+}
+
 export interface ServerConfig {
   cacheDir: string;
   cacheRetentionDays: number;
+  parsers: CustomParserSpec[];
 }
 
 export interface ConfigInfo {
   config: ServerConfig;
   defaultCacheDir: string;
+}
+
+/** One line's result from a parser dry-run. */
+export interface ParserTestRow {
+  line: string;
+  matched: boolean;
+  ts: string | null;
+  level: string | null;
+  fields: Record<string, string>;
+}
+
+export interface ParserTestResult {
+  matched: number;
+  total: number;
+  results: ParserTestRow[];
 }
 
 export interface MergedRow {

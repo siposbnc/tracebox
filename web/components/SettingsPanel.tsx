@@ -60,10 +60,12 @@ export default function SettingsPanel({
   onClose,
   onShowShortcuts,
   onManageCache,
+  onManageParsers,
 }: {
   onClose: () => void;
   onShowShortcuts: () => void;
   onManageCache: () => void;
+  onManageParsers: () => void;
 }) {
   const order = useOrder();
   const tz = useTz();
@@ -184,6 +186,15 @@ export default function SettingsPanel({
               className="rounded-md border border-edge bg-surface-2 px-3 py-1 text-xs text-gray-300 hover:text-gray-100"
             >
               Edit shortcuts
+            </button>
+          </Row>
+
+          <Row label="Custom parsers" hint="Teach TraceBox a proprietary log format">
+            <button
+              onClick={onManageParsers}
+              className="rounded-md border border-edge bg-surface-2 px-3 py-1 text-xs text-gray-300 hover:text-gray-100"
+            >
+              Manage parsers
             </button>
           </Row>
 

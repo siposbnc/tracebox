@@ -38,20 +38,14 @@ desktop app is the primary target.
 
 ## AI access — let agents drive TraceBox
 
-- **MCP server.** Expose TraceBox's index and query engine over the Model Context
-  Protocol so AI tools (Claude, IDE agents) can investigate logs efficiently
-  instead of `grep`-ing raw files into their context. Tools would cover the things
-  the UI already does well: open/attach a source, run a query (the full language —
-  fields, levels, time ranges, clustering), fetch a page or a record's context,
-  pull the histogram/stats and gap/spike summary, and list detected fields. The
-  point is that an agent searches and pages like the UI does — returning only the
-  matching lines and aggregates — rather than streaming a multi-gigabyte file
-  through a context window.
-- **Stays offline and zero-dependency.** Reuse the existing session/query layer;
-  the server keeps the `127.0.0.1`-only, no-runtime-deps guarantees (a hand-rolled
-  MCP endpoint over the current HTTP/SSE plumbing, not an added SDK). Built for the
-  big-file design — every tool streams, pages, and indexes; none load the whole
-  file.
+The MCP server has shipped (`npm run mcp`; see `README.md`). Possible extensions:
+
+- **More transports.** The server speaks MCP over stdio today; add the Streamable
+  HTTP transport on the existing `127.0.0.1` HTTP server so a running TraceBox
+  instance can be attached to as well, sharing its already-open sessions with the
+  desktop UI.
+- **Richer tools.** Surface gap/spike detection, numeric-field trends, and
+  cross-file (merged-timeline) search as tools, mirroring the UI's analysis views.
 
 ## Refine what's already there
 
@@ -75,9 +69,6 @@ Often higher-value-per-effort than net-new features:
 
 ## Customization
 
-- **User-defined parsers.** Let users describe a proprietary format (a regex +
-  field mapping, with a live tester) and persist it, extending auto-detection
-  beyond the built-in formats.
 - **Appearance.** A light / high-contrast theme and adjustable font size; the UI is
   dark-only today.
 

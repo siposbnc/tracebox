@@ -354,11 +354,33 @@ export function templateOf(raw: string): string {
 // ---------------------------------------------------------------------------
 // Format detection: score each candidate on a sample of lines.
 
-export function detectFormat(sampleLines: string[]): LogParser {
+/**
+ * Compile user-defined parser specs (a name + a regex string with named groups)
+ * into {@link RegexParser}s. Invalid regexes are skipped — config-level validation
+ * is the gate; this is defensive so one bad spec can't break detection.
+ */
+export function compileCustomParsers(specs: { name: string; pattern: string }[]): RegexParser[] {
+  const out: RegexParser[] = [];
+  for (const spec of specs) {
+    try {
+      out.push(new RegexParser(spec.name, new RegExp(spec.pattern)));
+    } catch {
+      // skip — a malformed pattern shouldn't break opening a file
+    }
+  }
+  return out;
+}
+
+/**
+ * Pick the best parser for a sample. Custom parsers are tried first so that, on a
+ * tie, a user's format wins over a built-in (a higher score always wins outright).
+ */
+export function detectFormat(sampleLines: string[], custom: LogParser[] = []): LogParser {
   const sample = sampleLines.filter((l) => l.trim().length > 0).slice(0, 100);
   if (sample.length === 0) return new RawParser();
 
   const candidates: LogParser[] = [
+    ...custom,
     new JsonParser(),
     ...REGEX_FORMATS.map((f) => new RegexParser(f.name, f.re)),
     new LogfmtParser(),

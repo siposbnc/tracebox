@@ -14,6 +14,9 @@ date and start a fresh `Unreleased` section.
 
 ### Changed
 
+- The rotated-files offer now **names the files** it found (e.g. "Found 2 rotated
+  files alongside this log: app.log.1, app.log.2") so you can decide by name before
+  opening the group as one stream.
 - The merged timeline is now **live**: while its files are tailing (or are
   command/capture sources), appended lines fold into the timeline as they arrive
   and slot into their place in time order — no manual Refresh needed. The view
@@ -22,6 +25,33 @@ date and start a fresh `Unreleased` section.
 
 ### Added
 
+- **User-defined parsers** — teach TraceBox a proprietary log format: a named
+  regular expression whose capture groups become structured fields (`timestamp`,
+  `level`/`level2`, and `message` are treated as record metadata). Custom parsers
+  are persisted in `~/.tracebox/config.json` and join format auto-detection
+  (preferred over the built-ins on a tie). Editing a parser re-indexes affected
+  files so their fields are re-extracted. Capture a number without its unit
+  (`(?<duration>\d+)ms`) to make it numeric-comparable (`duration:>5000`). Manage
+  them in **Settings → Custom parsers**, with a **live tester** that dry-runs the
+  regex against the open log (or pasted lines) and shows the extracted fields
+  before you save. Also drivable from the MCP server with `test_parser`,
+  `add_parser`, `remove_parser`, and `list_parsers`.
+- **MCP server** — drive TraceBox from AI agents over the Model Context Protocol
+  (`npm run mcp`, a stdio server). An agent opens and indexes a log, then searches
+  and pages with the full query language and pulls aggregates (stats, histogram,
+  clusters, field facets) — returning only the matching lines and summaries
+  instead of streaming a multi-gigabyte file through its context window. Tools:
+  `open_log`, `list_sessions`, `close_log`, `search`, `get_lines`, `get_context`,
+  `get_record`, `fields`, `facet`, `stats`, `histogram`, `clusters`, plus
+  `test_parser`/`add_parser`/`remove_parser`/`list_parsers` for user-defined
+  formats. The aggregates (`facet`, `stats`, `histogram`, `clusters`) take an
+  optional `query` to scope themselves in a single call — pass `""` for the whole
+  file or omit it to reuse the active search — so an agent need not run a separate
+  `search` first; `histogram` also takes `maxBuckets` to keep its output compact.
+  It reuses the
+  same session/query engine as the UI and is hand-rolled with no SDK and no
+  runtime dependencies, holding no network sockets of its own — the offline,
+  zero-dependency guarantees are preserved.
 - **Watch rules** turn live tailing into light monitoring. Define per-file alerts
   that fire as new lines arrive: a **match** rule on any query (e.g.
   `level:error AND timeout`), or a **rate** rule that fires when matches cross a

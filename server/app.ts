@@ -9,11 +9,12 @@ import { LogSession, indexCacheDir } from './session.ts';
 import { CaptureSource } from './capture.ts';
 import { MergedTimeline } from './merged.ts';
 import { listCache, evictCache, clearCache, pruneStaleCache, sweepCaptureFiles } from './cache.ts';
-import { getConfig, setConfig, DEFAULT_CACHE_DIR } from './config.ts';
+import { getConfig, setConfig, addParser, removeParser, validateParser, DEFAULT_CACHE_DIR } from './config.ts';
 import { getClientState, patchClientState } from './clientState.ts';
 import { mkdirSync } from 'node:fs';
 import { listRoots, listDir, getRecents, addRecent } from './files.ts';
 import { detectRotationGroup } from './rotation.ts';
+import { RegexParser } from './parsers.ts';
 import { QuerySyntaxError } from './queryParser.ts';
 
 export interface TraceBoxApp {
@@ -136,6 +137,62 @@ export function createApp(distDir: string): TraceBoxApp {
       }
     }
     sendJson(res, 200, { config: setConfig(body), defaultCacheDir: DEFAULT_CACHE_DIR });
+  });
+
+  // ---------------------------------------------------------------------------
+  // User-defined parsers (custom formats; extend auto-detection)
+
+  router.add('GET', '/api/parsers', (_req, res) => sendJson(res, 200, { parsers: getConfig().parsers }));
+
+  router.add('POST', '/api/parsers', async (req, res) => {
+    const body = (await readJsonBody(req)) as { name?: string; pattern?: string };
+    try {
+      const config = addParser({ name: String(body.name ?? ''), pattern: String(body.pattern ?? '') });
+      sendJson(res, 200, { parsers: config.parsers });
+    } catch (err) {
+      sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  router.add('DELETE', '/api/parsers/:name', (_req, res, params) => {
+    sendJson(res, 200, { ok: removeParser(params.name), parsers: getConfig().parsers });
+  });
+
+  // Dry-run a regex against sample lines (or the head of an open session) so the
+  // UI can show what a parser would extract before it's saved.
+  router.add('POST', '/api/parsers/test', async (req, res) => {
+    const body = (await readJsonBody(req)) as { pattern?: string; samples?: unknown; sessionId?: string; count?: number };
+    const pattern = String(body.pattern ?? '');
+    const v = validateParser({ name: 'test', pattern });
+    if (!v.ok) {
+      sendJson(res, 400, { error: v.error });
+      return;
+    }
+    const parser = new RegexParser('test', new RegExp(pattern));
+    let samples: string[];
+    if (Array.isArray(body.samples) && body.samples.length > 0) {
+      samples = body.samples.filter((x): x is string => typeof x === 'string');
+    } else {
+      const s = body.sessionId ? sessions.get(body.sessionId) : undefined;
+      if (!s) {
+        sendJson(res, 400, { error: 'Provide samples or a valid sessionId' });
+        return;
+      }
+      const count = Math.min(Math.max(1, Number(body.count) || 8), 50);
+      const lineNos = Array.from({ length: Math.min(count, s.lineCount) }, (_, i) => i);
+      samples = (await s.readRowsForExport(lineNos)).map((r) => r.text);
+    }
+    const results = samples.map((line) => {
+      const p = parser.parse(line);
+      return {
+        line,
+        matched: parser.startsRecord(line),
+        ts: p.ts !== null ? new Date(p.ts).toISOString() : null,
+        level: p.level,
+        fields: p.fields ?? {},
+      };
+    });
+    sendJson(res, 200, { matched: results.filter((r) => r.matched).length, total: results.length, results });
   });
 
   // Client/UI state (workspaces, bookmarks, notes, settings). Stored on disk so it

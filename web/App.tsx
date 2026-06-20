@@ -13,6 +13,7 @@ import WorkspacesMenu from './components/WorkspacesMenu';
 import SettingsPanel from './components/SettingsPanel';
 import ShortcutsHelp from './components/ShortcutsHelp';
 import CachePanel from './components/CachePanel';
+import ParsersPanel from './components/ParsersPanel';
 import { Logo } from './components/Logo';
 import { saveWorkspace, useWorkspaces, type ViewState, type Workspace } from './workspaces';
 import { clientStore } from './clientStore';
@@ -34,7 +35,7 @@ export default function App() {
   // UI can show "opening…" instead of sitting silent while a big/.gz file spins up
   const [opening, setOpening] = useState<string | null>(null);
   // a freshly-opened lone file that has rotated siblings — offer to open them as one stream
-  const [rotationOffer, setRotationOffer] = useState<{ path: string; count: number; sessionId: string } | null>(null);
+  const [rotationOffer, setRotationOffer] = useState<{ path: string; count: number; sessionId: string; siblings: string[] } | null>(null);
   const [whatsNewOpen, setWhatsNewOpen] = useState(false);
   const [timelineOpen, setTimelineOpen] = useState(false);
   // Settings (and the dialogs it links to) live at the app level so they're
@@ -42,6 +43,7 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [cacheOpen, setCacheOpen] = useState(false);
+  const [parsersOpen, setParsersOpen] = useState(false);
   // pending jump from the merged timeline: open a file's tab at a specific line
   const [jumpTarget, setJumpTarget] = useState<{ id: string; lineNo: number; nonce: number } | null>(null);
   // watch-rule alerts: a flat log across all sessions, per-session unseen counts,
@@ -192,7 +194,12 @@ export default function App() {
       void api
         .rotation(path)
         .then((r) => {
-          if (r.members.length > 1) setRotationOffer({ path, count: r.members.length, sessionId: status.id });
+          if (r.members.length > 1) {
+            const base = (p: string): string => p.split(/[\\/]/).pop() ?? p;
+            const openedBase = base(path);
+            const siblings = r.members.map((m) => base(m.path)).filter((n) => n !== openedBase);
+            setRotationOffer({ path, count: r.members.length, sessionId: status.id, siblings });
+          }
         })
         .catch(() => {});
     }
@@ -515,9 +522,13 @@ export default function App() {
 
       {rotationOffer && (
         <div className="flex items-center justify-between gap-3 border-b border-sky-900 bg-sky-950/50 px-4 py-1.5 text-sm text-sky-200">
-          <span>
+          <span className="min-w-0">
             Found {rotationOffer.count - 1} rotated {rotationOffer.count - 1 === 1 ? 'file' : 'files'} alongside this
-            log.
+            log:{' '}
+            <span className="font-mono text-sky-100" title={rotationOffer.siblings.join('\n')}>
+              {rotationOffer.siblings.slice(0, 5).join(', ')}
+              {rotationOffer.siblings.length > 5 ? `, +${rotationOffer.siblings.length - 5} more` : ''}
+            </span>
           </span>
           <div className="flex items-center gap-2">
             <button
@@ -596,10 +607,15 @@ export default function App() {
             setSettingsOpen(false);
             setCacheOpen(true);
           }}
+          onManageParsers={() => {
+            setSettingsOpen(false);
+            setParsersOpen(true);
+          }}
         />
       )}
       {shortcutsOpen && <ShortcutsHelp onClose={() => setShortcutsOpen(false)} />}
       {cacheOpen && <CachePanel onClose={() => setCacheOpen(false)} />}
+      {parsersOpen && <ParsersPanel onClose={() => setParsersOpen(false)} sessionId={activeId} />}
 
       <WatchToasts
         toasts={toasts}

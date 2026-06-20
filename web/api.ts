@@ -5,6 +5,8 @@ import type {
   ClustersResult,
   ContextResult,
   Correlations,
+  CustomParserSpec,
+  ParserTestResult,
   FacetResult,
   HistogramData,
   LineDetail,
@@ -43,6 +45,22 @@ export const api = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(patch),
+    }),
+
+  parsers: () => request<{ parsers: CustomParserSpec[] }>('/api/parsers'),
+  saveParser: (name: string, pattern: string) =>
+    request<{ parsers: CustomParserSpec[] }>('/api/parsers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, pattern }),
+    }),
+  removeParser: (name: string) =>
+    request<{ ok: boolean; parsers: CustomParserSpec[] }>(`/api/parsers/${encodeURIComponent(name)}`, { method: 'DELETE' }),
+  testParser: (pattern: string, opts: { samples?: string[]; sessionId?: string; count?: number }) =>
+    request<ParserTestResult>('/api/parsers/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pattern, ...opts }),
     }),
 
   openFile: (path: string, rotation = false) =>

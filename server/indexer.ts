@@ -528,7 +528,9 @@ export class IndexStore {
 
     const totalRow = this.db.prepare(`SELECT COUNT(*) AS n FROM ${from}`).get() as { n: number };
     const span = Math.max(1, range.hi - range.lo);
-    const bucketMs = Math.max(1, Math.ceil(span / bucketCount));
+    // +1 so the maximum timestamp can't land one bucket past the last index
+    // (span / ceil(span/N) can equal N exactly); this caps the count at N buckets.
+    const bucketMs = Math.max(1, Math.floor(span / bucketCount) + 1);
 
     const rows = this.db
       .prepare(

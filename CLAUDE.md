@@ -20,6 +20,7 @@ npm run dev            # Vite dev server + auto-restarting API (development)
 npm test               # backend test suite (node --test over server/**/*.test.ts)
 npm run build          # build the web UI into dist/ (needed before npm start / app)
 npm start              # run as a local web app on http://127.0.0.1:7077
+npm run mcp            # run the MCP server (stdio) so AI agents can drive TraceBox
 npm run app            # build everything and launch the Electron desktop app
 npm run dist           # build the NSIS Windows installer into release/
 npm run release        # build + publish to a GitHub release (CI only; needs GH_TOKEN)
