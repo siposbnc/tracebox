@@ -20,12 +20,13 @@
     "genlogs": "node scripts/gen-multi.mjs",
     "genrolling": "node scripts/gen-rolling.mjs",
     "build:electron": "node scripts/build-electron.mjs",
+    "clean:release": "node scripts/clean-release.mjs",
     "app": "npm run build && npm run build:electron && electron .",
     "app:dev": "npm run build:electron && electron .",
-    "dist": "npm run build && npm run build:electron && electron-builder --win",
-    "dist:dir": "npm run build && npm run build:electron && electron-builder --win --dir",
-    "dist:linux": "npm run build && npm run build:electron && electron-builder --linux",
-    "release": "npm run build && npm run build:electron && electron-builder --publish always"
+    "dist": "npm run build && npm run build:electron && node scripts/dist.mjs --win",
+    "dist:dir": "npm run build && npm run build:electron && node scripts/dist.mjs --win --dir",
+    "dist:linux": "npm run build && npm run build:electron && node scripts/dist.mjs --linux",
+    "release": "npm run build && npm run build:electron && node scripts/dist.mjs --publish always"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.0",
