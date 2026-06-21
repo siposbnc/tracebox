@@ -22,6 +22,10 @@ files:
   - electron/preload.cjs
 
 asar: true
+# The MCP server is launched by an external client via ELECTRON_RUN_AS_NODE
+# (plain Node, no asar fs patching), so it must be a real file on disk.
+asarUnpack:
+  - dist-electron/mcp.cjs
 
 win:
   target:

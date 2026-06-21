@@ -40,7 +40,7 @@ export const api = {
   evictCache: (name: string) => request<{ ok: boolean }>(`/api/cache/${encodeURIComponent(name)}`, { method: 'DELETE' }),
   clearCache: () => request<{ freed: number }>('/api/cache', { method: 'DELETE' }),
   config: () => request<ConfigInfo>('/api/config'),
-  setConfig: (patch: { cacheDir?: string; cacheRetentionDays?: number }) =>
+  setConfig: (patch: { cacheDir?: string; cacheRetentionDays?: number; mcpEnabled?: boolean }) =>
     request<ConfigInfo>('/api/config', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

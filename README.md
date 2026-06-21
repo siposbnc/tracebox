@@ -145,15 +145,20 @@ searching and paging over a multi-gigabyte file instead of streaming it into a c
 window. It's a stdio server, hand-rolled with **no SDK and no runtime dependencies**,
 and opens no network sockets of its own, so the offline guarantee holds.
 
+**It's opt-in and off by default** — the server refuses to start until you enable it,
+so a packaged install never exposes the toolkit until you ask. Turn it on in
+**Settings → MCP server**, which then shows the exact command to register.
+
+From a source checkout:
+
 ```powershell
-npm run mcp            # start the MCP server on stdio (node server/mcp-main.ts)
+npm run mcp            # start on stdio (node server/mcp-main.ts --allow)
+claude mcp add tracebox -- node D:\path\to\tracebox\server\mcp-main.ts --allow
 ```
 
-Register it with an MCP client. For Claude Code:
-
-```powershell
-claude mcp add tracebox -- node D:\path\to\tracebox\server\mcp-main.ts
-```
+In the **desktop app**, enable it in Settings → MCP server and copy the generated
+command — it launches the bundled server through the app executable
+(`ELECTRON_RUN_AS_NODE`), still gated on the opt-in toggle.
 
 Tools:
 

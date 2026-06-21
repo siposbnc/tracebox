@@ -159,6 +159,7 @@ export interface ServerConfig {
   cacheDir: string;
   cacheRetentionDays: number;
   parsers: CustomParserSpec[];
+  mcpEnabled: boolean;
 }
 
 export interface ConfigInfo {

@@ -28,6 +28,8 @@ declare global {
       notify(payload: NotifyPayload): void;
       /** A clicked notification asks the UI to jump to its source line. */
       onNotifyClick(callback: (payload: { sessionId: string; lineNo: number | null }) => void): void;
+      /** How to launch the bundled stdio MCP server (desktop app only). */
+      mcpInfo(): Promise<{ execPath: string; script: string; sqliteArgs: string[] }>;
     };
   }
 }

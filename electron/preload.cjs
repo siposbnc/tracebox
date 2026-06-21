@@ -26,4 +26,6 @@ contextBridge.exposeInMainWorld('tracebox', {
   onNotifyClick: (callback) => {
     ipcRenderer.on('tracebox:notify-click', (_event, payload) => callback(payload));
   },
+  /** How to launch the bundled stdio MCP server (exe path, script, node flags). */
+  mcpInfo: () => ipcRenderer.invoke('tracebox:mcp-info'),
 });

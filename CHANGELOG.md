@@ -48,10 +48,13 @@ date and start a fresh `Unreleased` section.
   optional `query` to scope themselves in a single call — pass `""` for the whole
   file or omit it to reuse the active search — so an agent need not run a separate
   `search` first; `histogram` also takes `maxBuckets` to keep its output compact.
-  It reuses the
-  same session/query engine as the UI and is hand-rolled with no SDK and no
-  runtime dependencies, holding no network sockets of its own — the offline,
-  zero-dependency guarantees are preserved.
+  It reuses the same session/query engine as the UI and is hand-rolled with no SDK
+  and no runtime dependencies, holding no network sockets of its own — the offline,
+  zero-dependency guarantees are preserved. The server is **opt-in and off by
+  default**: it refuses to start until enabled in **Settings → MCP server**, which
+  then shows the command to register it. The desktop build bundles it and launches
+  it through the app executable (`ELECTRON_RUN_AS_NODE`) on demand, so an install
+  never exposes the toolkit until you turn it on.
 - **Watch rules** turn live tailing into light monitoring. Define per-file alerts
   that fire as new lines arrive: a **match** rule on any query (e.g.
   `level:error AND timeout`), or a **rate** rule that fires when matches cross a

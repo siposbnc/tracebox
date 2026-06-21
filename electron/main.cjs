@@ -82,6 +82,19 @@ function sqliteExecArgv() {
   }
 }
 
+/**
+ * How an MCP client should launch the bundled stdio server: it runs the app
+ * executable in ELECTRON_RUN_AS_NODE mode against the unpacked `mcp.cjs`, so the
+ * client gets a plain-Node stdio process (the desktop window never opens). The
+ * server still self-gates on the opt-in `mcpEnabled` config flag.
+ */
+function mcpLaunchInfo() {
+  const script = app.isPackaged
+    ? path.join(process.resourcesPath, 'app.asar.unpacked', 'dist-electron', 'mcp.cjs')
+    : path.join(__dirname, '..', 'dist-electron', 'mcp.cjs');
+  return { execPath: process.execPath, script, sqliteArgs: sqliteExecArgv() };
+}
+
 function startServer() {
   return new Promise((resolve, reject) => {
     const entry = path.join(__dirname, '..', 'dist-electron', 'server.cjs');
@@ -197,6 +210,8 @@ function createWindow(port) {
 async function start() {
   app.setAppUserModelId('io.tracebox.app');
   Menu.setApplicationMenu(null);
+
+  ipcMain.handle('tracebox:mcp-info', () => mcpLaunchInfo());
 
   ipcMain.handle('tracebox:open-dialog', async () => {
     const result = await dialog.showOpenDialog(mainWindow, {

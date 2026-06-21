@@ -126,7 +126,7 @@ export function createApp(distDir: string): TraceBoxApp {
   });
 
   router.add('POST', '/api/config', async (req, res) => {
-    const body = (await readJsonBody(req)) as { cacheDir?: string; cacheRetentionDays?: number };
+    const body = (await readJsonBody(req)) as { cacheDir?: string; cacheRetentionDays?: number; mcpEnabled?: boolean };
     if (typeof body.cacheDir === 'string' && body.cacheDir.trim()) {
       // reject a location we can't create
       try {

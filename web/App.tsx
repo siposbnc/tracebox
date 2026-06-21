@@ -14,6 +14,7 @@ import SettingsPanel from './components/SettingsPanel';
 import ShortcutsHelp from './components/ShortcutsHelp';
 import CachePanel from './components/CachePanel';
 import ParsersPanel from './components/ParsersPanel';
+import McpPanel from './components/McpPanel';
 import { Logo } from './components/Logo';
 import { saveWorkspace, useWorkspaces, type ViewState, type Workspace } from './workspaces';
 import { clientStore } from './clientStore';
@@ -44,6 +45,7 @@ export default function App() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [cacheOpen, setCacheOpen] = useState(false);
   const [parsersOpen, setParsersOpen] = useState(false);
+  const [mcpOpen, setMcpOpen] = useState(false);
   // pending jump from the merged timeline: open a file's tab at a specific line
   const [jumpTarget, setJumpTarget] = useState<{ id: string; lineNo: number; nonce: number } | null>(null);
   // watch-rule alerts: a flat log across all sessions, per-session unseen counts,
@@ -611,11 +613,16 @@ export default function App() {
             setSettingsOpen(false);
             setParsersOpen(true);
           }}
+          onManageMcp={() => {
+            setSettingsOpen(false);
+            setMcpOpen(true);
+          }}
         />
       )}
       {shortcutsOpen && <ShortcutsHelp onClose={() => setShortcutsOpen(false)} />}
       {cacheOpen && <CachePanel onClose={() => setCacheOpen(false)} />}
       {parsersOpen && <ParsersPanel onClose={() => setParsersOpen(false)} sessionId={activeId} />}
+      {mcpOpen && <McpPanel onClose={() => setMcpOpen(false)} />}
 
       <WatchToasts
         toasts={toasts}

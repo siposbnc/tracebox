@@ -61,11 +61,13 @@ export default function SettingsPanel({
   onShowShortcuts,
   onManageCache,
   onManageParsers,
+  onManageMcp,
 }: {
   onClose: () => void;
   onShowShortcuts: () => void;
   onManageCache: () => void;
   onManageParsers: () => void;
+  onManageMcp: () => void;
 }) {
   const order = useOrder();
   const tz = useTz();
@@ -195,6 +197,15 @@ export default function SettingsPanel({
               className="rounded-md border border-edge bg-surface-2 px-3 py-1 text-xs text-gray-300 hover:text-gray-100"
             >
               Manage parsers
+            </button>
+          </Row>
+
+          <Row label="MCP server" hint="Let AI agents drive TraceBox (off by default)">
+            <button
+              onClick={onManageMcp}
+              className="rounded-md border border-edge bg-surface-2 px-3 py-1 text-xs text-gray-300 hover:text-gray-100"
+            >
+              Configure
             </button>
           </Row>
 

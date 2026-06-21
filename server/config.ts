@@ -38,6 +38,9 @@ export interface Config {
   cacheDir: string;
   cacheRetentionDays: number;
   parsers: CustomParserSpec[];
+  /** Opt-in: when false (default) the MCP server refuses to start. The desktop
+   * app flips this from Settings; the stdio entry enforces it. */
+  mcpEnabled: boolean;
 }
 
 let cached: Config | null = null;
@@ -75,7 +78,7 @@ function normalize(raw: Partial<Config>): Config {
       if (v.ok) byName.set(v.spec.name, v.spec);
     }
   }
-  return { cacheDir: dir, cacheRetentionDays: days, parsers: [...byName.values()] };
+  return { cacheDir: dir, cacheRetentionDays: days, parsers: [...byName.values()], mcpEnabled: raw.mcpEnabled === true };
 }
 
 export function getConfig(): Config {
