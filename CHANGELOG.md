@@ -14,6 +14,9 @@ date and start a fresh `Unreleased` section.
 
 ### Changed
 
+- Reports now **render Markdown in notes** in the HTML output — bold, lists, links,
+  and inline code show formatted instead of literal. Applies to the app's HTML
+  report export and the MCP `build_report` HTML format (its summary/section prose).
 - The rotated-files offer now **names the files** it found (e.g. "Found 2 rotated
   files alongside this log: app.log.1, app.log.2") so you can decide by name before
   opening the group as one stream.
@@ -22,6 +25,12 @@ date and start a fresh `Unreleased` section.
   and slot into their place in time order — no manual Refresh needed. The view
   sticks to the live edge when you're already scrolled there, an active search
   keeps matching new lines, and the histogram updates as data streams in.
+
+### Fixed
+
+- Dragging a time range on the histogram now **updates the existing timestamp
+  filter** in place instead of appending another, so repeatedly narrowing the
+  selection no longer stacks `timestamp:` clauses in the query.
 
 ### Added
 
@@ -42,9 +51,16 @@ date and start a fresh `Unreleased` section.
   clusters, field facets) — returning only the matching lines and summaries
   instead of streaming a multi-gigabyte file through its context window. Tools:
   `open_log`, `list_sessions`, `close_log`, `search`, `get_lines`, `get_context`,
-  `get_record`, `fields`, `facet`, `stats`, `histogram`, `clusters`, plus
-  `test_parser`/`add_parser`/`remove_parser`/`list_parsers` for user-defined
-  formats. The aggregates (`facet`, `stats`, `histogram`, `clusters`) take an
+  `get_record`, `fields`, `facet`, `stats`, `histogram`, `clusters`, `table`,
+  `build_report`, plus `test_parser`/`add_parser`/`remove_parser`/`list_parsers`
+  for user-defined formats. `table` is like `search` but projects only the fields
+  you ask for as a compact table (column names once, then rows as value arrays),
+  so an agent doesn't have to post-process large result sets. `build_report` is the
+  deliverable step: the agent supplies a title, summary, and sections that cite
+  evidence by line number, and TraceBox fills each citation with the **real indexed
+  line** (timestamp, level, text) so the report quotes logs verbatim rather than
+  paraphrasing them — rendered as **Markdown or HTML** and written to a file when
+  `savePath` is given. The aggregates (`facet`, `stats`, `histogram`, `clusters`) take an
   optional `query` to scope themselves in a single call — pass `""` for the whole
   file or omit it to reuse the active search — so an agent need not run a separate
   `search` first; `histogram` also takes `maxBuckets` to keep its output compact.

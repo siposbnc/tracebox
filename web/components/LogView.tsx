@@ -255,9 +255,17 @@ export default function LogView({
   const onTimeRange = useCallback(
     (startTs: number, endTs: number) => {
       const fmt = (t: number): string => new Date(t).toISOString();
-      addFilter(`timestamp:>=${fmt(startTs)} timestamp:<=${fmt(endTs)}`);
+      // Replace any existing timestamp-range clauses (e.g. from a previous drag)
+      // rather than appending, so repeatedly narrowing the selection updates the
+      // filter in place instead of stacking timestamp terms.
+      const base = query
+        .replace(/\s*\btimestamp:(?:>=|<=|>|<)[^\s)]+/gi, '')
+        .replace(/\s{2,}/g, ' ')
+        .trim();
+      const clause = `timestamp:>=${fmt(startTs)} timestamp:<=${fmt(endTs)}`;
+      submitQuery(base ? `${base} ${clause}` : clause);
     },
-    [addFilter],
+    [query, submitQuery],
   );
 
   const toggleTail = useCallback(async () => {

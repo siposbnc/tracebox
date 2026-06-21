@@ -1,10 +1,11 @@
 import path from 'node:path';
-import { statSync } from 'node:fs';
+import { statSync, writeFileSync } from 'node:fs';
 import { LogSession } from './session.ts';
 import { detectRotationGroup } from './rotation.ts';
 import { QuerySyntaxError } from './queryParser.ts';
 import { RegexParser } from './parsers.ts';
 import { addParser, getConfig, removeParser, validateParser } from './config.ts';
+import { renderReportMarkdown, renderReportHtml, type ReportSection } from './report.ts';
 import type { RowData } from './session.ts';
 
 /**
@@ -33,11 +34,16 @@ const INSTRUCTIONS = [
   'Start with open_log(path) to index a file; it returns a sessionId, detected format, line/record counts, levels, and fields.',
   'Then search(sessionId, query) with the query language: terms (implicit AND), "phrases", field:value, numeric comparisons (status:>=500),',
   'timestamp ranges (timestamp:>2024-01-31), wildcards (path:/api/*), field existence (user:*), and boolean AND/OR/NOT with parentheses.',
-  'search returns only matching rows plus the total; page with offset/limit. Use get_context for surrounding lines, get_record for a',
+  'search returns only matching rows plus the total; page with offset/limit. When you only need a few fields across many rows, use',
+  'table(query, columns) instead — it returns a compact table (lineNo/ts/level + your fields) rather than full lines, so you do not',
+  'have to post-process. Use get_context for surrounding lines, get_record for a',
   'line\'s parsed fields and full multi-line record, and stats/histogram/clusters/facet for aggregates. The aggregates take an optional',
   'query to scope themselves (e.g. clusters(query:"level:error")); omit it to reuse the active search, or pass "" for the whole file.',
   'If a log\'s fields are not being extracted (a proprietary format), define a custom parser: test_parser(pattern) to dry-run a regex,',
-  'then add_parser(name, pattern) to save it, and reopen the log. Line numbers are 0-based.',
+  'then add_parser(name, pattern) to save it, and reopen the log.',
+  'When you have found what the user asked about, finish with build_report: a title, a summary, and sections that cite evidence by',
+  'line number — TraceBox inserts the real indexed lines so the report quotes logs verbatim. This is usually the deliverable.',
+  'Line numbers are 0-based.',
 ].join(' ');
 
 // JSON-RPC error codes
@@ -395,6 +401,72 @@ export class McpServer {
       },
 
       {
+        name: 'table',
+        description:
+          'Like search, but return only the fields you ask for as a compact table — column names once, then each row as an array ' +
+          'of values — instead of full log lines. Use this (not search) when you only need a few fields across many rows, so the ' +
+          'result stays small and you do not have to post-process it. `lineNo`, `ts`, and `level` are always included as the first ' +
+          'columns (cite `lineNo` in build_report); list your structured fields in `columns` (see the fields tool for what exists). ' +
+          'A missing field is null on that row. Page with offset/limit.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            sessionId: prop('string', 'The session to query.'),
+            query: prop('string', 'The query (same language as search). "" matches everything.'),
+            columns: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Structured field names to project (e.g. ["status","duration","host"]). lineNo/ts/level are added automatically.',
+            },
+            limit: prop('integer', 'Max rows to return (1–500).', { default: 100 }),
+            offset: prop('integer', 'Row offset into the result set, for paging.', { default: 0 }),
+            order: prop('string', 'Row order by time/position.', { enum: ['asc', 'desc'], default: 'asc' }),
+            grouped: prop('boolean', 'Group multi-line records (stack traces) into one row each.', { default: false }),
+          },
+          required: ['sessionId', 'query', 'columns'],
+        },
+        handler: async (args) => {
+          const s = this.getSession(args);
+          const query = str(args.query);
+          const cols = Array.isArray(args.columns)
+            ? (args.columns as unknown[]).filter((x): x is string => typeof x === 'string' && x.length > 0).slice(0, 50)
+            : [];
+          if (cols.length === 0) throw new ToolError('Provide at least one field name in "columns" (see the fields tool)');
+          const grouped = args.grouped === true;
+          const order = args.order === 'desc' ? 'desc' : 'asc';
+          const limit = clampLimit(args.limit, 100);
+          const offset = intArg(args.offset, 0);
+          let total: number;
+          let durationMs: number;
+          try {
+            ({ total, durationMs } = await this.ensureSearch(s, query, grouped, false));
+          } catch (err) {
+            if (err instanceof QuerySyntaxError) throw new ToolError(err.message);
+            throw err;
+          }
+          const fetched = await s.getRows(offset, limit, order, false, grouped, cols);
+          const rows = fetched.map((r) => [
+            r.lineNo,
+            r.ts !== null ? new Date(r.ts).toISOString() : null,
+            r.level,
+            ...cols.map((c) => r.cols?.[c] ?? null),
+          ]);
+          return {
+            sessionId: s.id,
+            query,
+            total,
+            durationMs,
+            offset,
+            returned: rows.length,
+            order,
+            grouped,
+            columns: ['lineNo', 'ts', 'level', ...cols],
+            rows,
+          };
+        },
+      },
+
+      {
         name: 'get_lines',
         description:
           'Read a contiguous range of raw lines [start, start+count) by line number, ignoring any active search. ' +
@@ -588,6 +660,119 @@ export class McpServer {
           const s = this.getSession(args);
           await this.scopeView(s, args.query);
           return s.clusters(clampLimit(args.limit, 50));
+        },
+      },
+
+      {
+        name: 'build_report',
+        description:
+          'Assemble an investigation report (Markdown) from your findings and deliver it to the user. Provide a title, a ' +
+          'summary (the headline conclusion), and ordered sections — each a heading + Markdown narrative, with optional cited ' +
+          'evidence. Cite evidence by line number (lines) or ranges; TraceBox pulls the REAL indexed lines (with their ' +
+          'timestamp and level) so the quoted log lines are authoritative, not paraphrased. Returns the rendered Markdown; pass ' +
+          'savePath to also write it to a file. Choose format "markdown" (default, for chat/tickets) or "html" (a standalone, ' +
+          'self-styled file to save and open). Use this as the final step after searching/inspecting to summarize what you found.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            sessionId: prop('string', 'The session the evidence lines are read from.'),
+            title: prop('string', 'Report title (e.g. "Checkout 503s — root cause").'),
+            summary: prop('string', 'Markdown summary: the headline finding / conclusion (the TL;DR).'),
+            format: prop('string', 'Output format.', { enum: ['markdown', 'html'], default: 'markdown' }),
+            sections: {
+              type: 'array',
+              description: 'Ordered findings, each a heading + Markdown body with optional cited evidence lines.',
+              items: {
+                type: 'object',
+                properties: {
+                  heading: prop('string', 'Section heading.'),
+                  body: prop('string', 'Markdown narrative explaining this finding.'),
+                  lines: {
+                    type: 'array',
+                    items: { type: 'integer' },
+                    description: 'Line numbers (0-based) to include verbatim as evidence.',
+                  },
+                  ranges: {
+                    type: 'array',
+                    description: 'Line ranges to include as evidence (e.g. a multi-line stack trace).',
+                    items: {
+                      type: 'object',
+                      properties: {
+                        start: prop('integer', 'First line (0-based).'),
+                        count: prop('integer', 'How many lines (1–500).'),
+                      },
+                      required: ['start', 'count'],
+                    },
+                  },
+                },
+                required: ['heading'],
+              },
+            },
+            savePath: prop('string', 'Optional absolute path to also write the report to (e.g. C:\\\\reports\\\\incident.md).'),
+          },
+          required: ['sessionId', 'title', 'sections'],
+        },
+        handler: async (args) => {
+          const s = this.getSession(args);
+          const sectionsIn = Array.isArray(args.sections) ? args.sections : [];
+          if (sectionsIn.length === 0) throw new ToolError('Provide at least one section');
+
+          // Resolve cited line numbers/ranges to real indexed lines, capped so a
+          // report can't pull the whole file.
+          const MAX_TOTAL = 1000;
+          let budget = MAX_TOTAL;
+          const sections: ReportSection[] = [];
+          for (const raw of sectionsIn) {
+            const r = (raw ?? {}) as Record<string, unknown>;
+            const lineNos: number[] = [];
+            if (Array.isArray(r.lines)) {
+              for (const n of r.lines) {
+                const v = Number(n);
+                if (Number.isFinite(v)) lineNos.push(Math.trunc(v));
+              }
+            }
+            if (Array.isArray(r.ranges)) {
+              for (const rng of r.ranges) {
+                const o = (rng ?? {}) as Record<string, unknown>;
+                const start = intArg(o.start, -1);
+                const count = Math.min(Math.max(intArg(o.count, 0), 0), 500);
+                if (start >= 0) for (let i = 0; i < count; i++) lineNos.push(start + i);
+              }
+            }
+            const uniq = [...new Set(lineNos)].filter((n) => n >= 0 && n < s.lineCount).slice(0, Math.max(0, budget));
+            budget -= uniq.length;
+            const rows = uniq.length > 0 ? await s.readRowsForExport(uniq) : [];
+            sections.push({
+              heading: str(r.heading),
+              body: str(r.body),
+              evidence: rows.map((row) => ({ lineNo: row.lineNo, text: row.text, ts: row.ts, level: row.level, truncated: row.truncated })),
+            });
+          }
+
+          const st = s.status();
+          const doc = {
+            title: str(args.title),
+            summary: str(args.summary),
+            source: { file: st.file, lineCount: st.lineCount },
+            generatedAt: Date.now(),
+            sections,
+          };
+          const format = args.format === 'html' ? 'html' : 'markdown';
+          const content = format === 'html' ? renderReportHtml(doc) : renderReportMarkdown(doc);
+
+          let savedPath: string | null = null;
+          const save = str(args.savePath);
+          if (save) {
+            const resolved = path.resolve(save);
+            try {
+              writeFileSync(resolved, content);
+              savedPath = resolved;
+            } catch (err) {
+              throw new ToolError(`Could not write report to ${resolved}: ${err instanceof Error ? err.message : String(err)}`);
+            }
+          }
+
+          return { sessionId: s.id, format, savedPath, sections: sections.length, evidenceLines: MAX_TOTAL - budget, content };
         },
       },
 

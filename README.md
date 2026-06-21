@@ -167,6 +167,7 @@ Tools:
 | `open_log` | Index a file (or rotation group); returns a session id, format, counts, levels, fields |
 | `list_sessions` / `close_log` | Manage open sessions |
 | `search` | Run the query language (below); returns a page of matching rows + the total |
+| `table` | Like `search`, but project only chosen fields as a compact value-array table (no full lines to post-process) |
 | `get_lines` | Read a raw line range by number (browse / tail), ignoring any active search |
 | `get_context` | Surrounding lines for a hit (like `grep -C`), with matches flagged |
 | `get_record` | One line's parsed fields and full multi-line record |
@@ -174,10 +175,13 @@ Tools:
 | `facet` | Value breakdown for a field over the current view |
 | `stats` / `histogram` / `clusters` | Summary metrics, time-volume histogram, and top log patterns |
 | `test_parser` / `add_parser` / `remove_parser` / `list_parsers` | Build, save, and manage user-defined parsers |
+| `build_report` | Assemble a Markdown or HTML report; cited line numbers are filled with the real indexed lines |
 
 An agent typically calls `open_log`, then `search`/`stats`/`clusters` to narrow down,
 then `get_context`/`get_record` to read the relevant lines — returning only matching
-lines and aggregates. Line numbers are 0-based. `stats`, `histogram`, `facet`, and
+lines and aggregates — and finishes with `build_report` to deliver its findings as a
+report whose quoted log lines are pulled verbatim from the index (so the evidence is
+authoritative, not paraphrased). Line numbers are 0-based. `stats`, `histogram`, `facet`, and
 `clusters` take an optional `query` to scope themselves in one call (pass `""` for the
 whole file); omit it and they reuse the active `search` (which scopes the view until you
 search again). If a log's fields aren't extracted, `test_parser` dry-runs a regex and

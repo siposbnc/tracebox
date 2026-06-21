@@ -1,6 +1,6 @@
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { McpServer } from './mcp.ts';
@@ -60,7 +60,7 @@ test('initialize negotiates protocol and advertises the tool capability', async 
 test('tools/list exposes the toolkit', async () => {
   const res = await rpc('tools/list');
   const names = res.result.tools.map((t: any) => t.name);
-  for (const expected of ['open_log', 'list_sessions', 'close_log', 'search', 'get_lines', 'get_context', 'get_record', 'fields', 'facet', 'stats', 'histogram', 'clusters', 'list_parsers', 'test_parser', 'add_parser', 'remove_parser']) {
+  for (const expected of ['open_log', 'list_sessions', 'close_log', 'search', 'table', 'get_lines', 'get_context', 'get_record', 'fields', 'facet', 'stats', 'histogram', 'clusters', 'build_report', 'list_parsers', 'test_parser', 'add_parser', 'remove_parser']) {
     assert.ok(names.includes(expected), `missing tool ${expected}`);
   }
   // every tool has a JSON-schema input
@@ -147,6 +147,90 @@ test('aggregates take an optional query to scope themselves (stateless), without
   // omitting query reuses the active search — here it is now status:"" (whole file)
   const allStats = await call('stats', { sessionId });
   assert.equal(allStats.total, 600);
+
+  await call('close_log', { sessionId });
+});
+
+test('table projects only the requested fields as a compact value-array result', async () => {
+  const file = makeLog('table.log', appLogLines(60));
+  const opened = await call('open_log', { path: file });
+  const sessionId = opened.sessionId;
+
+  const t = await call('table', { sessionId, query: 'status:500', columns: ['status', 'worker'], limit: 3 });
+  assert.equal(t.total, 30); // every other line is status=500
+  assert.deepEqual(t.columns, ['lineNo', 'ts', 'level', 'status', 'worker']);
+  assert.equal(t.rows.length, 3);
+  // each row is an array of values, no full line text
+  const [lineNo, ts, level, status, worker] = t.rows[0];
+  assert.equal(typeof lineNo, 'number');
+  assert.match(ts, /^2024-/);
+  assert.equal(status, '500');
+  assert.match(worker, /^worker-/);
+  assert.ok(level === 'INFO' || level === 'WARN' || level === 'ERROR' || level === 'DEBUG');
+
+  // a field that doesn't exist on the rows comes back null
+  const miss = await call('table', { sessionId, query: '', columns: ['nope'], limit: 1 });
+  assert.equal(miss.rows[0][3], null);
+
+  // columns is required and non-empty
+  await assert.rejects(call('table', { sessionId, query: '', columns: [] }), /at least one field/);
+
+  // paging mirrors search
+  const page = await call('table', { sessionId, query: 'status:500', columns: ['status'], offset: 5, limit: 2 });
+  assert.equal(page.offset, 5);
+  assert.equal(page.rows.length, 2);
+
+  await call('close_log', { sessionId });
+});
+
+test('build_report renders a report with authoritative evidence pulled from the index', async () => {
+  const file = makeLog('report.log', appLogLines(50));
+  const opened = await call('open_log', { path: file });
+  const sessionId = opened.sessionId;
+
+  const out = await call('build_report', {
+    sessionId,
+    title: 'Investigation',
+    summary: 'Found 25 errors.',
+    sections: [
+      { heading: 'The errors', body: 'These lines failed.', lines: [4, 10] },
+      { heading: 'A window', ranges: [{ start: 0, count: 3 }] },
+    ],
+    savePath: path.join(dir, 'out-report.md'),
+  });
+
+  assert.equal(out.sections, 2);
+  assert.equal(out.evidenceLines, 5); // lines 4, 10 + range 0,1,2
+  assert.equal(out.format, 'markdown');
+  assert.equal(out.savedPath, path.join(dir, 'out-report.md'));
+  // evidence is the REAL indexed line, not paraphrased — line 4 is an ERROR row
+  assert.match(out.content, /# Investigation/);
+  assert.match(out.content, /Found 25 errors\./);
+  assert.match(out.content, /\*\*Line 5 .*ERROR\*\*/); // 0-based line 4 → shown 1-based as "Line 5"
+  assert.match(out.content, /request=4 /);
+  // the saved file matches the returned content
+  assert.equal(readFileSync(path.join(dir, 'out-report.md'), 'utf8'), out.content);
+
+  // html format yields a standalone document with the same evidence
+  const html = await call('build_report', {
+    sessionId,
+    title: 'Investigation',
+    summary: 'Found **25** errors.',
+    sections: [{ heading: 'The errors', body: 'These failed:\n\n- one\n- two', lines: [4] }],
+    format: 'html',
+    savePath: path.join(dir, 'out-report.html'),
+  });
+  assert.equal(html.format, 'html');
+  assert.match(html.content, /^<!doctype html>/);
+  assert.match(html.content, /<h1>Investigation<\/h1>/);
+  assert.match(html.content, /request=4 /);
+  // markdown in the prose is rendered, not shown literally
+  assert.match(html.content, /Found <strong>25<\/strong> errors\./);
+  assert.match(html.content, /<ul><li>one<\/li><li>two<\/li><\/ul>/);
+  assert.equal(readFileSync(path.join(dir, 'out-report.html'), 'utf8'), html.content);
+
+  // a report needs at least one section
+  await assert.rejects(call('build_report', { sessionId, title: 'x', sections: [] }), /at least one section/);
 
   await call('close_log', { sessionId });
 });

@@ -65,6 +65,69 @@ function esc(s: string): string {
   return s.replace(/[&<>]/g, (c) => (c === '&' ? '&amp;' : c === '<' ? '&lt;' : '&gt;'));
 }
 
+/**
+ * Inline Markdown on already-escaped text: code, bold, italic, links. Splits on
+ * backtick code spans first so bold/italic formatting never reaches inside a
+ * `code` span (and there are no placeholder sentinels to collide with the text).
+ */
+function mdInline(escaped: string): string {
+  return escaped
+    .split(/(`[^`]+`)/g)
+    .map((part) =>
+      part.startsWith('`') && part.endsWith('`') && part.length > 1
+        ? `<code>${part.slice(1, -1)}</code>`
+        : part
+            .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+            .replace(/\b_([^_]+)_\b/g, '<em>$1</em>')
+            .replace(/\*([^*\n]+)\*/g, '<em>$1</em>')
+            .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" rel="noopener noreferrer">$1</a>'),
+    )
+    .join('');
+}
+
+/**
+ * Minimal, dependency-free Markdown → HTML so notes render formatting (bold,
+ * lists, code, …) in the HTML export. Escapes before formatting.
+ */
+export function mdToHtml(md: string): string {
+  const lines = md.replace(/\r\n?/g, '\n').split('\n');
+  const out: string[] = [];
+  const blockStart = /^(?:```|#{1,6}\s|>\s?|\s*[-*+]\s+|\s*\d+\.\s+)/;
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (/^```/.test(line)) {
+      const code: string[] = [];
+      for (i++; i < lines.length && !/^```/.test(lines[i]); i++) code.push(lines[i]);
+      i++;
+      out.push(`<pre><code>${esc(code.join('\n'))}</code></pre>`);
+    } else if (/^(#{1,6})\s+/.test(line)) {
+      const m = /^(#{1,6})\s+(.*)$/.exec(line)!;
+      out.push(`<h${m[1].length}>${mdInline(esc(m[2]))}</h${m[1].length}>`);
+      i++;
+    } else if (/^>\s?/.test(line)) {
+      const q: string[] = [];
+      for (; i < lines.length && /^>\s?/.test(lines[i]); i++) q.push(lines[i].replace(/^>\s?/, ''));
+      out.push(`<blockquote>${q.map((l) => mdInline(esc(l))).join('<br>')}</blockquote>`);
+    } else if (/^\s*[-*+]\s+/.test(line)) {
+      const items: string[] = [];
+      for (; i < lines.length && /^\s*[-*+]\s+/.test(lines[i]); i++) items.push(lines[i].replace(/^\s*[-*+]\s+/, ''));
+      out.push(`<ul>${items.map((it) => `<li>${mdInline(esc(it))}</li>`).join('')}</ul>`);
+    } else if (/^\s*\d+\.\s+/.test(line)) {
+      const items: string[] = [];
+      for (; i < lines.length && /^\s*\d+\.\s+/.test(lines[i]); i++) items.push(lines[i].replace(/^\s*\d+\.\s+/, ''));
+      out.push(`<ol>${items.map((it) => `<li>${mdInline(esc(it))}</li>`).join('')}</ol>`);
+    } else if (line.trim() === '') {
+      i++;
+    } else {
+      const buf: string[] = [];
+      for (; i < lines.length && lines[i].trim() !== '' && !blockStart.test(lines[i]); i++) buf.push(lines[i]);
+      out.push(`<p>${buf.map((l) => mdInline(esc(l))).join('<br>')}</p>`);
+    }
+  }
+  return out.join('\n');
+}
+
 /** A standalone, self-styled HTML report (dark theme, no external assets). */
 export function buildHtml(meta: ReportMeta, entries: ReportEntry[]): string {
   const rows = entries
@@ -73,7 +136,7 @@ export function buildHtml(meta: ReportMeta, entries: ReportEntry[]): string {
       if (e.ts !== null) tags.push(tsLabel(e.ts));
       if (e.level) tags.push(`<span class="lvl">${esc(e.level)}</span>`);
       if (e.bookmarked) tags.push('🔖');
-      const note = e.note.trim() ? `<blockquote>${esc(e.note).replace(/\n/g, '<br>')}</blockquote>` : '';
+      const note = e.note.trim() ? `<div class="note">${mdToHtml(e.note)}</div>` : '';
       return `<section><h3>${tags.join(' · ')}</h3><pre>${esc(e.text)}</pre>${note}</section>`;
     })
     .join('\n');
@@ -98,7 +161,10 @@ export function buildHtml(meta: ReportMeta, entries: ReportEntry[]): string {
   h3 { color:#9ca3af; font-size:.85rem; font-weight:600; margin:1.5rem 0 .4rem; border-top:1px solid #1f2937; padding-top:1rem; }
   .lvl { color:#fca5a5; font-weight:700; }
   pre { background:#0f1623; border:1px solid #1f2937; border-radius:6px; padding:.6rem .8rem; overflow:auto; font:12px/1.5 ui-monospace,monospace; white-space:pre-wrap; word-break:break-all; }
-  blockquote { margin:.5rem 0 0; border-left:3px solid #b45309; padding:.2rem .8rem; color:#fcd34d; white-space:pre-wrap; }
+  blockquote { margin:.5rem 0 0; border-left:3px solid #b45309; padding:.2rem .8rem; color:#fcd34d; }
+  .note { margin:.5rem 0 0; border-left:3px solid #b45309; padding:.1rem .8rem; color:#fcd34d; }
+  .note p { margin:.3rem 0; } .note ul, .note ol { margin:.3rem 0; padding-left:1.2rem; }
+  .note pre { color:#d8dee9; } .note a { color:#7dd3fc; }
   code { background:#0f1623; padding:.1rem .3rem; border-radius:4px; }
   header p { margin:.2rem 0; color:#9ca3af; }
 </style></head>
