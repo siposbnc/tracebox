@@ -56,6 +56,44 @@ See the architecture tree in `README.md`. In short:
 - Tests live next to the code as `*.test.ts` and use the built-in `node:test`
   runner. Add or update tests with backend changes and keep `npm test` green.
 
+## MCP toolkit (driving TraceBox as an agent)
+
+`npm run mcp` runs the stdio MCP server (`server/mcp.ts`), exposing the index/query
+engine to AI agents. It is opt-in (off until enabled in Settings → MCP server, or
+run with `--allow` for dev). Tools:
+
+| Tool | Purpose |
+|---|---|
+| `open_log` | Index a file (or rotation group); returns a session id, format, counts, levels, fields |
+| `list_sessions` / `close_log` | Manage open sessions |
+| `search` | Run the query language; returns a page of matching rows + the total |
+| `table` | Like `search`, but project only chosen fields as a compact value-array table (no full lines to post-process) |
+| `get_lines` | Read a raw line range by number (browse / tail), ignoring any active search |
+| `get_context` | Surrounding lines for a hit (like `grep -C`), with matches flagged |
+| `get_record` | One line's parsed fields and full multi-line record |
+| `fields` | Detected structured fields with counts |
+| `facet` | Value breakdown for a field over the current view |
+| `stats` / `histogram` / `clusters` | Summary metrics, time-volume histogram, and top log patterns |
+| `test_parser` / `add_parser` / `remove_parser` / `list_parsers` | Build, save, and manage user-defined parsers |
+| `build_report` | Assemble a Markdown or HTML report; cited line numbers are filled with the real indexed lines |
+
+Recommended workflow: `open_log`, then `search`/`table`/`stats`/`clusters` to narrow
+down, then `get_context`/`get_record` to read the relevant lines — returning only
+matching lines and aggregates — and finish with `build_report` to deliver findings as a
+report whose quoted log lines are pulled verbatim from the index (authoritative, not
+paraphrased). Notes for agents:
+
+- **Line numbers are 0-based.**
+- Prefer `table(query, columns)` over `search` when you only need a few fields across
+  many rows — it stays compact and needs no post-processing.
+- `stats`/`histogram`/`facet`/`clusters` take an optional `query` to scope themselves in
+  one call (pass `""` for the whole file); omit it and they reuse the active `search`
+  (which scopes the view until you search again).
+- If a log's fields aren't extracted, `test_parser` dry-runs a regex and `add_parser`
+  saves it so a reopen indexes the format. Capture numbers without their unit
+  (`(?<dur>\d+)ms`) so `dur:>500` works.
+- The query language is documented in `README.md`.
+
 ## Releasing
 
 1. Update `CHANGELOG.md`: move `Unreleased` entries under a new version heading.

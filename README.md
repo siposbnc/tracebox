@@ -1,45 +1,159 @@
 # TraceBox
 
-TraceBox is a fast, fully offline log reader with complex search capabilities, built to handle
-multi-gigabyte files comfortably. It is the modern rewrite of the Local Log Processor (LLP)
-WPF application, re-imagined as a local web app with a Node.js backend.
+**A fast, fully offline log reader for multi-gigabyte files** — index a huge log in
+seconds, then search, filter, and analyze it like a database. A real full-text search
+engine, structured field analysis, live tail, and time histograms, in a desktop app (or a local web app) that keeps everything on your machine.
 
-**Note: This project is 100% AI-coded.**
+![TraceBox indexing a 210k-line log: time histogram, level badges, and structured rows](docs/screenshots/01-overview.png)
 
-## Highlights
+## Why TraceBox?
 
-- **Huge files, instantly browsable** — files are scanned with a sparse line-offset index
-  (one checkpoint per 64 lines), so any of millions of lines is readable with a single seek.
-  A 1 GB / 10M-line file costs the server well under 200 MB of RAM.
-- **Real full-text search engine** — lines are indexed into SQLite **FTS5** (built into Node.js,
-  zero native dependencies). Typical queries over 10M lines answer in milliseconds.
-- **Kibana-style query language** with a proper recursive-descent parser:
-  `AND` / `OR` / `NOT`, parentheses, phrases, field filters, comparisons, wildcards.
-- **Structured parsing with format auto-detection** — JSON lines (nested fields flattened to
-  `dot.paths`), classic timestamped app logs, Apache/nginx access logs, syslog, logfmt,
-  Python logging, plus a raw fallback that still sniffs levels and timestamps. **User-defined
-  parsers** extend detection to proprietary formats: a named regex whose capture groups become
-  fields (`timestamp`/`level`/`message` are treated as metadata).
-- **Live tail (`tail -f`)** — appended lines are indexed incrementally and an active search
-  keeps extending over them; unterminated trailing lines are handled correctly. A **manual
-  refresh** button reloads the file on demand, and rows can be ordered **oldest- or
-  newest-first** via a global toggle.
-- **Watch rules** — light monitoring on top of tailing: get alerted when new lines match a
-  query, or when matches cross a rate threshold (e.g. "20 errors in 60s"). Alerts show as
-  in-app toasts with a per-tab badge and, in the desktop app, native OS notifications. Rules
-  are saved per file and evaluated for every tailing source, including background tabs.
-- **Compressed & rotated logs** — `.gz` files open transparently (decompressed once to a cached
-  temp), and a rotation group (`app.log` + `app.log.1` + `app.log.2.gz`, or dateext names) can be
-  opened as one time-ordered stream — members are concatenated oldest→newest and indexed as a
-  single file.
-- **Persistent index cache** — reopening an unchanged file is instant (the index is fingerprinted
-  by path + size + mtime and reused).
-- **Time histogram** — stacked per-level volume over time; drag a range to filter.
-- **Multi-file tabs**, a detail panel with extracted fields (one-click "add as filter"),
-  match highlighting, level breakdown with one-click filters, CSV / JSON export of filtered rows.
-- **100% offline** — the server binds to `127.0.0.1` only; nothing ever leaves your machine.
+Opening a multi-gigabyte log in a text editor grinds to a halt, and `grep` only gets you
+single lines with no structure, no timeline, and no way to drill in. TraceBox is built for
+exactly these files:
 
-## Tech stack
+- **It doesn't choke on size.** A 1 GB / 10M-line file indexes in about two minutes and
+  stays under ~200 MB of RAM — and it's searchable *while* it indexes.
+- **It actually understands your logs.** JSON, timestamped app logs, access logs, syslog,
+  logfmt, and more are auto-detected; fields become searchable columns you can filter,
+  break down, and chart.
+- **It's a real search engine, not a string match.** A Kibana-style query language —
+  boolean logic, phrases, field comparisons, wildcards, time ranges — answers in
+  milliseconds over millions of lines.
+- **It's completely private.** The server binds to `127.0.0.1` only and has zero runtime
+  dependencies. Nothing ever leaves your machine, online or off.
+
+## Features
+
+**Built for huge files**
+- Sparse line-offset index (one checkpoint per 64 lines) — any of millions of lines is one
+  seek away; reads are independent of file size.
+- Full-text search via built-in SQLite **FTS5** — no native modules, no services to run.
+- Results are materialized, so paging a million rows deep into a result set is instant.
+
+**Powerful search**
+- Kibana-style query language: `AND`/`OR`/`NOT`, parentheses, `"exact phrases"`, field
+  filters (`level:error`), numeric comparisons (`status:>=500`), time ranges
+  (`timestamp:>2024-01-31`), wildcards (`path:/api/*`), and field-exists (`user:*`).
+- Match highlighting, "find next", and regex search when you need it.
+
+![Searching with the query language — http.status:>=500 AND duration_ms:>1000, 5,515 hits in under a second, histogram of matches](docs/screenshots/02-search.png)
+
+**Structured analysis**
+- Automatic format detection and field extraction (nested JSON flattens to `dot.paths`).
+- **Field breakdown** — top values for any field with counts and one-click filtering.
+- **Log patterns (clustering)** — collapses near-identical lines into templates so you can
+  see "what kinds of lines are in here" at a glance.
+- **Time histogram** — stacked per-level volume over time; drag to filter to a range.
+- **Summary stats** and a per-level breakdown with one-click filters.
+- **User-defined parsers** — teach TraceBox a proprietary format with a regex (named groups
+  become fields), with a live tester.
+
+**Field breakdown**
+
+![The service field broken down into its top values with bars](docs/screenshots/03-fields.png)
+
+**Log pattern clustering**
+
+![Near-identical lines collapsed into templates with counts](docs/screenshots/05-clusters.png)
+
+**Inspect any line**
+- A detail panel shows a line's parsed fields (with one-click "add as filter") and the full
+  multi-line record (stack traces fold into one entry).
+- Bookmark and annotate lines, then export a Markdown/HTML report for an incident ticket.
+
+![Detail panel: a line's extracted fields and pretty-printed JSON record](docs/screenshots/04-detail.png)
+
+**Live monitoring**
+- **Live tail (`tail -f`)** — appended lines index incrementally and the active search keeps
+  matching them; order oldest- or newest-first.
+- **Watch rules** — get alerted when new lines match a query, or when matches cross a rate
+  threshold (e.g. "20 errors in 60s"), as in-app toasts and native OS notifications.
+
+**Works with your logs as they are**
+- `.gz` files open transparently; a rotation group (`app.log` + `app.log.1` +
+  `app.log.2.gz`) opens as one time-ordered stream.
+- Multiple files in tabs, plus a **merged timeline** that interleaves several files by time.
+- Read from a live command (`docker logs`, `journalctl`, …) as a streaming source.
+- Persistent index cache — reopening an unchanged file is instant.
+- Export filtered rows to CSV / JSON.
+
+**AI-ready**
+- An opt-in [MCP](https://modelcontextprotocol.io) server lets AI agents (Claude, IDE
+  agents) investigate your logs through the same engine — see [AI agents](#ai-agents-mcp).
+
+## Get started
+
+### Desktop app (Windows, Linux)
+
+TraceBox ships as a standalone desktop application (built with Electron) — the same engine
+and UI in a native window, no browser or localhost URL to manage. Grab an installer from the
+[releases page](../../releases), or build it yourself:
+
+```powershell
+git clone <this-repo> && cd tracebox
+npm install
+npm run app      # build everything and launch the desktop app
+```
+
+The installer adds a Start-menu entry and an **"Open with TraceBox"** right-click action for
+log files, supports double-click / drag-and-drop to open, reuses one window across files, and
+**updates itself** (it checks GitHub releases and installs new versions on a click). Requires
+[Node.js 24+](https://nodejs.org) to build from source.
+
+### Local web app
+
+TraceBox also runs as a plain local web server (handy for headless or remote machines):
+
+```powershell
+cd tracebox
+npm install
+npm run build     # build the web UI (once, and after UI changes)
+npm start         # serve on http://127.0.0.1:7077 and open the browser
+```
+
+```powershell
+npm start -- --port 8080          # different port
+npm start -- C:\logs\app.log      # open a file immediately
+npm start -- --no-open            # don't launch the browser
+```
+
+No log handy? Generate one: `node scripts/genlog.mjs big.log 1gb app` (formats: `app`,
+`json`, `access`).
+
+## Query language
+
+| Query | Meaning |
+|---|---|
+| `error timeout` | lines containing both terms (implicit AND, prefix match) |
+| `"connection failed"` | exact phrase |
+| `level:error` | field equality (case-insensitive; `warning` ⇒ `WARN`) |
+| `status:>=500` | numeric comparison (`>` `>=` `<` `<=` on any extracted field) |
+| `timestamp:>2024-01-31` | time comparison (`timestamp:2024-01-31` = that whole day) |
+| `path:/api/*` | wildcard match |
+| `user:*` | field exists |
+| `NOT database`, `-database` | exclusion |
+| `(level:error OR level:warn) AND service:payments` | grouping and boolean logic |
+| `http.status:503` | nested JSON fields, searchable via their flattened path |
+
+Timestamps without an explicit timezone are interpreted as UTC, in both log lines and queries.
+
+## AI agents (MCP)
+
+TraceBox ships a [Model Context Protocol](https://modelcontextprotocol.io) server so AI tools
+can investigate your logs through the same index and query engine the UI uses — searching and
+paging over a multi-gigabyte file instead of streaming it into a context window, then
+delivering a report whose quoted log lines are pulled verbatim from the index.
+
+It is **opt-in and off by default**: enable it in **Settings → MCP server**, which then shows
+the exact command to register with your MCP client. It's a stdio server with no SDK and no
+runtime dependencies, and opens no network sockets of its own — the offline guarantee holds.
+
+The agent can open logs, search, project fields, aggregate (stats, histograms, clusters, field
+facets), define custom parsers, and build reports. Tool-by-tool reference and the recommended
+agent workflow live in [`CLAUDE.md`](CLAUDE.md).
+
+## Under the hood
 
 | Layer | Choice |
 |---|---|
@@ -48,211 +162,39 @@ WPF application, re-imagined as a local web app with a Node.js backend.
 | Backend | Zero-dependency HTTP server, Server-Sent Events for progress/tail |
 | Frontend | React 19 + TypeScript + Vite 7 + Tailwind CSS 4 |
 | Virtualization | `@tanstack/react-virtual` (smooth scrolling over millions of rows) |
+| Desktop | Electron shell (`server/` and `web/` stay platform-agnostic) |
 
-## Desktop app (Windows, Linux)
+**How the big-file path works:** the file is streamed in 4 MB chunks; each line gets a
+byte-offset index entry and is parsed into SQLite (FTS5 + a key/value fields table) in
+20k-line transactions, with progress streamed over SSE — it's browsable while indexing. A
+query compiles to a single SQL expression and materializes its results, so paging anywhere is
+O(1). Reads seek to the nearest 64-line checkpoint and scan forward. Tailing indexes appended
+bytes incrementally and extends the active search over new lines only.
 
-TraceBox ships as a standalone desktop application built with **Electron**. The same
-backend and UI run inside a native window — no browser, no localhost URL to manage.
-
-```powershell
-cd tracebox
-npm install
-npm run app      # build everything and launch the desktop app
-```
-
-To produce distributable installers (each must be built on its own OS):
-
-```powershell
-npm run dist        # Windows → release\TraceBox Setup x.y.z.exe  (NSIS installer)
-npm run dist:dir    # Windows → release\win-unpacked\TraceBox.exe (portable, unpacked)
-npm run dist:linux  # Linux   → release/TraceBox-x.y.z.AppImage
-```
-
-Windows is the primary target; Linux is a best-effort extra. The
-[release workflow](.github/workflows/release.yml) builds both on tag push via an OS
-matrix and publishes them to one GitHub release. Builds are unsigned unless signing
-secrets are configured.
-
-The installer:
-
-- adds a Start-menu / desktop entry and a double-clickable `TraceBox.exe`;
-- registers **"Open with TraceBox"** in the Explorer right-click menu for
-  `.log`, `.txt`, `.jsonl`, `.ndjson`, and `.out` files (without hijacking the
-  default association for those types);
-- supports launching by **double-clicking a log file**, **dragging a file onto
-  the window**, and a **native file picker**.
-
-Opening a file while TraceBox is already running reuses the existing window and
-adds the file as a new tab (single-instance).
-
-### How the desktop shell works
-
-The unchanged TraceBox HTTP backend (`server/`) runs in an Electron
-`utilityProcess` on an ephemeral `127.0.0.1` port; the window loads the UI from
-it. File paths from the OS — CLI arguments, "Open with", second instances, and
-drag-and-drop — are forwarded to the renderer, which opens them through the
-normal HTTP API. The backend is bundled to a single `dist-electron/server.cjs`
-by esbuild at package time. Nothing in `server/` or `web/` is desktop-specific;
-the shell lives entirely in `electron/`.
-
-### Automatic updates
-
-The desktop app updates itself. On launch (and every 6 hours) it checks the
-GitHub releases for a newer version and shows an in-app banner when one is
-available. The user clicks **Download update**, and once it finishes a one-click
-**Restart & update** installs it — users never re-download or reinstall manually.
-This is wired through `electron-updater` and the `publish`
-config in `electron-builder.yml`; each release built by the
-[release workflow](.github/workflows/release.yml) ships the `latest.yml` and
-blockmap that the updater needs.
-
-Notes:
-
-- Auto-update only runs in the packaged (installed) app, not in development.
-- A user must already be on a build that contains the updater for it to take
-  effect; the first such release is installed manually, and every release after
-  it updates automatically.
-- Keep signing consistent across releases — see `SIGNING.md`.
-
-## Running as a local web app
-
-TraceBox also runs as a plain local web server (useful for headless or remote use).
-Requires [Node.js 24+](https://nodejs.org).
-
-```powershell
-cd tracebox
-npm install
-npm run build     # build the web UI (one time, and after UI changes)
-npm start         # starts the server on http://127.0.0.1:7077 and opens the browser
-```
-
-Optional:
-
-```powershell
-npm start -- --port 8080          # different port
-npm start -- C:\logs\app.log      # open a file immediately
-npm start -- --no-open            # don't launch the browser
-npm run dev                       # development: vite dev server + auto-restarting API
-npm test                          # backend test suite
-node scripts/genlog.mjs big.log 1gb app   # generate a synthetic test log (app|json|access)
-```
-
-## MCP server (let AI agents drive TraceBox)
-
-TraceBox ships an [MCP](https://modelcontextprotocol.io) server so AI tools (Claude,
-IDE agents) can investigate logs through the same index and query engine the UI uses —
-searching and paging over a multi-gigabyte file instead of streaming it into a context
-window. It's a stdio server, hand-rolled with **no SDK and no runtime dependencies**,
-and opens no network sockets of its own, so the offline guarantee holds.
-
-**It's opt-in and off by default** — the server refuses to start until you enable it,
-so a packaged install never exposes the toolkit until you ask. Turn it on in
-**Settings → MCP server**, which then shows the exact command to register.
-
-From a source checkout:
-
-```powershell
-npm run mcp            # start on stdio (node server/mcp-main.ts --allow)
-claude mcp add tracebox -- node D:\path\to\tracebox\server\mcp-main.ts --allow
-```
-
-In the **desktop app**, enable it in Settings → MCP server and copy the generated
-command — it launches the bundled server through the app executable
-(`ELECTRON_RUN_AS_NODE`), still gated on the opt-in toggle.
-
-Tools:
-
-| Tool | Purpose |
-|---|---|
-| `open_log` | Index a file (or rotation group); returns a session id, format, counts, levels, fields |
-| `list_sessions` / `close_log` | Manage open sessions |
-| `search` | Run the query language (below); returns a page of matching rows + the total |
-| `table` | Like `search`, but project only chosen fields as a compact value-array table (no full lines to post-process) |
-| `get_lines` | Read a raw line range by number (browse / tail), ignoring any active search |
-| `get_context` | Surrounding lines for a hit (like `grep -C`), with matches flagged |
-| `get_record` | One line's parsed fields and full multi-line record |
-| `fields` | Detected structured fields with counts |
-| `facet` | Value breakdown for a field over the current view |
-| `stats` / `histogram` / `clusters` | Summary metrics, time-volume histogram, and top log patterns |
-| `test_parser` / `add_parser` / `remove_parser` / `list_parsers` | Build, save, and manage user-defined parsers |
-| `build_report` | Assemble a Markdown or HTML report; cited line numbers are filled with the real indexed lines |
-
-An agent typically calls `open_log`, then `search`/`stats`/`clusters` to narrow down,
-then `get_context`/`get_record` to read the relevant lines — returning only matching
-lines and aggregates — and finishes with `build_report` to deliver its findings as a
-report whose quoted log lines are pulled verbatim from the index (so the evidence is
-authoritative, not paraphrased). Line numbers are 0-based. `stats`, `histogram`, `facet`, and
-`clusters` take an optional `query` to scope themselves in one call (pass `""` for the
-whole file); omit it and they reuse the active `search` (which scopes the view until you
-search again). If a log's fields aren't extracted, `test_parser` dry-runs a regex and
-`add_parser` saves it so a reopen indexes the format.
-
-## Query language
-
-| Query | Meaning |
-|---|---|
-| `error timeout` | lines containing both terms (implicit AND, prefix match) |
-| `"connection failed"` | exact phrase |
-| `level:error` | field equality (case-insensitive; level names are normalized — `warning` ⇒ `WARN`) |
-| `status:>=500` | numeric comparison (`>` `>=` `<` `<=` on any extracted field) |
-| `timestamp:>2024-01-31` | time comparison; equality respects input precision (`timestamp:2024-01-31` = that whole day) |
-| `path:/api/*` | wildcard match |
-| `user:*` | field exists |
-| `NOT database`, `-database` | exclusion |
-| `(level:error OR level:warn) AND service:payments` | grouping and boolean logic |
-| `http.status:503` | nested JSON fields are searchable via their flattened path |
-
-Timestamps without an explicit timezone are interpreted as UTC, both in log lines and in queries.
-
-## Architecture
-
-```
-tracebox/
-├─ server/              zero-dependency Node.js backend (TypeScript)
-│  ├─ lineIndex.ts      sparse line-offset index + bounded-memory newline scanner
-│  ├─ reader.ts         random-access line reads via checkpoint seek + short scan
-│  ├─ parsers.ts        format detection, JSON/regex/logfmt/raw parsers, ts/level normalization
-│  ├─ queryParser.ts    tokenizer + recursive-descent parser → query AST
-│  ├─ queryCompiler.ts  AST → SQL over the FTS5/fields schema
-│  ├─ indexer.ts        SQLite store: lines, fields, FTS5, materialized results, histogram
-│  ├─ session.ts        per-file orchestration: background indexing, search, tail
-│  ├─ http.ts           router, static serving, SSE
-│  ├─ files.ts          drive/directory browsing + recent files
-│  ├─ app.ts            assembles the HTTP app (shared by CLI and desktop)
-│  └─ main.ts           CLI entry: binds a fixed port, opens the browser
-├─ web/                 React UI (Vite + Tailwind)
-├─ electron/            desktop shell
-│  ├─ main.cjs          Electron main: spawns the backend, window, file assoc, single-instance
-│  ├─ preload.cjs       contextBridge: native dialog, drag-drop paths, OS open events
-│  └─ server-entry.ts   backend entry for the utilityProcess (bundled by esbuild)
-├─ build/               icon + NSIS installer script (file-association registry verbs)
-└─ scripts/             dev runner, esbuild bundler, icon generator, synthetic log generator
-```
-
-How the big-file path works:
-
-1. **Open** — the file is streamed in 4 MB chunks. Each line gets a byte-offset entry in the sparse
-   index and is parsed and inserted into SQLite (FTS5 + a key/value fields table) in 20k-line
-   transactions. Progress streams to the UI over SSE; the file is already browsable and searchable
-   while indexing runs.
-2. **Search** — the query AST compiles to a single SQL expression (FTS5 `MATCH` subqueries for text
-   terms, indexed lookups on the fields table for field filters). Results are materialized into a
-   results table, so paging anywhere in a million-row result set is O(1).
-3. **Read** — the UI virtualizes rows and fetches 256-line blocks; the server seeks to the nearest
-   64-line checkpoint and scans forward, so reads are independent of file size.
-4. **Tail** — a file watcher indexes appended bytes incrementally, re-indexing a previously
-   unterminated last line if it grew, and extends the active search with matches from new lines only.
-
-The index database lives in `%TEMP%/tracebox-index/` and is reused when the file is unchanged.
-
-## Performance (measured on this machine)
+**Performance** (measured on a 1 GB / 9.8M-line app log):
 
 | Operation | Result |
 |---|---|
-| Index 1 GB / 9.8M-line app log | ~2 minutes, search available throughout |
+| Index the full file | ~2 minutes, searchable throughout |
 | Reopen the same file | instant (index reused) |
-| `level:error` over 9.8M lines (1.2M hits) | 230 ms |
+| `level:error` (1.2M hits) | 230 ms |
 | Needle-in-haystack term | 3 ms |
-| Complex boolean over 1M+ hits | ~2 s |
-| Paging 1M rows deep into results | < 150 ms |
-| Server RSS with the 1 GB file fully indexed | ~170 MB |
+| Paging 1M rows deep | < 150 ms |
+| Server RSS with the file fully indexed | ~170 MB |
+
+## Project layout
+
+```
+tracebox/
+├─ server/     zero-dependency Node.js backend: indexing, parsers, query engine, sessions, HTTP/SSE
+├─ web/        React UI (Vite + Tailwind)
+├─ electron/   desktop shell (spawns the backend, native window, file associations)
+└─ scripts/    dev runner, esbuild bundler, synthetic log generator
+```
+
+Contributing or working in the code? See [`CLAUDE.md`](CLAUDE.md) for conventions,
+commands, and how the pieces fit together.
+
+## License
+
+No license file is currently included; all rights reserved by the author.
