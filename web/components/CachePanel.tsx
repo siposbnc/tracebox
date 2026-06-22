@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, formatBytes, formatCount } from '../api';
+import { useEscapeKey } from '../escStack';
 import type { CacheInfo, ConfigInfo } from '../types';
 
 function baseName(file: string): string {
@@ -28,12 +29,9 @@ export default function CachePanel({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     load();
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [load, onClose]);
+  }, [load]);
+
+  useEscapeKey(onClose, 'modal');
 
   const saveDir = (dir: string): void => {
     setBusy(true);

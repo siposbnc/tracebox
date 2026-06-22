@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { ViewButton } from './ValueViewer';
 
 /**
  * Collapsible, syntax-highlighted JSON viewer for the detail panel. Leaf paths
@@ -26,6 +27,7 @@ function JsonNode({
   path,
   depth,
   onFilter,
+  onView,
 }: {
   /** Key (object) or index label like `[0]` (array); absent for the root. */
   name?: string;
@@ -33,6 +35,7 @@ function JsonNode({
   path: string;
   depth: number;
   onFilter?: (path: string, value: string) => void;
+  onView?: (label: string, value: string) => void;
 }) {
   const [open, setOpen] = useState(depth < 2);
 
@@ -49,6 +52,9 @@ function JsonNode({
         <span className="break-all">
           <Leaf value={value} />
         </span>
+        {onView && typeof value === 'string' && value.length > 0 && (
+          <ViewButton onClick={() => onView(path || name || 'value', value)} />
+        )}
         {onFilter && path && (
           <button
             className="ml-1 rounded bg-surface-2 px-1 text-[10px] text-gray-500 opacity-0 transition-opacity hover:text-sky-300 group-hover:opacity-100"
@@ -93,7 +99,15 @@ function JsonNode({
         <>
           <div className="border-l border-edge/40 pl-4">
             {entries.map(([label, v]) => (
-              <JsonNode key={label} name={label} value={v} path={childPath(label)} depth={depth + 1} onFilter={onFilter} />
+              <JsonNode
+                key={label}
+                name={label}
+                value={v}
+                path={childPath(label)}
+                depth={depth + 1}
+                onFilter={onFilter}
+                onView={onView}
+              />
             ))}
           </div>
           <div className="text-gray-600">{close0}</div>
@@ -118,13 +132,15 @@ export function tryParseJson(text: string): Json | null {
 export default function JsonTree({
   value,
   onFilter,
+  onView,
 }: {
   value: Json;
   onFilter?: (path: string, value: string) => void;
+  onView?: (label: string, value: string) => void;
 }) {
   return (
-    <div className="overflow-auto rounded-md border border-edge bg-surface-0 p-2 pl-4 font-mono text-xs text-gray-300">
-      <JsonNode value={value} path="" depth={0} onFilter={onFilter} />
+    <div className="p-2 pl-4 font-mono text-xs text-gray-300">
+      <JsonNode value={value} path="" depth={0} onFilter={onFilter} onView={onView} />
     </div>
   );
 }

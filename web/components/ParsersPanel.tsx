@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api';
+import { useEscapeKey } from '../escStack';
 import type { CustomParserSpec, ParserTestResult } from '../types';
 
 const META = new Set(['timestamp', 'level', 'message']);
@@ -29,12 +30,9 @@ export default function ParsersPanel({ onClose, sessionId }: { onClose: () => vo
 
   useEffect(() => {
     load();
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [load, onClose]);
+  }, [load]);
+
+  useEscapeKey(onClose, 'modal');
 
   // Live test: debounce changes to the pattern / samples and dry-run against the
   // open session's head (or the pasted lines when provided).

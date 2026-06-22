@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api, formatTs, tzAbbr } from '../api';
-import { useTz } from '../settings';
+import { useTz, useDetailView, setDetailView } from '../settings';
 import { useNote, setNote } from '../notes';
 import type { LineDetail } from '../types';
 import JsonTree, { tryParseJson } from './JsonTree';
+import ValueViewer, { ViewButton } from './ValueViewer';
+import { useEscapeKey } from '../escStack';
 
 const LEVEL_COLORS: Record<string, string> = {
   TRACE: 'text-slate-400',
@@ -29,18 +31,21 @@ export default function DetailPanel({
 }) {
   const [detail, setDetail] = useState<LineDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [showRaw, setShowRaw] = useState(false);
+  const [viewer, setViewer] = useState<{ label: string; value: string } | null>(null);
   const tz = useTz();
+  const view = useDetailView();
   const note = useNote(file, lineNo);
 
   // the raw line as a JSON tree, when it is a JSON object/array
   const json = useMemo(() => (detail ? tryParseJson(detail.raw) : null), [detail]);
+  // the JSON tree is only offered when the raw content actually is JSON
+  const asJson = json !== null && view === 'json';
 
   useEffect(() => {
     let cancelled = false;
     setDetail(null);
     setError(null);
-    setShowRaw(false);
+    setViewer(null);
     void api
       .detail(sessionId, lineNo)
       .then((d) => {
@@ -54,13 +59,9 @@ export default function DetailPanel({
     };
   }, [sessionId, lineNo]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  // a docked panel: the visualizer modal (and any other floating window) takes
+  // Escape first; the panel closes only once nothing is layered above it
+  useEscapeKey(onClose, 'panel');
 
   const filterValue = (value: string): string => (/[\s:"()]/.test(value) ? `"${value.replaceAll('"', '\\"')}"` : value);
 
@@ -109,84 +110,108 @@ export default function DetailPanel({
               />
             </section>
 
-            {detail.fields.length > 0 && (
+            {(detail.fields.length > 0 || json) && (
               <section className="mb-3">
-                <h3 className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
-                  Fields ({detail.fields.length})
-                </h3>
-                <table className="w-full text-xs">
-                  <tbody>
-                    {detail.fields.map((f, i) => (
-                      <tr key={`${f.key}-${i}`} className="group border-t border-edge/50 align-top">
-                        <td className="max-w-36 truncate py-1 pr-2 font-mono text-sky-400" title={f.key}>
-                          {f.key}
-                        </td>
-                        <td className="break-all py-1 font-mono text-gray-300">{f.value}</td>
-                        <td className="w-10 py-0.5 text-right">
-                          <button
-                            className="rounded bg-surface-2 px-1 text-[10px] text-gray-500 opacity-0 transition-opacity hover:text-sky-300 group-hover:opacity-100"
-                            title={`Filter: ${f.key}:${f.value}`}
-                            onClick={() => onAddFilter(`${f.key}:${filterValue(f.value)}`)}
-                          >
-                            +filter
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                <div className="mb-1 flex items-center justify-between">
+                  <h3 className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+                    Fields{!asJson && detail.fields.length > 0 ? ` (${detail.fields.length})` : ''}
+                  </h3>
+                  {/* the JSON tree is only offered when the raw content actually is JSON */}
+                  {json && (
+                    <div className="flex items-center gap-2">
+                      {asJson && (
+                        <button
+                          className="rounded border border-edge bg-surface-2 px-1.5 py-0.5 text-[11px] text-gray-400 hover:text-gray-100"
+                          onClick={() => void navigator.clipboard.writeText(JSON.stringify(json, null, 2))}
+                        >
+                          Copy JSON
+                        </button>
+                      )}
+                      <div className="flex overflow-hidden rounded border border-edge text-[11px]">
+                        <button
+                          className={`px-1.5 py-0.5 ${!asJson ? 'bg-surface-2 text-sky-300' : 'text-gray-500 hover:text-gray-300'}`}
+                          onClick={() => setDetailView('flat')}
+                          title="Show flattened fields"
+                        >
+                          Flat
+                        </button>
+                        <button
+                          className={`px-1.5 py-0.5 ${asJson ? 'bg-surface-2 text-sky-300' : 'text-gray-500 hover:text-gray-300'}`}
+                          onClick={() => setDetailView('json')}
+                          title="Show the raw JSON tree"
+                        >
+                          JSON
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                {asJson && json ? (
+                  <div className="max-h-[50vh] overflow-auto rounded-md border border-edge bg-surface-0">
+                    <JsonTree
+                      value={json}
+                      onFilter={(p, v) => onAddFilter(`${p}:${filterValue(v)}`)}
+                      onView={(label, v) => setViewer({ label, value: v })}
+                    />
+                  </div>
+                ) : detail.fields.length > 0 ? (
+                  <table className="w-full text-xs">
+                    <tbody>
+                      {detail.fields.map((f, i) => (
+                        <tr key={`${f.key}-${i}`} className="group border-t border-edge/50 align-top">
+                          <td className="max-w-36 truncate py-1 pr-2 font-mono text-sky-400" title={f.key}>
+                            {f.key}
+                          </td>
+                          <td className="break-all py-1 font-mono text-gray-300">{f.value}</td>
+                          <td className="whitespace-nowrap py-0.5 pl-2 text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              {f.value.length > 0 && (
+                                <ViewButton onClick={() => setViewer({ label: f.key, value: f.value })} />
+                              )}
+                              <button
+                                className="rounded bg-surface-2 px-1 text-[10px] text-gray-500 opacity-0 transition-opacity hover:text-sky-300 group-hover:opacity-100"
+                                title={`Filter: ${f.key}:${f.value}`}
+                                onClick={() => onAddFilter(`${f.key}:${filterValue(f.value)}`)}
+                              >
+                                +filter
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <div className="text-xs text-gray-500">No flattened fields — switch to JSON to view the content.</div>
+                )}
               </section>
             )}
 
             <section>
               <div className="mb-1 flex items-center justify-between">
                 <h3 className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">
-                  {json && !showRaw ? 'JSON' : detail.record ? `Record (${detail.record.span} lines)` : 'Raw content'}
+                  {detail.record ? `Record (${detail.record.span} lines)` : 'Raw content'}
                 </h3>
-                {json && (
-                  <div className="flex overflow-hidden rounded border border-edge text-[11px]">
-                    <button
-                      className={`px-1.5 py-0.5 ${!showRaw ? 'bg-surface-2 text-sky-300' : 'text-gray-500 hover:text-gray-300'}`}
-                      onClick={() => setShowRaw(false)}
-                    >
-                      Tree
-                    </button>
-                    <button
-                      className={`px-1.5 py-0.5 ${showRaw ? 'bg-surface-2 text-sky-300' : 'text-gray-500 hover:text-gray-300'}`}
-                      onClick={() => setShowRaw(true)}
-                    >
-                      Raw
-                    </button>
-                  </div>
-                )}
+                <button
+                  className="rounded border border-edge bg-surface-2 px-1.5 py-0.5 text-[11px] text-gray-400 hover:text-gray-100"
+                  onClick={() =>
+                    void navigator.clipboard.writeText(detail.record ? detail.record.text : detail.raw)
+                  }
+                >
+                  {detail.record ? 'Copy record' : 'Copy raw'}
+                </button>
               </div>
-              {json && !showRaw ? (
-                <div className="max-h-[50vh]">
-                  <JsonTree value={json} onFilter={(p, v) => onAddFilter(`${p}:${filterValue(v)}`)} />
-                </div>
-              ) : (
-                <pre className="max-h-[50vh] overflow-auto whitespace-pre-wrap break-all rounded-md border border-edge bg-surface-0 p-2 font-mono text-xs leading-5 text-gray-300">
-                  {detail.record ? detail.record.text : detail.raw}
-                </pre>
-              )}
-              <button
-                className="mt-2 rounded border border-edge bg-surface-2 px-2 py-1 text-xs text-gray-400 hover:text-gray-100"
-                onClick={() =>
-                  void navigator.clipboard.writeText(
-                    json && !showRaw
-                      ? JSON.stringify(json, null, 2)
-                      : detail.record
-                        ? detail.record.text
-                        : detail.raw,
-                  )
-                }
-              >
-                {json && !showRaw ? 'Copy JSON' : detail.record ? 'Copy record' : 'Copy raw line'}
-              </button>
+              <pre className="max-h-[50vh] overflow-auto whitespace-pre-wrap break-all rounded-md border border-edge bg-surface-0 p-2 font-mono text-xs leading-5 text-gray-300">
+                {detail.record ? detail.record.text : detail.raw}
+              </pre>
             </section>
           </>
         )}
       </div>
+
+      {viewer && (
+        <ValueViewer label={viewer.label} value={viewer.value} onClose={() => setViewer(null)} />
+      )}
     </aside>
   );
 }

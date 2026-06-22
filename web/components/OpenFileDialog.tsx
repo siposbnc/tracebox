@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, formatBytes } from '../api';
+import { useEscapeKey } from '../escStack';
 import type { BrowseResult, RecentFile } from '../types';
 
 export default function OpenFileDialog({
@@ -38,13 +39,7 @@ export default function OpenFileDialog({
     void api.recents().then(setRecents).catch(() => {});
   }, [navigate]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  useEscapeKey(onClose, 'modal');
 
   const openFile = useCallback(
     async (file: string) => {

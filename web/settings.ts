@@ -7,6 +7,9 @@ export type Order = 'asc' | 'desc';
 /** Timezone used to render all timestamps. */
 export type Tz = 'utc' | 'local';
 
+/** How the detail panel renders a structured line: flattened fields or a JSON tree. */
+export type DetailView = 'flat' | 'json';
+
 const ORDER_KEY = 'tracebox.order';
 const TZ_KEY = 'tracebox.tz';
 const CONTEXT_KEY = 'tracebox.contextLines';
@@ -16,11 +19,13 @@ const PAGE_JUMP_BIG_KEY = 'tracebox.pageJumpBig';
 
 const WRAP_KEY = 'tracebox.wrap';
 const COLUMNAR_KEY = 'tracebox.columnar';
+const DETAIL_VIEW_KEY = 'tracebox.detailView';
 
 let order: Order = clientStore.getItem(ORDER_KEY) === 'desc' ? 'desc' : 'asc';
 let tz: Tz = clientStore.getItem(TZ_KEY) === 'local' ? 'local' : 'utc';
 let wrap = clientStore.getItem(WRAP_KEY) === 'true';
 let columnar = clientStore.getItem(COLUMNAR_KEY) === 'true';
+let detailView: DetailView = clientStore.getItem(DETAIL_VIEW_KEY) === 'json' ? 'json' : 'flat';
 
 /** Read a non-negative integer setting, falling back to `fallback` when unset/invalid. */
 function loadNumber(key: string, fallback: number, min = 0, max = 1_000_000): number {
@@ -108,6 +113,22 @@ export function setColumnar(next: boolean): void {
 /** Whether structured logs render as a column grid instead of raw lines. */
 export function useColumnar(): boolean {
   return useSyncExternalStore(subscribe, getColumnar);
+}
+
+export function getDetailView(): DetailView {
+  return detailView;
+}
+
+export function setDetailView(next: DetailView): void {
+  if (next === detailView) return;
+  detailView = next;
+  clientStore.setItem(DETAIL_VIEW_KEY, next);
+  emit();
+}
+
+/** Preferred structured view in the detail panel: flattened fields or a JSON tree. */
+export function useDetailView(): DetailView {
+  return useSyncExternalStore(subscribe, getDetailView);
 }
 
 export function getContextLines(): number {

@@ -1,4 +1,3 @@
-import { useEffect } from 'react';
 import {
   useOrder,
   setOrder,
@@ -16,6 +15,7 @@ import {
   setPageJumpBig,
 } from '../settings';
 import { tzAbbr } from '../api';
+import { useEscapeKey } from '../escStack';
 
 function Segmented<T extends string>({
   value,
@@ -77,13 +77,7 @@ export default function SettingsPanel({
   const pageJump = usePageJump();
   const pageJumpBig = usePageJumpBig();
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  useEscapeKey(onClose, 'modal');
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>

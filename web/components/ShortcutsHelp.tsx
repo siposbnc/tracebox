@@ -10,6 +10,7 @@ import {
   eventToChord,
   useBindings,
 } from '../keybindings';
+import { useEscapeKey } from '../escStack';
 
 /**
  * Keyboard shortcuts reference and editor. Lists every command with its current
@@ -20,14 +21,7 @@ export default function ShortcutsHelp({ onClose }: { onClose: () => void }) {
   const [capturing, setCapturing] = useState<string | null>(null);
 
   // close on Esc only when not capturing (Esc cancels capture instead)
-  useEffect(() => {
-    if (capturing) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [capturing, onClose]);
+  useEscapeKey(onClose, 'modal', !capturing);
 
   // while capturing, intercept the next chord in the capture phase so it doesn't
   // trigger any other shortcut handler

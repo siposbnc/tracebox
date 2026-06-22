@@ -24,6 +24,7 @@ export const COMMANDS: Command[] = [
   { id: 'pageUpBig', label: 'Jump up a big page', defaultChord: 'Mod+PageUp' },
   { id: 'pageDownBig', label: 'Jump down a big page', defaultChord: 'Mod+PageDown' },
   { id: 'toggleDetail', label: 'Open/close detail panel', defaultChord: 'ArrowRight' },
+  { id: 'openContext', label: 'Peek context around line (grep -C)', defaultChord: 'C' },
   { id: 'toggleBookmark', label: 'Toggle bookmark on selected line', defaultChord: 'Mod+B' },
   { id: 'nextBookmark', label: 'Next bookmark', defaultChord: 'F2' },
   { id: 'prevBookmark', label: 'Previous bookmark', defaultChord: 'Shift+F2' },

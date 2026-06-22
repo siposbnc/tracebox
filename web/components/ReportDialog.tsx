@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { getBookmarks } from '../bookmarks';
 import { getNotes } from '../notes';
+import { useEscapeKey } from '../escStack';
 import { buildMarkdown, buildHtml, type ReportEntry, type ReportMeta } from '../report';
 
 const MAX_ENTRIES = 1000;
@@ -42,13 +43,7 @@ export default function ReportDialog({
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  useEscapeKey(onClose, 'modal');
 
   useEffect(() => {
     let cancelled = false;

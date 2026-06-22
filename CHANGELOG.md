@@ -12,6 +12,32 @@ date and start a fresh `Unreleased` section.
 
 ## [Unreleased]
 
+### Added
+
+- **Hotkey for context peek.** Press **C** (rebindable in Settings → Shortcuts)
+  to open the "grep -C" surrounding-lines peek for the selected line, in both the
+  single-file and merged timeline views.
+- **Open a field value in the visualizer.** Hover a value in the detail panel
+  (flat or JSON view) and click the magnifier to open it in a large reader modal
+  — room for long values like stack traces, payloads, or SQL. The reader has
+  **Copy** and an in-text **search** that highlights every match with
+  next/previous navigation (Enter / Shift+Enter, or the global next/previous-match
+  hotkeys — F3 / Shift+F3 by default).
+
+### Changed
+
+- **Detail panel: one structured view, not two.** The flattened **Fields** table
+  and the JSON tree no longer show the same data side by side. A **Flat / JSON**
+  toggle (remembered across lines) switches between them, and JSON is only offered
+  when the raw line actually is JSON. The verbatim line/record stays below it.
+
+### Fixed
+
+- **Escape now closes one layer at a time.** With several overlays open (e.g. the
+  context peek over the detail panel, or the value visualizer over both), Escape
+  dismisses the top-most floating window first and the docked panel last, instead
+  of collapsing everything at once.
+
 ## [1.4.0] - 2026-06-22
 
 ### Added

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
+import { useEscapeKey } from '../escStack';
 
 interface McpInfo {
   execPath: string;
@@ -44,12 +45,9 @@ export default function McpPanel({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     load();
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [load, onClose]);
+  }, [load]);
+
+  useEscapeKey(onClose, 'modal');
 
   const toggle = (): void => {
     const next = !enabled;

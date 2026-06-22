@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useEscapeKey } from '../escStack';
 
 /** Compact "go to line N" prompt, opened with Ctrl/Cmd+G. */
 export default function GoToLine({
@@ -16,6 +17,8 @@ export default function GoToLine({
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
+
+  useEscapeKey(onClose, 'modal');
 
   const submit = (): void => {
     const n = parseInt(value, 10);
@@ -40,7 +43,6 @@ export default function GoToLine({
           onChange={(e) => setValue(e.target.value.replace(/[^0-9]/g, ''))}
           onKeyDown={(e) => {
             if (e.key === 'Enter') submit();
-            if (e.key === 'Escape') onClose();
           }}
           placeholder="line number"
           className="w-full rounded border border-edge bg-surface-0 px-2 py-1 font-mono text-sm text-gray-100 outline-none focus:border-sky-600"

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEscapeKey } from '../escStack';
 
 const EXAMPLES = ['docker logs -f web', 'journalctl -f', 'kubectl logs -f pod/api', 'adb logcat'];
 
@@ -22,12 +23,9 @@ export default function CommandDialog({
 
   useEffect(() => {
     inputRef.current?.focus();
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, []);
+
+  useEscapeKey(onClose, 'modal');
 
   const run = useCallback(async () => {
     const c = command.trim();

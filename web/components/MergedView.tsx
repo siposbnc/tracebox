@@ -365,6 +365,11 @@ export default function MergedView({
           e.preventDefault();
           selectAtViewIndex(listTotal - 1, 'end');
           break;
+        case 'openContext':
+          if (!selected) return;
+          e.preventDefault();
+          setContext({ sessionId: sources[selected.source].id, lineNo: selected.lineNo });
+          break;
       }
     };
     el.addEventListener('keydown', onKey);

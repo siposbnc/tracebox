@@ -3,7 +3,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { api, formatTs } from '../api';
 import { useOrder, useTz, getPageJump, getPageJumpBig, type Tz } from '../settings';
 import { useBookmarks, toggleBookmark } from '../bookmarks';
-import { matchCommand } from '../keybindings';
+import { matchCommand, getChord, formatChord } from '../keybindings';
 import type { RowData } from '../types';
 
 const BLOCK = 256;
@@ -638,7 +638,7 @@ const Row = memo(function Row({
             e.stopPropagation();
             onContext(row.lineNo);
           }}
-          title="Show surrounding lines (context)"
+          title={`Show surrounding lines (context)${getChord('openContext') ? ` — ${formatChord(getChord('openContext'))}` : ''}`}
           className="absolute right-2 top-1/2 hidden -translate-y-1/2 rounded border border-edge bg-surface-2 px-1.5 text-[10px] leading-4 text-gray-400 shadow group-hover:block hover:text-sky-300"
         >
           ± context

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, formatTs } from '../api';
 import { useTz, getContextLines } from '../settings';
+import { useEscapeKey } from '../escStack';
 import type { ContextResult } from '../types';
 
 const LEVEL_STYLES: Record<string, string> = {
@@ -55,13 +56,7 @@ export default function ContextPeek({
     };
   }, [sessionId, lineNo, before, after]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  useEscapeKey(onClose, 'modal');
 
   // keep the center line in view as the window grows
   useEffect(() => {

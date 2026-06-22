@@ -518,6 +518,11 @@ export default function LogView({
           e.preventDefault();
           setDetailOpen((v) => !v);
           break;
+        case 'openContext':
+          if (selected === null) return; // nothing selected to peek around
+          e.preventDefault();
+          setContextLine(selected);
+          break;
         case 'toggleBookmark':
           if (selected === null) return;
           e.preventDefault();
