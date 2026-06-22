@@ -30,6 +30,7 @@ export const COMMANDS: Command[] = [
   { id: 'nextMatch', label: 'Next match (highlight mode)', defaultChord: 'F3' },
   { id: 'prevMatch', label: 'Previous match (highlight mode)', defaultChord: 'Shift+F3' },
   { id: 'toggleHighlight', label: 'Highlight matches in place', defaultChord: 'Mod+H' },
+  { id: 'copySelection', label: 'Copy selected line(s)', defaultChord: 'Mod+C' },
   { id: 'toggleWrap', label: 'Toggle word wrap', defaultChord: 'Mod+W' },
   { id: 'nextTab', label: 'Next file tab', defaultChord: 'Mod+Tab' },
   { id: 'prevTab', label: 'Previous file tab', defaultChord: 'Mod+Shift+Tab' },

@@ -45,6 +45,9 @@ export class CaptureSource extends EventEmitter {
   private readonly out: WriteStream;
   private notifyTimer: ReturnType<typeof setTimeout> | null = null;
   private ended = false;
+  /** The producer streams being spooled, so reading can be paused/resumed. */
+  private readonly streams: Readable[] = [];
+  private paused = false;
 
   /**
    * `stdin` (when given) is piped instead of spawning a process — capturing an
@@ -90,11 +93,31 @@ export class CaptureSource extends EventEmitter {
 
   /** Pipe one producer stream into the capture file, counting bytes as they pass. */
   private follow(src: Readable): void {
+    this.streams.push(src);
     src.on('data', (chunk: Buffer) => {
       this.bytes += chunk.length;
       this.scheduleNotify();
     });
     src.pipe(this.out, { end: false });
+    if (this.paused) src.pause();
+  }
+
+  /**
+   * Pause spooling the producer's output. The streams stop flowing, which back-
+   * pressures the process (its pipe buffer fills and it blocks) — so a paused
+   * capture stops growing. {@link resume} continues where it left off. No-op once
+   * the producer has ended.
+   */
+  pause(): void {
+    if (this.ended || this.paused) return;
+    this.paused = true;
+    for (const s of this.streams) s.pause();
+  }
+
+  resume(): void {
+    if (this.ended || !this.paused) return;
+    this.paused = false;
+    for (const s of this.streams) s.resume();
   }
 
   private scheduleNotify(): void {

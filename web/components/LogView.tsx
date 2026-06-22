@@ -257,29 +257,53 @@ export default function LogView({
     [runSearch],
   );
 
-  // copy to the clipboard as multi-line text: the selected span if one is active
-  // (Shift+click / Shift+Arrow), otherwise the whole current view (capped)
+  // copy a display-index span [from, from+count) to the clipboard as multi-line
+  // text, paging the rows (capped) so a huge selection stays bounded
   const COPY_CAP = 10000;
-  const copyRows = useCallback(async (): Promise<{ count: number; total: number }> => {
-    if (selRange) {
+  const copyLinesInRange = useCallback(
+    async (from: number, count: number): Promise<number> => {
       const order = getOrder();
       const grouped = groupingActiveRef.current;
-      const wanted = Math.min(selRange.to - selRange.from + 1, COPY_CAP);
+      const wanted = Math.min(count, COPY_CAP);
       const texts: string[] = [];
-      for (let off = selRange.from; texts.length < wanted; off += 2000) {
-        const limit = Math.min(2000, selRange.from + wanted - off);
+      for (let off = from; texts.length < wanted; off += 2000) {
+        const limit = Math.min(2000, from + wanted - off);
         if (limit <= 0) break;
         const page = await api.rows(id, off, limit, order, false, grouped);
         if (page.rows.length === 0) break;
         for (const row of page.rows) texts.push(row.text);
       }
       await navigator.clipboard.writeText(texts.join('\n'));
-      return { count: texts.length, total: selRange.to - selRange.from + 1 };
+      return texts.length;
+    },
+    [id],
+  );
+
+  // the toolbar "Copy": the selected span if one is active, else the whole view
+  const copyRows = useCallback(async (): Promise<{ count: number; total: number }> => {
+    if (selRange) {
+      const total = selRange.to - selRange.from + 1;
+      return { count: await copyLinesInRange(selRange.from, total), total };
     }
     const r = await api.copyText(id, COPY_CAP, getOrder(), groupingActiveRef.current);
     await navigator.clipboard.writeText(r.text);
     return { count: r.count, total: r.total };
-  }, [id, selRange]);
+  }, [id, selRange, copyLinesInRange]);
+
+  // Ctrl/Cmd+C: copy the selected line(s). Returns false when nothing is selected
+  // so the caller can fall back to the browser's native copy.
+  const copySelection = useCallback(async (): Promise<boolean> => {
+    if (selRange) {
+      await copyLinesInRange(selRange.from, selRange.to - selRange.from + 1);
+      return true;
+    }
+    if (selected !== null) {
+      const d = await api.detail(id, selected);
+      await navigator.clipboard.writeText(d?.raw ?? '');
+      return true;
+    }
+    return false;
+  }, [id, selRange, selected, copyLinesInRange]);
 
   // drill the view down to a single cluster (or clear it); keeps the current text
   // query and does not refresh the patterns panel
@@ -495,6 +519,16 @@ export default function LogView({
           e.preventDefault();
           toggleHighlight();
           break;
+        case 'copySelection': {
+          // defer to the browser when the user has a text selection or is in an
+          // input, so Ctrl/Cmd+C still copies text there
+          if (isEditableTarget(e.target)) return;
+          const textSel = window.getSelection();
+          if (textSel && !textSel.isCollapsed && textSel.toString().length > 0) return;
+          e.preventDefault();
+          void copySelection();
+          break;
+        }
         case 'toggleWrap':
           e.preventDefault();
           setWrap(!getWrap());
@@ -515,7 +549,7 @@ export default function LogView({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [selected, toggleHighlight, jumpBookmark]);
+  }, [selected, toggleHighlight, jumpBookmark, copySelection]);
 
   // highlight terms extracted from the active query
   // literal terms to highlight (skipped in regex mode — the row list highlights

@@ -985,6 +985,18 @@ export class LogSession extends EventEmitter {
   setTail(on: boolean): void {
     if (on === this.tail) return;
     this.tail = on;
+    // a command/stdin capture has no file watcher; tailing instead gates its
+    // producer — turning tail off pauses reading (back-pressuring the process),
+    // turning it on resumes and drains whatever was buffered
+    if (this.capture) {
+      if (on) {
+        this.capture.resume();
+        void this.checkAppend();
+      } else {
+        this.capture.pause();
+      }
+      return;
+    }
     if (on) {
       this.watcher = watchFile(this.watchPath, { interval: 400 }, this.watchListener);
       void this.checkAppend();

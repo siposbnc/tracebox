@@ -93,6 +93,32 @@ test('stop() freezes the captured data while keeping it searchable', async () =>
   stdin.destroy();
 });
 
+test('turning tail off pauses a command capture; turning it on resumes', async () => {
+  const stdin = new PassThrough();
+  const capture = new CaptureSource({ command: '(stream)', file: captureFile(), stdin });
+  const session = await startSession(capture);
+
+  stdin.write('line one\n');
+  await waitUntil(() => session.lineCount >= 1);
+  assert.equal(session.status().tail, true); // a capture follows by default
+
+  // pause: new output is back-pressured and does not get indexed
+  session.setTail(false);
+  stdin.write('line two\n');
+  stdin.write('line three\n');
+  await new Promise((r) => setTimeout(r, 250));
+  await session.refresh();
+  assert.equal(session.lineCount, 1);
+
+  // resume: the buffered output flows and is indexed, in order
+  session.setTail(true);
+  await waitUntil(() => session.lineCount >= 3);
+  const rows = await session.getRows(0, 10);
+  assert.deepEqual(rows.map((r) => r.text), ['line one', 'line two', 'line three']);
+
+  stdin.destroy();
+});
+
 test('reports a spawn failure as a failed capture', async () => {
   const capture = new CaptureSource({
     command: 'this-command-does-not-exist-tracebox',

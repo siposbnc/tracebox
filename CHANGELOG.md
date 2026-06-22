@@ -16,7 +16,9 @@ date and start a fresh `Unreleased` section.
 
 - **Multi-row selection.** Shift+click a row, or Shift+Arrow, to select a span of
   lines; the status bar shows the count and **Copy** grabs just the selection
-  (instead of the whole filtered view). Plain click/arrow clears it.
+  (instead of the whole filtered view). Plain click/arrow clears it. **Ctrl/Cmd+C**
+  copies the selected line(s) to the clipboard (it defers to the browser when you
+  have a text selection, so copying a snippet still works).
 - **Columnar view is now a real table.** Drag a column's right edge to **resize**
   it and drag its header to **reorder** — both persisted per file — and **click a
   cell to filter** the query to that `field:value`.
@@ -52,6 +54,11 @@ date and start a fresh `Unreleased` section.
 
 ### Changed
 
+- **Tail now pauses a command/stdin source.** Turning tail off on a `tracebox --
+  <command>` (or stdin) session pauses reading its output — the producer is
+  back-pressured and the view stops growing — and turning tail back on resumes
+  from where it left off and drains what buffered. Previously a command kept
+  streaming into the index regardless of the tail toggle.
 - **User-defined parsers now take precedence over built-ins.** If any of your
   custom parsers parses a file well enough, it wins detection outright — even over
   a built-in format that would match more lines — because you defined it on purpose.
