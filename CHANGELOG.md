@@ -55,46 +55,6 @@ date and start a fresh `Unreleased` section.
   the rest of a query — `level:error AND msg:~"time(d)? out" AND status:>=500`.
   It evaluates against the index (no full-file scan), unlike the whole-line regex
   search toggle. Quote the pattern to include spaces, parentheses, or quotes.
-
-### Changed
-
-- **Tail now pauses a command/stdin source.** Turning tail off on a `tracebox --
-  <command>` (or stdin) session pauses reading its output — the producer is
-  back-pressured and the view stops growing — and turning tail back on resumes
-  from where it left off and drains what buffered. Previously a command kept
-  streaming into the index regardless of the tail toggle.
-- **User-defined parsers now take precedence over built-ins.** If any of your
-  custom parsers parses a file well enough, it wins detection outright — even over
-  a built-in format that would match more lines — because you defined it on purpose.
-  (Previously a higher-scoring built-in could win.) You can still override the
-  choice from the status-bar parser picker.
-- Reports now **render Markdown in notes** in the HTML output — bold, lists, links,
-  and inline code show formatted instead of literal. Applies to the app's HTML
-  report export and the MCP `build_report` HTML format (its summary/section prose).
-- The rotated-files offer now **names the files** it found (e.g. "Found 2 rotated
-  files alongside this log: app.log.1, app.log.2") so you can decide by name before
-  opening the group as one stream.
-- The merged timeline is now **live**: while its files are tailing (or are
-  command/capture sources), appended lines fold into the timeline as they arrive
-  and slot into their place in time order — no manual Refresh needed. The view
-  sticks to the live edge when you're already scrolled there, an active search
-  keeps matching new lines, and the histogram updates as data streams in.
-
-### Fixed
-
-- Config changes made by the **MCP server** (e.g. `add_parser`) are now reflected
-  in the app without a restart — the server re-reads `config.json` when it changes
-  on disk instead of caching it for the process lifetime, so a parser added by an
-  agent shows up the next time **Settings → Custom parsers** is opened.
-- Clicking a level in the status bar now **narrows the current query** instead of
-  replacing it: the clicked `level:` filter is appended to whatever you've already
-  searched, and an existing level clause is updated in place rather than stacked.
-- Dragging a time range on the histogram now **updates the existing timestamp
-  filter** in place instead of appending another, so repeatedly narrowing the
-  selection no longer stacks `timestamp:` clauses in the query.
-
-### Added
-
 - **User-defined parsers** — teach TraceBox a proprietary log format: a named
   regular expression whose capture groups become structured fields (`timestamp`,
   `level`/`level2`, and `message` are treated as record metadata). Custom parsers
@@ -157,8 +117,42 @@ date and start a fresh `Unreleased` section.
   until the first lines are read — instead of a blank area or a misleading
   "No matching log lines" message.
 
+### Changed
+
+- **Tail now pauses a command/stdin source.** Turning tail off on a `tracebox --
+  <command>` (or stdin) session pauses reading its output — the producer is
+  back-pressured and the view stops growing — and turning tail back on resumes
+  from where it left off and drains what buffered. Previously a command kept
+  streaming into the index regardless of the tail toggle.
+- **User-defined parsers now take precedence over built-ins.** If any of your
+  custom parsers parses a file well enough, it wins detection outright — even over
+  a built-in format that would match more lines — because you defined it on purpose.
+  (Previously a higher-scoring built-in could win.) You can still override the
+  choice from the status-bar parser picker.
+- Reports now **render Markdown in notes** in the HTML output — bold, lists, links,
+  and inline code show formatted instead of literal. Applies to the app's HTML
+  report export and the MCP `build_report` HTML format (its summary/section prose).
+- The rotated-files offer now **names the files** it found (e.g. "Found 2 rotated
+  files alongside this log: app.log.1, app.log.2") so you can decide by name before
+  opening the group as one stream.
+- The merged timeline is now **live**: while its files are tailing (or are
+  command/capture sources), appended lines fold into the timeline as they arrive
+  and slot into their place in time order — no manual Refresh needed. The view
+  sticks to the live edge when you're already scrolled there, an active search
+  keeps matching new lines, and the histogram updates as data streams in.
+
 ### Fixed
 
+- Config changes made by the **MCP server** (e.g. `add_parser`) are now reflected
+  in the app without a restart — the server re-reads `config.json` when it changes
+  on disk instead of caching it for the process lifetime, so a parser added by an
+  agent shows up the next time **Settings → Custom parsers** is opened.
+- Clicking a level in the status bar now **narrows the current query** instead of
+  replacing it: the clicked `level:` filter is appended to whatever you've already
+  searched, and an existing level clause is updated in place rather than stacked.
+- Dragging a time range on the histogram now **updates the existing timestamp
+  filter** in place instead of appending another, so repeatedly narrowing the
+  selection no longer stacks `timestamp:` clauses in the query.
 - Running a search now filters the row list immediately. The list previously kept
   showing unfiltered rows until you toggled Highlight matches on and off again:
   the row blocks loaded before the search were only being invalidated as if data
