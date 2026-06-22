@@ -17,8 +17,9 @@ date and start a fresh `Unreleased` section.
 - **Multi-row selection.** Shift+click a row, or Shift+Arrow, to select a span of
   lines; the status bar shows the count and **Copy** grabs just the selection
   (instead of the whole filtered view). Plain click/arrow clears it. **Ctrl/Cmd+C**
-  copies the selected line(s) to the clipboard (it defers to the browser when you
-  have a text selection, so copying a snippet still works).
+  runs the same "copy rows to clipboard" as the Export menu — the selection if any,
+  else the whole view — and shows the same "Copied N rows" note. (It defers to the
+  browser when you have a text selection, so copying a snippet still works.)
 - **Columnar view is now a real table.** Drag a column's right edge to **resize**
   it and drag its header to **reorder** — both persisted per file — and **click a
   cell to filter** the query to that `field:value`. The column picker lists fields

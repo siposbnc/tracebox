@@ -257,6 +257,10 @@ export default function LogView({
     [runSearch],
   );
 
+  // transient "Copied N rows" note, shared by the Export menu and the shortcut
+  const [copyNote, setCopyNote] = useState<string | null>(null);
+  const copyNoteToken = useRef(0);
+
   // copy a display-index span [from, from+count) to the clipboard as multi-line
   // text, paging the rows (capped) so a huge selection stays bounded
   const COPY_CAP = 10000;
@@ -290,20 +294,24 @@ export default function LogView({
     return { count: r.count, total: r.total };
   }, [id, selRange, copyLinesInRange]);
 
-  // Ctrl/Cmd+C: copy the selected line(s). Returns false when nothing is selected
-  // so the caller can fall back to the browser's native copy.
-  const copySelection = useCallback(async (): Promise<boolean> => {
-    if (selRange) {
-      await copyLinesInRange(selRange.from, selRange.to - selRange.from + 1);
-      return true;
+  // copy the rows (selection or whole view) and surface a transient note — the one
+  // action behind both the Export menu's "Copy rows" and the Ctrl/Cmd+C shortcut
+  const runCopy = useCallback(async (): Promise<void> => {
+    const token = ++copyNoteToken.current;
+    setCopyNote('Copying…');
+    try {
+      const { count, total } = await copyRows();
+      if (copyNoteToken.current === token) {
+        setCopyNote(`Copied ${count.toLocaleString()}${total > count ? ` of ${total.toLocaleString()}` : ''} rows`);
+      }
+    } catch {
+      if (copyNoteToken.current === token) setCopyNote('Copy failed');
+    } finally {
+      setTimeout(() => {
+        if (copyNoteToken.current === token) setCopyNote(null);
+      }, 2500);
     }
-    if (selected !== null) {
-      const d = await api.detail(id, selected);
-      await navigator.clipboard.writeText(d?.raw ?? '');
-      return true;
-    }
-    return false;
-  }, [id, selRange, selected, copyLinesInRange]);
+  }, [copyRows]);
 
   // drill the view down to a single cluster (or clear it); keeps the current text
   // query and does not refresh the patterns panel
@@ -526,7 +534,7 @@ export default function LogView({
           const textSel = window.getSelection();
           if (textSel && !textSel.isCollapsed && textSel.toString().length > 0) return;
           e.preventDefault();
-          void copySelection();
+          void runCopy(); // same as the Export menu's "Copy rows", incl. the note
           break;
         }
         case 'toggleWrap':
@@ -549,7 +557,7 @@ export default function LogView({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [selected, toggleHighlight, jumpBookmark, copySelection]);
+  }, [selected, toggleHighlight, jumpBookmark, runCopy]);
 
   // highlight terms extracted from the active query
   // literal terms to highlight (skipped in regex mode — the row list highlights
@@ -590,7 +598,8 @@ export default function LogView({
         refreshing={refreshing}
         onOpenFile={onOpenFile}
         exportUrls={{ csv: api.exportUrl(id, 'csv'), json: api.exportUrl(id, 'json') }}
-        onCopyRows={copyRows}
+        onCopyRows={runCopy}
+        copyNote={copyNote}
         histogramOpen={histogramOpen}
         onToggleHistogram={() => setHistogramOpen((v) => !v)}
         facetsOpen={facetsOpen}

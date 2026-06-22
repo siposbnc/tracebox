@@ -61,6 +61,7 @@ export default function SearchBar({
   onOpenFile,
   exportUrls,
   onCopyRows,
+  copyNote,
   histogramOpen,
   onToggleHistogram,
   facetsOpen,
@@ -100,7 +101,10 @@ export default function SearchBar({
   refreshing: boolean;
   onOpenFile: () => void;
   exportUrls: { csv: string; json: string };
-  onCopyRows: () => Promise<{ count: number; total: number }>;
+  /** Run the copy (selection or whole view); owns the transient note via `copyNote`. */
+  onCopyRows: () => void;
+  /** Transient "Copied N rows" note shown beside the Export menu (managed by the parent). */
+  copyNote: string | null;
   histogramOpen: boolean;
   onToggleHistogram: () => void;
   facetsOpen: boolean;
@@ -131,7 +135,6 @@ export default function SearchBar({
 }) {
   const [helpOpen, setHelpOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
-  const [copyNote, setCopyNote] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [saveName, setSaveName] = useState('');
   const order = useOrder();
@@ -625,15 +628,7 @@ export default function SearchBar({
             <div className="absolute right-0 top-full z-20 mt-1 w-52 overflow-hidden rounded-lg border border-edge bg-surface-2 shadow-xl">
               <button
                 onMouseDown={(e) => e.preventDefault()}
-                onClick={() => {
-                  setCopyNote('Copying…');
-                  void onCopyRows()
-                    .then(({ count, total }) =>
-                      setCopyNote(`Copied ${count.toLocaleString()}${total > count ? ` of ${total.toLocaleString()}` : ''} rows`),
-                    )
-                    .catch(() => setCopyNote('Copy failed'))
-                    .finally(() => setTimeout(() => setCopyNote(null), 2500));
-                }}
+                onClick={() => onCopyRows()}
                 className="block w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-surface-3"
               >
                 Copy rows to clipboard
