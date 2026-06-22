@@ -21,7 +21,8 @@ date and start a fresh `Unreleased` section.
   have a text selection, so copying a snippet still works).
 - **Columnar view is now a real table.** Drag a column's right edge to **resize**
   it and drag its header to **reorder** — both persisted per file — and **click a
-  cell to filter** the query to that `field:value`.
+  cell to filter** the query to that `field:value`. The column picker lists fields
+  A→Z with a filter box.
 - **Whole-line `/regex/` in the query language.** A bare `/pattern/` term matches
   the whole line and **composes** with everything else — `level:error AND
   /timeout\d+/ AND status:>=500`. It's evaluated in two phases: the surrounding
