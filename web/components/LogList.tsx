@@ -571,6 +571,10 @@ const Row = memo(function Row({
   return (
     <div
       onClick={(e) => onClickRow(viewIndex, row.lineNo, e.shiftKey)}
+      // suppress the browser's shift+click text selection; normal drag-select still works
+      onMouseDown={(e) => {
+        if (e.shiftKey) e.preventDefault();
+      }}
       className={`group row-text relative flex cursor-pointer gap-2 border-l-2 pr-3 font-mono text-[13px] leading-6 ${
         wrap ? 'min-h-6 items-start py-px' : 'h-full items-center'
       } ${
@@ -675,6 +679,9 @@ const GridRow = memo(function GridRow({
   return (
     <div
       onClick={(e) => onClickRow(viewIndex, row.lineNo, e.shiftKey)}
+      onMouseDown={(e) => {
+        if (e.shiftKey) e.preventDefault();
+      }}
       className={`group flex h-full cursor-pointer items-center gap-2 border-l-2 pr-3 font-mono text-[13px] leading-6 ${
         selected
           ? 'border-sky-400 bg-sky-950/60'
