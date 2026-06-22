@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, statSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -44,6 +44,18 @@ export interface Config {
 }
 
 let cached: Config | null = null;
+/** mtime of the config file when `cached` was loaded, so a write by another
+ *  process (e.g. the MCP server adding a parser) is picked up without a restart. */
+let cachedMtimeMs = -1;
+
+/** Current mtime of the config file (0 when it doesn't exist yet). */
+function configMtimeMs(): number {
+  try {
+    return statSync(configFile()).mtimeMs;
+  } catch {
+    return 0;
+  }
+}
 
 /** A spec is usable only if it has a name and a regex that compiles with at least
  * one named capture group (without groups it can never produce fields). */
@@ -82,7 +94,10 @@ function normalize(raw: Partial<Config>): Config {
 }
 
 export function getConfig(): Config {
-  if (cached) return cached;
+  const mtime = configMtimeMs();
+  // reuse the cache only while the file on disk hasn't changed since we read it —
+  // so edits made by a separate process (the MCP server) are reflected live
+  if (cached && mtime === cachedMtimeMs) return cached;
   let raw: Partial<Config> = {};
   try {
     raw = JSON.parse(readFileSync(configFile(), 'utf8')) as Partial<Config>;
@@ -90,6 +105,7 @@ export function getConfig(): Config {
     // no config yet — use defaults
   }
   cached = normalize(raw);
+  cachedMtimeMs = mtime;
   return cached;
 }
 
@@ -100,6 +116,7 @@ export function setConfig(patch: Partial<Config>): Config {
   try {
     mkdirSync(configDir(), { recursive: true });
     writeFileSync(configFile(), JSON.stringify(next, null, 2));
+    cachedMtimeMs = configMtimeMs(); // adopt our own write, don't reload it next read
   } catch {
     // best effort — keep the in-memory value even if persisting fails
   }

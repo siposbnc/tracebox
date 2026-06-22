@@ -20,9 +20,18 @@ import { pipeline } from 'node:stream/promises';
 import path from 'node:path';
 import { LineIndex, LineScanner, type LineSpan } from './lineIndex.ts';
 import { LineReader } from './reader.ts';
-import { compileCustomParsers, detectFormat, RawParser, templateOf, type LogParser } from './parsers.ts';
+import {
+  compileCustomParsers,
+  detectFormat,
+  parserByName,
+  BUILTIN_PARSER_NAMES,
+  RawParser,
+  templateOf,
+  type LogParser,
+} from './parsers.ts';
 import { IndexStore } from './indexer.ts';
 import { parseQuery, QuerySyntaxError, type QueryNode } from './queryParser.ts';
+import { hasRegex, planRegexSearch, regexFlags } from './queryCompiler.ts';
 import { getConfig, parsersSignature } from './config.ts';
 import { CaptureSource, type CaptureStatus } from './capture.ts';
 import { compileRules, type CompiledRule, type WatchRule, type WatchTrigger } from './watch.ts';
@@ -61,6 +70,8 @@ export interface SessionStatus {
   bytesIndexed: number;
   lineCount: number;
   format: string;
+  /** True when `format` was forced via the parser picker rather than auto-detected. */
+  parserForced: boolean;
   reusedIndex: boolean;
   error: string | null;
   tail: boolean;
@@ -116,6 +127,11 @@ export class LogSession extends EventEmitter {
   private dataPath: string;
   /** True when the data is served from a temp (gzip source, or a multi-file rotation group). */
   readonly compressed: boolean;
+  /** The newest rotation member — the live file we follow when tailing a group. */
+  private readonly liveSource: string;
+  /** Whether tailing should follow appends/rolls of the live rotation member
+   *  (a plain-text newest member of a multi-file group). */
+  private readonly followRotation: boolean;
   /** Set when this session follows a live command/stdin capture instead of a static file. */
   readonly capture: CaptureSource | null;
   private index = new LineIndex();
@@ -124,6 +140,8 @@ export class LogSession extends EventEmitter {
   private parser: LogParser = new RawParser();
   /** User-defined parsers active for this session, loaded from config at start(). */
   private customParsers: LogParser[] = [];
+  /** A parser the user forced via the picker, overriding auto-detection; null = auto. */
+  private forcedParserName: string | null = null;
 
   phase: SessionStatus['phase'] = 'indexing';
   error: string | null = null;
@@ -151,8 +169,11 @@ export class LogSession extends EventEmitter {
   private searchDurationMs = 0;
   /** Whether the materialized result set holds record heads (grouped) or physical lines. */
   private searchGrouped = false;
-  /** Active regex search (post-filter mode); null when using the query language. */
+  /** Active regex search (whole-file post-filter *mode*); null when using the query language. */
   private searchRegex: RegExp | null = null;
+  /** Whether the active query-language search contains a whole-line `/regex/` term
+   *  (a snapshot result that doesn't auto-extend while tailing). */
+  private searchHasRegex = false;
   /** Active cluster drill-down (a template id), ANDed with any text query. */
   private templateId: number | null = null;
   /** Lines below this number have been through the current search. */
@@ -163,6 +184,9 @@ export class LogSession extends EventEmitter {
   private watcher: StatWatcher | null = null;
   private appendRunning = false;
   private appendQueued = false;
+  /** Rotation-follow: bytes of the live (newest) member already merged into the
+   *  concatenated temp. Only meaningful when {@link followRotation} is true. */
+  private liveFollowOffset = 0;
 
   // watch rules (light monitoring while tailing)
   private watchRules: CompiledRule[] = [];
@@ -197,6 +221,10 @@ export class LogSession extends EventEmitter {
       // a rotation group is concatenated to a plain temp; only a lone .gz is "compressed"
       this.compressed = this.sources.length <= 1 && looksGzip(this.file);
     }
+    // the live file is the newest member; we can only follow it if it's plain text
+    // (logrotate compresses *older* members, never the active log)
+    this.liveSource = this.sources[this.sources.length - 1];
+    this.followRotation = !this.capture && this.sources.length > 1 && !looksGzip(this.liveSource);
     const rotation = this.sources.length > 1;
     // identity (and thus the index db) keys off the whole group, so reopening the
     // same set reuses the index; a single file keeps its plain per-file hash. A
@@ -243,15 +271,25 @@ export class LogSession extends EventEmitter {
   }
 
   /** Concatenate the rotation group into `temp`, decompressing .gz members and
-   * inserting a newline between files that don't already end with one. */
+   * inserting a newline between files that don't already end with one. The last
+   * (live) member gets no trailing separator — its bytes sit verbatim at the tail
+   * of the temp so live following can append more of it seamlessly — and its
+   * byte length is recorded as the follow offset. */
   private async concatSources(temp: string): Promise<void> {
     const out = createWriteStream(temp);
+    let liveBytes = 0;
     try {
-      for (const src of this.sources) {
+      for (let i = 0; i < this.sources.length; i++) {
+        const src = this.sources[i];
+        const isLast = i === this.sources.length - 1;
         const input = looksGzip(src) ? createReadStream(src).pipe(createGunzip()) : createReadStream(src);
         let lastByte = 0x0a;
+        let bytes = 0;
         input.on('data', (chunk: Buffer) => {
-          if (chunk.length) lastByte = chunk[chunk.length - 1];
+          if (chunk.length) {
+            lastByte = chunk[chunk.length - 1];
+            bytes += chunk.length;
+          }
         });
         await new Promise<void>((resolve, reject) => {
           input.on('error', reject);
@@ -259,18 +297,22 @@ export class LogSession extends EventEmitter {
           input.on('end', resolve);
           input.pipe(out, { end: false });
         });
-        if (lastByte !== 0x0a) {
+        if (isLast) {
+          liveBytes = bytes;
+        } else if (lastByte !== 0x0a) {
           await new Promise<void>((resolve, reject) => out.write('\n', (e) => (e ? reject(e) : resolve())));
         }
       }
     } finally {
       await new Promise<void>((resolve) => out.end(resolve));
     }
+    this.liveFollowOffset = liveBytes;
   }
 
-  /** Fingerprint of every source file (plus the active custom-parser set); reflects
-   * any member changing, so an altered rotation group rebuilds rather than reusing a
-   * stale index — and editing a custom parser re-indexes to re-extract its fields. */
+  /** Fingerprint of every source file (plus the active custom-parser set and any
+   * forced parser); reflects any member changing, so an altered rotation group
+   * rebuilds rather than reusing a stale index — editing a custom parser re-indexes
+   * to re-extract its fields, and forcing a parser keeps its own cached index. */
   private fingerprint(): string {
     const files = this.sources
       .map((s) => {
@@ -279,7 +321,9 @@ export class LogSession extends EventEmitter {
       })
       .join(';');
     const sig = parsersSignature();
-    return sig ? `${files}#parsers:${sig}` : files;
+    let fp = sig ? `${files}#parsers:${sig}` : files;
+    if (this.forcedParserName) fp += `#force:${this.forcedParserName}`;
+    return fp;
   }
 
   async start(): Promise<void> {
@@ -336,6 +380,54 @@ export class LogSession extends EventEmitter {
     });
   }
 
+  /**
+   * Re-index the file with a parser the user chose from the picker, overriding
+   * auto-detection (`null` returns to auto-detect). The data file is already
+   * prepared, so this resets the search index and re-runs the index loop in place;
+   * the search/cluster view is rebuilt from scratch. No-op while still indexing.
+   */
+  async setParser(name: string | null): Promise<void> {
+    const next = name && name !== 'auto' ? name : null;
+    if (this.phase !== 'ready') return;
+    // re-snapshot custom parsers from config so a parser added since this session
+    // opened (e.g. via the MCP server) can be selected and is used by detection
+    this.customParsers = compileCustomParsers(getConfig().parsers);
+    if (next !== null && parserByName(next, this.customParsers) === null) {
+      throw new Error(`Unknown parser "${next}"`);
+    }
+    if (next === this.forcedParserName) return;
+    this.forcedParserName = next;
+
+    // a capture follows via its producer's events, not a file watcher, so leave
+    // its tail state alone; for files, pause the watcher across the rebuild
+    const wasTailing = this.tail && !this.capture;
+    if (wasTailing) this.setTail(false);
+    // reset every piece of derived state, then rebuild the index over the same data
+    this.index = new LineIndex();
+    const oldReader = this.reader;
+    this.reader = new LineReader(this.dataPath, this.index);
+    await this.reader.openFile();
+    await oldReader.close();
+    this.levelCounts = {};
+    this.fieldCounts = new Map();
+    this.templates = new Map();
+    this.lastTemplateId = 0;
+    this.partialTail = null;
+    this.lastHead = 0;
+    this.searchQuery = '';
+    this.searchAst = null;
+    this.searchRegex = null;
+    this.searchTotal = 0;
+    this.templateId = null;
+    this.searchedUpTo = 0;
+    this.reusedIndex = false;
+    this.phase = 'indexing';
+    this.emit('progress');
+    this.store.createSchema();
+    await this.indexLoop();
+    if (wasTailing) this.setTail(true);
+  }
+
   private async restoreFromStore(): Promise<void> {
     const lineCount = Number(this.store.getMeta('lineCount'));
     const indexedBytes = Number(this.store.getMeta('indexedBytes'));
@@ -350,14 +442,32 @@ export class LogSession extends EventEmitter {
     const partial = this.store.getMeta('partialTail');
     this.partialTail = partial ? JSON.parse(partial) : null;
     this.lastHead = Number(this.store.getMeta('lastHead') ?? 0);
+    this.liveFollowOffset = Number(this.store.getMeta('liveFollowOffset') ?? 0);
+    this.forcedParserName = this.store.getMeta('forcedParser') || null;
     const tpls = this.store.loadTemplates();
     this.templates = new Map(tpls.map((t) => [t.pattern, { id: t.id, count: t.count }]));
     this.lastTemplateId = tpls.reduce((max, t) => Math.max(max, t.id), 0);
     // re-detect the parser on a sample (detection is deterministic; avoids
-    // having to serialize regexes into the index database)
+    // having to serialize regexes into the index database), honoring a forced choice
     const sample = await this.reader.readLines(0, Math.min(100, lineCount));
-    this.parser = sample.length > 0 ? detectFormat(sample, this.customParsers) : new RawParser();
+    this.parser = sample.length > 0 ? this.chooseParser(sample) : new RawParser();
     this.store.prepareForAppend();
+  }
+
+  /** The parser to index with: the user's forced choice if set, else auto-detect. */
+  private chooseParser(sample: string[]): LogParser {
+    if (this.forcedParserName) {
+      return parserByName(this.forcedParserName, this.customParsers) ?? new RawParser();
+    }
+    return detectFormat(sample, this.customParsers);
+  }
+
+  /** Parser names the picker can offer: the *current* custom parsers (re-read from
+   *  config so one added since this session opened — e.g. via MCP — shows up), then
+   *  the built-ins. */
+  availableParsers(): string[] {
+    const custom = compileCustomParsers(getConfig().parsers).map((p) => p.name);
+    return [...custom, ...BUILTIN_PARSER_NAMES];
   }
 
   // ---------------------------------------------------------------------------
@@ -376,7 +486,7 @@ export class LogSession extends EventEmitter {
       const flushBatch = (): void => {
         if (batch.length === 0) return;
         if (!parserChosen) {
-          this.parser = detectFormat(batch.slice(0, 100).map((s) => s.text), this.customParsers);
+          this.parser = this.chooseParser(batch.slice(0, 100).map((s) => s.text));
           parserChosen = true;
         }
         this.store.begin();
@@ -495,6 +605,8 @@ export class LogSession extends EventEmitter {
     this.store.setMeta('fieldCounts', JSON.stringify(Object.fromEntries(this.fieldCounts)));
     this.store.setMeta('partialTail', this.partialTail ? JSON.stringify(this.partialTail) : '');
     this.store.setMeta('lastHead', String(this.lastHead));
+    this.store.setMeta('liveFollowOffset', String(this.liveFollowOffset));
+    this.store.setMeta('forcedParser', this.forcedParserName ?? '');
     this.store.setMeta('complete', '1');
     this.fileSize = Math.max(this.fileSize, sizeAtIndex);
   }
@@ -502,11 +614,26 @@ export class LogSession extends EventEmitter {
   // ---------------------------------------------------------------------------
   // Search
 
+  /**
+   * Run a query. Whole-line `/regex/` terms route through the two-phase path
+   * (gather candidates in SQL, verify the regex against them); everything else is
+   * the fully-indexed search. Async because regex verification reads line text.
+   */
+  async search(query: string, grouped = false, templateId: number | null = null): Promise<{ total: number; durationMs: number }> {
+    const trimmed = query.trim();
+    if (trimmed !== '') {
+      const ast = parseQuery(trimmed);
+      if (hasRegex(ast)) return this.applyRegexQuery(trimmed, ast, grouped, templateId);
+    }
+    return this.setSearch(query, grouped, templateId);
+  }
+
   setSearch(query: string, grouped = false, templateId: number | null = null): { total: number; durationMs: number } {
     const trimmed = query.trim();
     this.searchGrouped = grouped;
     this.templateId = templateId;
     this.searchRegex = null;
+    this.searchHasRegex = false;
     if (trimmed === '' && templateId === null) {
       this.searchQuery = '';
       this.searchAst = null;
@@ -527,6 +654,62 @@ export class LogSession extends EventEmitter {
   }
 
   /**
+   * Two-phase whole-line-regex query: SQL gathers a candidate superset (where the
+   * surrounding field/term filters already narrow the lines), the regex leaves are
+   * verified against those lines' text, and the exact query is materialized from
+   * the verified matches. A snapshot — it doesn't auto-extend while tailing.
+   */
+  private async applyRegexQuery(
+    query: string,
+    ast: QueryNode,
+    grouped: boolean,
+    templateId: number | null,
+  ): Promise<{ total: number; durationMs: number }> {
+    const t0 = performance.now();
+    const plan = planRegexSearch(ast, (i) => `_rx_${i}`);
+    const candidates = this.store.candidateLines(plan.prefilter, templateId);
+    const compiled = plan.leaves.map((l) => new RegExp(l.pattern, regexFlags(l.flags)));
+    const matches: number[][] = plan.leaves.map(() => []);
+    const CHUNK = 4000;
+    for (let s = 0; s < candidates.length; s += CHUNK) {
+      if (this.closed) break;
+      const chunk = candidates.slice(s, s + CHUNK);
+      const texts = await this.readTexts(chunk);
+      for (let k = 0; k < chunk.length; k++) {
+        const text = texts[k];
+        for (let li = 0; li < compiled.length; li++) {
+          if (compiled[li].test(text)) matches[li].push(chunk[k]);
+        }
+      }
+    }
+    this.searchTotal = this.store.runRegexSearch(plan.exact, matches, grouped, templateId);
+    this.searchDurationMs = Math.round(performance.now() - t0);
+    this.searchGrouped = grouped;
+    this.templateId = templateId;
+    this.searchQuery = query;
+    this.searchAst = ast;
+    this.searchRegex = null;
+    this.searchHasRegex = true;
+    this.searchedUpTo = this.index.lineCount;
+    return { total: this.searchTotal, durationMs: this.searchDurationMs };
+  }
+
+  /** Read the text of an ascending list of line numbers, batching contiguous runs. */
+  private async readTexts(lineNos: number[]): Promise<string[]> {
+    const out: string[] = new Array(lineNos.length);
+    let i = 0;
+    while (i < lineNos.length) {
+      if (this.closed) break;
+      let j = i + 1;
+      while (j < lineNos.length && lineNos[j] === lineNos[j - 1] + 1) j++;
+      const texts = await this.reader.readLines(lineNos[i], j - i);
+      for (let k = i; k < j; k++) out[k] = texts[k - i] ?? '';
+      i = j;
+    }
+    return out;
+  }
+
+  /**
    * Regex search: scans line text and materializes matches (post-filter, since
    * FTS5 can't do arbitrary regex). Combines with grouping (matches map to record
    * heads). The result set is a snapshot — it does not auto-extend while tailing.
@@ -535,6 +718,7 @@ export class LogSession extends EventEmitter {
     const trimmed = pattern.trim();
     this.searchGrouped = grouped;
     this.templateId = null;
+    this.searchHasRegex = false;
     if (trimmed === '') {
       this.searchAst = null;
       this.searchRegex = null;
@@ -792,16 +976,91 @@ export class LogSession extends EventEmitter {
     void this.checkAppend();
   };
 
+  /** The file the tail watcher polls: the live rotation member (so external
+   *  writes and rolls are seen), else the data file we read directly. */
+  private get watchPath(): string {
+    return this.followRotation ? this.liveSource : this.dataPath;
+  }
+
   setTail(on: boolean): void {
     if (on === this.tail) return;
     this.tail = on;
     if (on) {
-      this.watcher = watchFile(this.dataPath, { interval: 400 }, this.watchListener);
+      this.watcher = watchFile(this.watchPath, { interval: 400 }, this.watchListener);
       void this.checkAppend();
     } else if (this.watcher) {
-      unwatchFile(this.dataPath, this.watchListener);
+      unwatchFile(this.watchPath, this.watchListener);
       this.watcher = null;
     }
+  }
+
+  /**
+   * Before an append scan, sync the concatenated temp with the live (newest)
+   * rotation member: copy any bytes it has gained onto the end of the temp so the
+   * indexer picks them up like a single-file tail. A roll — the live file shrank
+   * because logrotate truncated it (copytruncate) or replaced it with a fresh
+   * file at the same path — is followed by continuing from the new file's start;
+   * the already-indexed bytes stay put (they now live in a rotated sibling).
+   */
+  private async syncLiveSource(): Promise<void> {
+    if (!this.followRotation) return;
+    let size: number;
+    try {
+      size = statSync(this.liveSource).size;
+    } catch {
+      return; // live file briefly absent mid-rotation — retry on the next tick
+    }
+    if (size < this.liveFollowOffset) {
+      // a roll: separate the new file's first line from the old tail, then follow
+      // the fresh file from byte 0
+      await this.ensureTempTerminated();
+      this.liveFollowOffset = 0;
+      this.emit('rotated');
+    }
+    if (size > this.liveFollowOffset) {
+      await this.appendBytesToTemp(this.liveSource, this.liveFollowOffset, size);
+      this.liveFollowOffset = size;
+    }
+  }
+
+  /** Copy bytes [from, to) of `src` onto the end of the concatenated temp. */
+  private async appendBytesToTemp(src: string, from: number, to: number): Promise<void> {
+    if (to <= from) return;
+    await new Promise<void>((resolve, reject) => {
+      const rs = createReadStream(src, { start: from, end: to - 1 });
+      const ws = createWriteStream(this.dataPath, { flags: 'a' });
+      rs.on('error', reject);
+      ws.on('error', reject);
+      ws.on('finish', resolve);
+      rs.pipe(ws);
+    });
+  }
+
+  /** Ensure the temp ends with a newline, so a rolled file's first line can't glue
+   *  onto the previous file's (possibly unterminated) last line. */
+  private async ensureTempTerminated(): Promise<void> {
+    let size: number;
+    try {
+      size = statSync(this.dataPath).size;
+    } catch {
+      return;
+    }
+    if (size === 0) return;
+    const fd: FileHandle = await open(this.dataPath, 'r');
+    let lastByte: number;
+    try {
+      const buf = Buffer.alloc(1);
+      await fd.read(buf, 0, 1, size - 1);
+      lastByte = buf[0];
+    } finally {
+      await fd.close();
+    }
+    if (lastByte === 0x0a) return;
+    await new Promise<void>((resolve, reject) => {
+      const ws = createWriteStream(this.dataPath, { flags: 'a' });
+      ws.on('error', reject);
+      ws.write('\n', (e) => (e ? reject(e) : ws.end(() => resolve())));
+    });
   }
 
   /** Manually poll the file for appended or truncated data — the same work tail
@@ -927,6 +1186,9 @@ export class LogSession extends EventEmitter {
   }
 
   private async appendOnce(): Promise<void> {
+    // for a rotation group, first fold any new bytes of the live member (and any
+    // roll) into the concatenated temp, so the scan below indexes them as usual
+    await this.syncLiveSource();
     let st;
     try {
       st = statSync(this.dataPath);
@@ -1013,7 +1275,8 @@ export class LogSession extends EventEmitter {
       // extend the active search over the new lines. A grouped search keys off the
       // record head, so re-run it from the rebuilt region's head to catch records
       // whose continuation lines just arrived; an ungrouped one resumes by line.
-      if (this.searchAst !== null && this.index.lineCount > firstNewLine) {
+      // (A whole-line-regex query is a snapshot and isn't extended.)
+      if (this.searchAst !== null && !this.searchHasRegex && this.index.lineCount > firstNewLine) {
         const from = this.searchGrouped ? Math.min(firstNewLine, rebuildFrom) : firstNewLine;
         this.store.pruneResultsFrom(from);
         this.searchTotal = this.store.runSearch(this.searchAst, this.searchGrouped, from, this.templateId);
@@ -1046,6 +1309,7 @@ export class LogSession extends EventEmitter {
       bytesIndexed: Math.min(this.index.indexedBytes, this.fileSize),
       lineCount: this.index.lineCount,
       format: this.parser.name,
+      parserForced: this.forcedParserName !== null,
       reusedIndex: this.reusedIndex,
       error: this.error,
       tail: this.tail,

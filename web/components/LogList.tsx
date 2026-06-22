@@ -45,6 +45,8 @@ export default function LogList({
   onSelect,
   onActivate,
   onContext,
+  selRange,
+  onRange,
   showContext,
   indexing,
   hasSearch,
@@ -53,9 +55,13 @@ export default function LogList({
   wrap,
   columnar,
   columns,
+  columnWidths,
+  onColumnResize,
+  onReorderColumns,
   scrollTo,
   highlightTerms,
   regexPattern,
+  onAddFilter,
   onUserScroll,
   onScrolledToEnd,
 }: {
@@ -72,6 +78,10 @@ export default function LogList({
   /** Activate a row (click): select it and open the detail panel. */
   onActivate: (lineNo: number) => void;
   onContext: (lineNo: number) => void;
+  /** Inclusive display-index span of a multi-row selection (Shift+click / Shift+Arrow). */
+  selRange: { from: number; to: number } | null;
+  /** Report a new multi-row selection span, or null to clear it. */
+  onRange: (range: { from: number; to: number } | null) => void;
   showContext: boolean;
   /** The file is still being indexed — an empty list means "loading", not "empty". */
   indexing: boolean;
@@ -82,15 +92,28 @@ export default function LogList({
   wrap: boolean;
   columnar: boolean;
   columns: string[];
+  /** Per-column pixel widths (file-persisted); columns without one use the default. */
+  columnWidths: Record<string, number>;
+  /** Persist a dragged column width. */
+  onColumnResize: (col: string, width: number) => void;
+  /** Persist a new column order (drag-to-reorder in the header). */
+  onReorderColumns: (cols: string[]) => void;
   scrollTo: { lineNo: number; nonce: number } | null;
   highlightTerms: string[];
   regexPattern: string | null;
+  /** Add a `field:value` clause to the query (columnar cell click). */
+  onAddFilter: (clause: string) => void;
   onUserScroll: () => void;
   onScrolledToEnd: () => void;
 }) {
   const parentRef = useRef<HTMLDivElement>(null);
   const blocksRef = useRef(new Map<number, Block>());
   const loadingRef = useRef(new Set<number>());
+  // multi-row selection anchors (display indices); the range itself lives in the parent
+  const rangeAnchorRef = useRef<number | null>(null);
+  const rangeFocusRef = useRef<number | null>(null);
+  const onRangeRef = useRef(onRange);
+  onRangeRef.current = onRange;
   const [, forceRender] = useState(0);
   const epochRef = useRef(epoch);
   const appendEpochRef = useRef(appendEpoch);
@@ -144,6 +167,33 @@ export default function LogList({
     estimateSize: () => ROW_HEIGHT,
     overscan: 30,
   });
+
+  // a reset (new search, grouping/order change, append) invalidates display
+  // positions, so drop any multi-row selection
+  useEffect(() => {
+    rangeAnchorRef.current = null;
+    rangeFocusRef.current = null;
+    onRangeRef.current(null);
+  }, [epoch, order]);
+
+  // Click selection: plain click activates one row (and anchors); Shift+click
+  // extends a span from the anchor to the clicked row for copy/export.
+  const clickRow = useCallback(
+    (viewIndex: number, lineNo: number, shift: boolean): void => {
+      if (shift && rangeAnchorRef.current !== null) {
+        const a = rangeAnchorRef.current;
+        rangeFocusRef.current = viewIndex;
+        onRangeRef.current({ from: Math.min(a, viewIndex), to: Math.max(a, viewIndex) });
+        onSelect(lineNo);
+      } else {
+        rangeAnchorRef.current = viewIndex;
+        rangeFocusRef.current = viewIndex;
+        onRangeRef.current(null);
+        onActivate(lineNo);
+      }
+    },
+    [onSelect, onActivate],
+  );
 
   const fetchBlock = useCallback(
     (blockIdx: number) => {
@@ -252,7 +302,19 @@ export default function LogList({
         const cur = viewIndexOf(selected);
         if (cur === null) return;
         e.preventDefault();
-        selectAtViewIndex(cur + (e.key === 'ArrowDown' ? 1 : -1), 'auto');
+        const next = Math.max(0, Math.min(total - 1, cur + (e.key === 'ArrowDown' ? 1 : -1)));
+        if (e.shiftKey) {
+          // extend the multi-row selection from the anchor to the moving focus
+          if (rangeAnchorRef.current === null) rangeAnchorRef.current = cur;
+          const a = rangeAnchorRef.current;
+          rangeFocusRef.current = next;
+          onRangeRef.current({ from: Math.min(a, next), to: Math.max(a, next) });
+        } else {
+          rangeAnchorRef.current = next;
+          rangeFocusRef.current = next;
+          onRangeRef.current(null);
+        }
+        selectAtViewIndex(next, 'auto');
         return;
       }
       switch (matchCommand(e)) {
@@ -334,7 +396,9 @@ export default function LogList({
 
   const gutterWidth = Math.max(5, String(total).length) + 1;
 
-  const gridMinWidth = `calc(${gutterWidth + 2}ch + ${16 + TIME_W + LEVEL_W + columns.length * COL_W}px)`;
+  const widthOf = useCallback((c: string): number => columnWidths[c] ?? COL_W, [columnWidths]);
+  const columnsPx = columns.reduce((sum, c) => sum + widthOf(c), 0);
+  const gridMinWidth = `calc(${gutterWidth + 2}ch + ${16 + TIME_W + LEVEL_W + columnsPx}px)`;
 
   return (
     <div
@@ -363,23 +427,13 @@ export default function LogList({
         </div>
       ) : columnar ? (
         <div style={{ minWidth: gridMinWidth }}>
-          <div className="sticky top-0 z-10 flex items-center gap-2 border-b border-edge bg-surface-1 pr-3 text-[10px] font-semibold uppercase tracking-wide text-gray-500">
-            <span className="w-4 shrink-0" />
-            <span className="shrink-0 text-right" style={{ width: `${gutterWidth}ch` }}>
-              #
-            </span>
-            <span className="shrink-0" style={{ width: TIME_W }}>
-              time
-            </span>
-            <span className="shrink-0" style={{ width: LEVEL_W }}>
-              level
-            </span>
-            {columns.map((c) => (
-              <span key={c} className="shrink-0 truncate px-1 font-mono normal-case" style={{ width: COL_W }} title={c}>
-                {c}
-              </span>
-            ))}
-          </div>
+          <GridHeader
+            columns={columns}
+            widthOf={widthOf}
+            gutterWidth={gutterWidth}
+            onResize={onColumnResize}
+            onReorder={onReorderColumns}
+          />
           <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
             {items.map((item) => {
               const row = rowAt(item.index);
@@ -398,11 +452,15 @@ export default function LogList({
                   {row ? (
                     <GridRow
                       row={row}
+                      viewIndex={item.index}
                       selected={selected === row.lineNo}
+                      inRange={selRange !== null && item.index >= selRange.from && item.index <= selRange.to}
                       bookmarked={bookmarkSet.has(row.lineNo)}
-                      onActivate={onActivate}
+                      onClickRow={clickRow}
+                      onAddFilter={onAddFilter}
                       onToggleBookmark={() => toggleBookmark(file, row.lineNo)}
                       columns={columns}
+                      columnWidths={columnWidths}
                       gutterWidth={gutterWidth}
                       tz={tz}
                     />
@@ -439,9 +497,11 @@ export default function LogList({
                 {row ? (
                   <Row
                     row={row}
+                    viewIndex={item.index}
                     selected={selected === row.lineNo}
+                    inRange={selRange !== null && item.index >= selRange.from && item.index <= selRange.to}
                     bookmarked={bookmarkSet.has(row.lineNo)}
-                    onActivate={onActivate}
+                    onClickRow={clickRow}
                     onContext={onContext}
                     onToggleBookmark={() => toggleBookmark(file, row.lineNo)}
                     showContext={showContext}
@@ -467,9 +527,11 @@ export default function LogList({
 
 const Row = memo(function Row({
   row,
+  viewIndex,
   selected,
+  inRange,
   bookmarked,
-  onActivate,
+  onClickRow,
   onContext,
   onToggleBookmark,
   showContext,
@@ -480,9 +542,11 @@ const Row = memo(function Row({
   wrap,
 }: {
   row: RowData;
+  viewIndex: number;
   selected: boolean;
+  inRange: boolean;
   bookmarked: boolean;
-  onActivate: (lineNo: number) => void;
+  onClickRow: (viewIndex: number, lineNo: number, shift: boolean) => void;
   onContext: (lineNo: number) => void;
   onToggleBookmark: () => void;
   showContext: boolean;
@@ -506,15 +570,17 @@ const Row = memo(function Row({
 
   return (
     <div
-      onClick={() => onActivate(row.lineNo)}
+      onClick={(e) => onClickRow(viewIndex, row.lineNo, e.shiftKey)}
       className={`group row-text relative flex cursor-pointer gap-2 border-l-2 pr-3 font-mono text-[13px] leading-6 ${
         wrap ? 'min-h-6 items-start py-px' : 'h-full items-center'
       } ${
         selected
           ? 'border-sky-400 bg-sky-950/60'
-          : isMatch
-            ? 'border-amber-500/70 bg-amber-950/25 hover:bg-amber-950/40'
-            : 'border-transparent hover:bg-surface-1'
+          : inRange
+            ? 'border-sky-400/50 bg-sky-950/35'
+            : isMatch
+              ? 'border-amber-500/70 bg-amber-950/25 hover:bg-amber-950/40'
+              : 'border-transparent hover:bg-surface-1'
       }`}
     >
       <button
@@ -580,29 +646,41 @@ const Row = memo(function Row({
 
 const GridRow = memo(function GridRow({
   row,
+  viewIndex,
   selected,
+  inRange,
   bookmarked,
-  onActivate,
+  onClickRow,
+  onAddFilter,
   onToggleBookmark,
   columns,
+  columnWidths,
   gutterWidth,
   tz,
 }: {
   row: RowData;
+  viewIndex: number;
   selected: boolean;
+  inRange: boolean;
   bookmarked: boolean;
-  onActivate: (lineNo: number) => void;
+  onClickRow: (viewIndex: number, lineNo: number, shift: boolean) => void;
+  onAddFilter: (clause: string) => void;
   onToggleBookmark: () => void;
   columns: string[];
+  columnWidths: Record<string, number>;
   gutterWidth: number;
   tz: Tz;
 }) {
   const levelClass = row.level ? (LEVEL_STYLES[row.level] ?? 'bg-slate-800 text-slate-300') : '';
   return (
     <div
-      onClick={() => onActivate(row.lineNo)}
+      onClick={(e) => onClickRow(viewIndex, row.lineNo, e.shiftKey)}
       className={`group flex h-full cursor-pointer items-center gap-2 border-l-2 pr-3 font-mono text-[13px] leading-6 ${
-        selected ? 'border-sky-400 bg-sky-950/60' : 'border-transparent hover:bg-surface-1'
+        selected
+          ? 'border-sky-400 bg-sky-950/60'
+          : inRange
+            ? 'border-sky-400/50 bg-sky-950/35'
+            : 'border-transparent hover:bg-surface-1'
       }`}
     >
       <button
@@ -628,16 +706,103 @@ const GridRow = memo(function GridRow({
           <span className={`rounded px-1 text-[10px] font-semibold leading-4 ${levelClass}`}>{row.level}</span>
         )}
       </span>
+      {columns.map((c) => {
+        const value = row.cols?.[c];
+        return (
+          <span key={c} className="shrink-0 truncate px-1" style={{ width: columnWidths[c] ?? COL_W }}>
+            {value ? (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onAddFilter(`${c}:"${value.replace(/"/g, '\\"')}"`);
+                }}
+                className="max-w-full truncate text-left align-bottom text-gray-300 hover:text-sky-300 hover:underline"
+                title={`${value}\n\nClick to filter ${c} to this value`}
+              >
+                {value}
+              </button>
+            ) : (
+              <span className="text-gray-700">—</span>
+            )}
+          </span>
+        );
+      })}
+    </div>
+  );
+});
+
+/** Columnar header: fixed #/time/level columns, then the data columns which can be
+ *  dragged to reorder and resized by dragging their right edge (widths persist). */
+function GridHeader({
+  columns,
+  widthOf,
+  gutterWidth,
+  onResize,
+  onReorder,
+}: {
+  columns: string[];
+  widthOf: (c: string) => number;
+  gutterWidth: number;
+  onResize: (col: string, width: number) => void;
+  onReorder: (cols: string[]) => void;
+}) {
+  const dragCol = useRef<string | null>(null);
+
+  const startResize = (col: string, e: React.MouseEvent): void => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startW = widthOf(col);
+    const onMove = (m: MouseEvent): void => onResize(col, startW + (m.clientX - startX));
+    const onUp = (): void => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  };
+
+  const drop = (target: string): void => {
+    const from = dragCol.current;
+    dragCol.current = null;
+    if (!from || from === target) return;
+    const next = columns.filter((c) => c !== from);
+    next.splice(next.indexOf(target), 0, from);
+    onReorder(next);
+  };
+
+  return (
+    <div className="sticky top-0 z-10 flex select-none items-center gap-2 border-b border-edge bg-surface-1 pr-3 text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+      <span className="w-4 shrink-0" />
+      <span className="shrink-0 text-right" style={{ width: `${gutterWidth}ch` }}>
+        #
+      </span>
+      <span className="shrink-0" style={{ width: TIME_W }}>
+        time
+      </span>
+      <span className="shrink-0" style={{ width: LEVEL_W }}>
+        level
+      </span>
       {columns.map((c) => (
-        <span
-          key={c}
-          className="shrink-0 truncate px-1 text-gray-300"
-          style={{ width: COL_W }}
-          title={row.cols?.[c] ?? ''}
-        >
-          {row.cols?.[c] ?? <span className="text-gray-700">—</span>}
+        <span key={c} className="relative flex shrink-0 items-center" style={{ width: widthOf(c) }}>
+          <span
+            draggable
+            onDragStart={() => {
+              dragCol.current = c;
+            }}
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={() => drop(c)}
+            className="min-w-0 flex-1 cursor-grab truncate px-1 font-mono normal-case active:cursor-grabbing"
+            title={`${c} — drag to reorder, drag the right edge to resize`}
+          >
+            {c}
+          </span>
+          <span
+            onMouseDown={(e) => startResize(c, e)}
+            className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-sky-500/40"
+          />
         </span>
       ))}
     </div>
   );
-});
+}

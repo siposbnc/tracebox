@@ -326,7 +326,7 @@ export function createApp(distDir: string): TraceBoxApp {
     try {
       const result = body.regex
         ? await s.setRegexSearch(body.query ?? '', Boolean(body.grouped))
-        : s.setSearch(body.query ?? '', Boolean(body.grouped), body.templateId ?? null);
+        : await s.search(body.query ?? '', Boolean(body.grouped), body.templateId ?? null);
       sendJson(res, 200, result);
     } catch (err) {
       if (err instanceof QuerySyntaxError) {
@@ -347,8 +347,9 @@ export function createApp(distDir: string): TraceBoxApp {
     sendJson(res, 200, detail);
   });
 
-  router.add('GET', '/api/sessions/:id/histogram', (_req, res, params) => {
-    sendJson(res, 200, getSession(params.id).histogram());
+  router.add('GET', '/api/sessions/:id/histogram', (_req, res, params, query) => {
+    const buckets = Number(query.get('buckets'));
+    sendJson(res, 200, getSession(params.id).histogram(Number.isFinite(buckets) ? buckets : undefined));
   });
 
   router.add('GET', '/api/sessions/:id/facet', (_req, res, params, query) => {
@@ -494,6 +495,24 @@ export function createApp(distDir: string): TraceBoxApp {
     sendJson(res, 200, { tail: s.tail });
   });
 
+  // The parsers the picker can offer for a session (custom first, then built-ins).
+  router.add('GET', '/api/sessions/:id/parsers', (_req, res, params) => {
+    const s = getSession(params.id);
+    sendJson(res, 200, { active: s.status().format, forced: s.status().parserForced, available: s.availableParsers() });
+  });
+
+  // Force a parser for a session (re-indexes), or pass null/"auto" to auto-detect.
+  router.add('POST', '/api/sessions/:id/parser', async (req, res, params) => {
+    const s = getSession(params.id);
+    const body = (await readJsonBody(req)) as { parser?: string | null };
+    try {
+      await s.setParser(body.parser ?? null);
+      sendJson(res, 200, s.status());
+    } catch (err) {
+      sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
   // Replace a session's watch rules (evaluated against appended lines while tailing).
   router.add('PUT', '/api/sessions/:id/watch', async (req, res, params) => {
     const s = getSession(params.id);
@@ -512,11 +531,13 @@ export function createApp(distDir: string): TraceBoxApp {
     const onDone = (): void => sse.send('done', s.status());
     const onAppend = (): void => sse.send('append', s.status());
     const onTruncated = (): void => sse.send('truncated', s.status());
+    const onRotated = (): void => sse.send('rotated', s.status());
     const onError = (msg: string): void => sse.send('error', { ...s.status(), error: msg });
     s.on('progress', onProgress);
     s.on('done', onDone);
     s.on('append', onAppend);
     s.on('truncated', onTruncated);
+    s.on('rotated', onRotated);
     s.on('error-event', onError);
     sse.send('status', s.status());
     sse.onClose(() => {
@@ -524,6 +545,7 @@ export function createApp(distDir: string): TraceBoxApp {
       s.off('done', onDone);
       s.off('append', onAppend);
       s.off('truncated', onTruncated);
+      s.off('rotated', onRotated);
       s.off('error-event', onError);
     });
   });

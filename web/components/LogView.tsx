@@ -19,6 +19,43 @@ import Histogram from './Histogram';
 import StatusBar from './StatusBar';
 import { getHistogramDefault, useWrap, getWrap, setWrap, getOrder, useColumnar } from '../settings';
 import { useColumns, defaultColumns, setColumns } from '../columns';
+import { useColumnWidths, setColumnWidth } from '../columnWidths';
+
+/** A `level:` predicate (optionally negated, with a comparison/regex operator). */
+const LEVEL_CLAUSE = String.raw`(?:NOT\s+)?\blevel:(?:>=|<=|>|<|~)?[^\s()]+`;
+
+/**
+ * Strip every top-level `level:` clause from a query, taking an adjacent boolean
+ * connector with it so nothing dangles — `level:INFO AND message:*` becomes
+ * `message:*`, not `AND message:*`. Used when a status-bar level click updates
+ * the level filter in place instead of replacing the whole query.
+ */
+function stripLevelClauses(query: string): string {
+  return query
+    .replace(new RegExp(String.raw`\s+(?:AND|OR)\s+${LEVEL_CLAUSE}`, 'gi'), '') // ... AND level:X
+    .replace(new RegExp(String.raw`${LEVEL_CLAUSE}\s+(?:AND|OR)\s+`, 'gi'), '') // level:X AND ...
+    .replace(new RegExp(String.raw`\s*${LEVEL_CLAUSE}`, 'gi'), '') // bare level:X
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+/** Remove any `timestamp:` range clauses from a query (the histogram drag filter). */
+function stripTimestampClauses(query: string): string {
+  return query
+    .replace(/\s*\btimestamp:(?:>=|<=|>|<)[^\s)]+/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+/** The `timestamp:>=… timestamp:<=…` range a query carries, for the histogram band; else null. */
+function currentRange(query: string): { start: number; end: number } | null {
+  const lo = /\btimestamp:>=([^\s)]+)/i.exec(query);
+  const hi = /\btimestamp:<=([^\s)]+)/i.exec(query);
+  if (!lo || !hi) return null;
+  const start = Date.parse(lo[1]);
+  const end = Date.parse(hi[1]);
+  return Number.isNaN(start) || Number.isNaN(end) ? null : { start, end };
+}
 
 export default function LogView({
   initial,
@@ -56,6 +93,9 @@ export default function LogView({
   const [appendEpoch, setAppendEpoch] = useState(0);
   const [total, setTotal] = useState(initial.search?.total ?? initial.lineCount);
   const [selected, setSelected] = useState<number | null>(null);
+  // a multi-row selection span (display indices) for copy/export — Shift+click or
+  // Shift+Arrow; null when only a single row (or nothing) is selected
+  const [selRange, setSelRange] = useState<{ from: number; to: number } | null>(null);
   // the detail panel is shown for the selected line; decoupled from selection so it
   // can be toggled (Right arrow) without losing the row highlight / arrow navigation
   const [detailOpen, setDetailOpen] = useState(false);
@@ -63,6 +103,9 @@ export default function LogView({
   const [pendingJump, setPendingJump] = useState<{ lineNo: number; nonce: number } | null>(null);
   const [histogram, setHistogram] = useState<HistogramData | null>(null);
   const [histogramOpen, setHistogramOpen] = useState(getHistogramDefault);
+  const [bucketCount, setBucketCount] = useState(100);
+  const bucketCountRef = useRef(bucketCount);
+  bucketCountRef.current = bucketCount;
   const [facetsOpen, setFacetsOpen] = useState(false);
   const [clustersOpen, setClustersOpen] = useState(false);
   const [statsOpen, setStatsOpen] = useState(false);
@@ -96,10 +139,25 @@ export default function LogView({
     () => (storedColumns.length > 0 ? storedColumns : defaultColumns(status.fieldNames)),
     [storedColumns, status.fieldNames],
   );
+  const columnWidths = useColumnWidths(status.file);
 
   const refreshHistogram = useCallback(() => {
-    void api.histogram(id).then(setHistogram).catch(() => setHistogram(null));
+    void api
+      .histogram(id, bucketCountRef.current)
+      .then(setHistogram)
+      .catch(() => setHistogram(null));
   }, [id]);
+
+  // re-fetch at the new resolution when the bucket count changes (the initial
+  // load is driven by the index-ready effect, so skip the first run here)
+  const bucketInit = useRef(true);
+  useEffect(() => {
+    if (bucketInit.current) {
+      bucketInit.current = false;
+      return;
+    }
+    refreshHistogram();
+  }, [bucketCount, refreshHistogram]);
 
   // --- SSE wiring -----------------------------------------------------------
   useEffect(() => {
@@ -124,6 +182,14 @@ export default function LogView({
         setClusterEpoch((e) => e + 1);
       },
       append: (s) => {
+        apply(s);
+        setAppendEpoch((e) => e + 1);
+        setEpoch((e) => e + 1);
+        scheduleHistogram();
+      },
+      // the live rotation member rolled (logrotate); we keep following the new
+      // file, so refresh the view the same way an append does
+      rotated: (s) => {
         apply(s);
         setAppendEpoch((e) => e + 1);
         setEpoch((e) => e + 1);
@@ -191,13 +257,29 @@ export default function LogView({
     [runSearch],
   );
 
-  // copy the current view's rows (capped) to the clipboard as multi-line text
+  // copy to the clipboard as multi-line text: the selected span if one is active
+  // (Shift+click / Shift+Arrow), otherwise the whole current view (capped)
   const COPY_CAP = 10000;
   const copyRows = useCallback(async (): Promise<{ count: number; total: number }> => {
+    if (selRange) {
+      const order = getOrder();
+      const grouped = groupingActiveRef.current;
+      const wanted = Math.min(selRange.to - selRange.from + 1, COPY_CAP);
+      const texts: string[] = [];
+      for (let off = selRange.from; texts.length < wanted; off += 2000) {
+        const limit = Math.min(2000, selRange.from + wanted - off);
+        if (limit <= 0) break;
+        const page = await api.rows(id, off, limit, order, false, grouped);
+        if (page.rows.length === 0) break;
+        for (const row of page.rows) texts.push(row.text);
+      }
+      await navigator.clipboard.writeText(texts.join('\n'));
+      return { count: texts.length, total: selRange.to - selRange.from + 1 };
+    }
     const r = await api.copyText(id, COPY_CAP, getOrder(), groupingActiveRef.current);
     await navigator.clipboard.writeText(r.text);
     return { count: r.count, total: r.total };
-  }, [id]);
+  }, [id, selRange]);
 
   // drill the view down to a single cluster (or clear it); keeps the current text
   // query and does not refresh the patterns panel
@@ -252,20 +334,57 @@ export default function LogView({
     [query, submitQuery],
   );
 
+  // Clicking a level in the status bar narrows the *current* query rather than
+  // replacing it: any existing level clause is swapped for the clicked one (so
+  // repeated clicks update in place instead of stacking), and the rest of the
+  // query is left intact. In regex mode there's no query language to compose
+  // with, so fall back to a plain replace.
+  const filterLevel = useCallback(
+    (level: string) => {
+      if (regexMode) {
+        submitQuery(`level:${level}`);
+        return;
+      }
+      const base = stripLevelClauses(query);
+      submitQuery(base ? `${base} level:${level}` : `level:${level}`);
+    },
+    [regexMode, query, submitQuery],
+  );
+
   const onTimeRange = useCallback(
     (startTs: number, endTs: number) => {
       const fmt = (t: number): string => new Date(t).toISOString();
       // Replace any existing timestamp-range clauses (e.g. from a previous drag)
       // rather than appending, so repeatedly narrowing the selection updates the
       // filter in place instead of stacking timestamp terms.
-      const base = query
-        .replace(/\s*\btimestamp:(?:>=|<=|>|<)[^\s)]+/gi, '')
-        .replace(/\s{2,}/g, ' ')
-        .trim();
+      const base = stripTimestampClauses(query);
       const clause = `timestamp:>=${fmt(startTs)} timestamp:<=${fmt(endTs)}`;
       submitQuery(base ? `${base} ${clause}` : clause);
     },
     [query, submitQuery],
+  );
+
+  const clearRange = useCallback(() => {
+    submitQuery(stripTimestampClauses(query));
+  }, [query, submitQuery]);
+
+  // Override the auto-detected parser (or null to return to auto-detect). The
+  // server re-indexes in place; refresh the view and re-apply any active query.
+  const selectParser = useCallback(
+    async (name: string | null): Promise<void> => {
+      try {
+        const s = await api.setParser(id, name);
+        setStatus(s);
+        setSelected(null);
+        setEpoch((e) => e + 1);
+        setClusterEpoch((e) => e + 1);
+        refreshHistogram();
+        if (query.trim() !== '') void runSearch(query);
+      } catch (err) {
+        setSearchError(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [id, query, runSearch, refreshHistogram],
   );
 
   const toggleTail = useCallback(async () => {
@@ -408,6 +527,13 @@ export default function LogView({
   // the active regex pattern, for the row list to highlight matches in place
   const regexPattern = regexMode && status.search ? (status.search.query ?? null) : null;
 
+  // the active time-range filter, drawn as a band on the histogram (skipped in
+  // regex mode, where the query isn't the query language)
+  const activeRange = useMemo(
+    () => (regexMode ? null : currentRange(status.search?.query ?? '')),
+    [regexMode, status.search?.query],
+  );
+
   // Highlight mode only takes effect when there is an active search to mark.
   const highlightActive = highlightMode && status.search !== null;
   // browsing total depends on grouping (records vs physical lines); an active
@@ -460,7 +586,14 @@ export default function LogView({
       />
 
       {histogramOpen && histogram && histogram.buckets.length > 0 && (
-        <Histogram data={histogram} onSelectRange={onTimeRange} />
+        <Histogram
+          data={histogram}
+          onSelectRange={onTimeRange}
+          activeRange={activeRange}
+          onClearRange={clearRange}
+          bucketCount={bucketCount}
+          onBucketCountChange={setBucketCount}
+        />
       )}
 
       <div className="flex min-h-0 flex-1">
@@ -519,6 +652,8 @@ export default function LogView({
               setDetailOpen(true);
             }}
             onContext={setContextLine}
+            selRange={selRange}
+            onRange={setSelRange}
             showContext={status.search !== null}
             indexing={status.phase === 'indexing' || status.phase === 'finalizing'}
             hasSearch={status.search !== null}
@@ -527,9 +662,13 @@ export default function LogView({
             wrap={wrap}
             columnar={columnar}
             columns={columns}
+            columnWidths={columnWidths}
+            onColumnResize={(col, w) => setColumnWidth(status.file, col, w)}
+            onReorderColumns={(cols) => setColumns(status.file, cols)}
             scrollTo={pendingJump}
             highlightTerms={highlightTerms}
             regexPattern={regexPattern}
+            onAddFilter={addFilter}
             onUserScroll={() => setFollowTail(false)}
             onScrolledToEnd={() => status.tail && setFollowTail(true)}
           />
@@ -548,7 +687,9 @@ export default function LogView({
       <StatusBar
         status={status}
         total={total}
-        onLevelClick={(level) => submitQuery(`level:${level}`)}
+        selectedCount={selRange ? selRange.to - selRange.from + 1 : 0}
+        onLevelClick={filterLevel}
+        onSelectParser={selectParser}
         onStop={() => void stopSource()}
       />
 

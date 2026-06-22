@@ -1,3 +1,4 @@
+import type { DatabaseSync } from 'node:sqlite';
 import { type QueryNode, type CmpOp, QuerySyntaxError } from './queryParser.ts';
 import { normalizeLevel } from './parsers.ts';
 
@@ -54,13 +55,64 @@ function likePattern(glob: string): string {
   return glob.replace(/[\\%_]/g, (c) => `\\${c}`).replaceAll('*', '%');
 }
 
+// ---------------------------------------------------------------------------
+// REGEXP SQL function (powers `field:~pattern`)
+
+/**
+ * Bounded cache of compiled patterns so the `regexp()` SQL function does not
+ * recompile per row. Patterns are case-insensitive, matching the dedicated
+ * whole-line regex search and the query language's case-insensitive fields.
+ */
+const regexCache = new Map<string, RegExp>();
+
+function compileRegex(pattern: string): RegExp {
+  let re = regexCache.get(pattern);
+  if (re === undefined) {
+    re = new RegExp(pattern, 'i');
+    if (regexCache.size >= 256) regexCache.clear();
+    regexCache.set(pattern, re);
+  }
+  return re;
+}
+
+/**
+ * Register the `regexp(pattern, value)` scalar so SQLite's `value REGEXP ?`
+ * operator works. Must be called on every database that compiled queries run
+ * against (per-file index and the merged timeline). A null value never matches;
+ * an unparseable pattern matches nothing rather than aborting the query.
+ */
+export function registerRegexp(db: DatabaseSync): void {
+  db.function('regexp', { deterministic: true }, (pattern: unknown, value: unknown): number => {
+    if (value === null || value === undefined || pattern === null || pattern === undefined) return 0;
+    try {
+      return compileRegex(String(pattern)).test(String(value)) ? 1 : 0;
+    } catch {
+      return 0;
+    }
+  });
+}
+
+/** A whole-line `/regex/` leaf, numbered in compile order; its matches are
+ *  materialized into a temp table the exact query then references. */
+export interface RegexLeaf {
+  index: number;
+  pattern: string;
+  flags: string;
+}
+
 class Compiler {
   params: (string | number)[] = [];
+  /** Whole-line regex leaves encountered, in compile (DFS) order. */
+  readonly leaves: RegexLeaf[] = [];
   /** Schema prefix for the fts/fields tables (e.g. `s0.` for an attached DB), '' for the local schema. */
   private readonly p: string;
+  /** Resolves a regex leaf's index to the temp table holding its matches; absent
+   *  when whole-line regex isn't supported in this context (then it throws). */
+  private readonly regexTable?: (index: number) => string;
 
-  constructor(schema = '') {
+  constructor(schema = '', regexTable?: (index: number) => string) {
     this.p = schema;
+    this.regexTable = regexTable;
   }
 
   compile(node: QueryNode): string {
@@ -73,6 +125,14 @@ class Compiler {
         return `(${node.children.map((c) => this.compile(c)).join(' OR ')})`;
       case 'not':
         return `(NOT ${this.compile(node.child)})`;
+      case 'regex': {
+        if (!this.regexTable) {
+          throw new QuerySyntaxError('Whole-line /regex/ is not supported in this context');
+        }
+        const index = this.leaves.length;
+        this.leaves.push({ index, pattern: node.pattern, flags: node.flags });
+        return `l.line_no IN (SELECT line_no FROM ${this.regexTable(index)})`;
+      }
       case 'text': {
         this.params.push(ftsQueryFor(node.value, node.phrase));
         // column-form MATCH works whether or not the table is schema-qualified
@@ -96,6 +156,18 @@ class Compiler {
         }
         this.params.push(node.field, likePattern(node.pattern));
         return `l.line_no IN (SELECT line_no FROM ${this.p}fields WHERE key = ? AND value LIKE ? ESCAPE '\\')`;
+      }
+      case 'fieldRegex': {
+        const f = node.field.toLowerCase();
+        if (TS_FIELDS.has(f)) {
+          throw new QuerySyntaxError('Regular expressions are not supported on the timestamp field');
+        }
+        if (LEVEL_FIELDS.has(f)) {
+          this.params.push(node.pattern);
+          return `l.level REGEXP ?`;
+        }
+        this.params.push(node.field, node.pattern);
+        return `l.line_no IN (SELECT line_no FROM ${this.p}fields WHERE key = ? AND value REGEXP ?)`;
       }
       case 'field':
         return this.fieldCmp(node.field, node.op, node.value);
@@ -142,6 +214,28 @@ class Compiler {
     this.params.push(field, value);
     return `l.line_no IN (SELECT line_no FROM ${this.p}fields WHERE key = ? AND value ${SQL_OP[op]} ?)`;
   }
+
+  /**
+   * A pure-SQL *superset* of the matches, used to gather candidate lines a regex
+   * then verifies. Non-regex leaves compile exactly; a whole-line regex can't be
+   * evaluated in SQL, so it's approximated by `1` in positive position and `0`
+   * under a `NOT` (`positive` tracks the parity) — which keeps the result a
+   * superset while letting the surrounding field/term filters narrow the scan.
+   */
+  prefilter(node: QueryNode, positive: boolean): string {
+    switch (node.type) {
+      case 'regex':
+        return positive ? '1' : '0';
+      case 'and':
+        return `(${node.children.map((c) => this.prefilter(c, positive)).join(' AND ')})`;
+      case 'or':
+        return `(${node.children.map((c) => this.prefilter(c, positive)).join(' OR ')})`;
+      case 'not':
+        return `(NOT ${this.prefilter(node.child, !positive)})`;
+      default:
+        return this.compile(node); // exact SQL for every non-regex leaf
+    }
+  }
 }
 
 const SQL_OP: Record<CmpOp, string> = {
@@ -156,4 +250,53 @@ export function compileQuery(node: QueryNode, schema = ''): CompiledQuery {
   const c = new Compiler(schema);
   const where = c.compile(node);
   return { where, params: c.params };
+}
+
+/** Whether a query contains a whole-line `/regex/` term (which needs the two-phase path). */
+export function hasRegex(node: QueryNode): boolean {
+  switch (node.type) {
+    case 'regex':
+      return true;
+    case 'and':
+    case 'or':
+      return node.children.some(hasRegex);
+    case 'not':
+      return hasRegex(node.child);
+    default:
+      return false;
+  }
+}
+
+export interface RegexPlan {
+  /** The regex leaves to verify, indexed to match the temp tables `regexTable` names. */
+  leaves: RegexLeaf[];
+  /** Superset SQL over `lines l` to gather candidate lines for verification. */
+  prefilter: CompiledQuery;
+  /** Exact SQL over `lines l`; each regex leaf references its temp table of verified lines. */
+  exact: CompiledQuery;
+}
+
+/**
+ * Plan a two-phase search for a query containing whole-line regex terms: gather
+ * candidates with {@link RegexPlan.prefilter}, verify each regex leaf against
+ * those lines, load the matches into the temp tables `regexTable(index)`, then
+ * materialize the result with {@link RegexPlan.exact}.
+ */
+export function planRegexSearch(node: QueryNode, regexTable: (index: number) => string): RegexPlan {
+  const exact = new Compiler('', regexTable);
+  const exactWhere = exact.compile(node);
+  const pref = new Compiler('');
+  const prefWhere = pref.prefilter(node, true);
+  return {
+    leaves: exact.leaves,
+    exact: { where: exactWhere, params: exact.params },
+    prefilter: { where: prefWhere, params: pref.params },
+  };
+}
+
+/** Normalize whole-line regex flags: always case-insensitive (like the rest of the
+ *  query language), and never stateful (`g`/`y` would break repeated `.test()`). */
+export function regexFlags(flags: string): string {
+  const set = new Set((flags + 'i').split('').filter((f) => f !== 'g' && f !== 'y'));
+  return [...set].join('');
 }

@@ -1,4 +1,5 @@
 import { parseQuery, type QueryNode } from './queryParser.ts';
+import { hasRegex } from './queryCompiler.ts';
 
 /**
  * Watch rules turn live tailing into light monitoring: while a session follows
@@ -91,6 +92,9 @@ export function compileRules(raw: unknown): CompiledRule[] {
     let ast: QueryNode | null = null;
     try {
       ast = parseQuery(query);
+      // whole-line /regex/ needs the two-phase search path, which the incremental
+      // per-line watch evaluation doesn't run — skip such rules rather than error
+      if (hasRegex(ast)) ast = null;
     } catch {
       ast = null;
     }

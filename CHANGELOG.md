@@ -12,8 +12,51 @@ date and start a fresh `Unreleased` section.
 
 ## [Unreleased]
 
+### Added
+
+- **Multi-row selection.** Shift+click a row, or Shift+Arrow, to select a span of
+  lines; the status bar shows the count and **Copy** grabs just the selection
+  (instead of the whole filtered view). Plain click/arrow clears it.
+- **Columnar view is now a real table.** Drag a column's right edge to **resize**
+  it and drag its header to **reorder** — both persisted per file — and **click a
+  cell to filter** the query to that `field:value`.
+- **Whole-line `/regex/` in the query language.** A bare `/pattern/` term matches
+  the whole line and **composes** with everything else — `level:error AND
+  /timeout\d+/ AND status:>=500`. It's evaluated in two phases: the surrounding
+  field/term filters gather candidate lines from the index first, so the regex
+  only scans those lines instead of the whole file (the more selective your other
+  filters, the less it reads). Case-insensitive by default, like the rest of the
+  language; `AND`/`OR`/`NOT`, grouping, and record grouping all work. This is the
+  composable counterpart to the standalone whole-file regex search toggle.
+- **Pick the parser.** The format chip in the status bar now shows the parser in
+  use and opens a menu to **override it** — handy when a built-in format wins over
+  a user-defined one, or you want to force `raw`. Choosing a parser re-indexes the
+  file with it; "auto-detect" restores detection. The menu lists the current custom
+  parsers each time it opens, so one added meanwhile (e.g. via MCP) is selectable
+  right away — no reopen needed.
+- **Live rotation following.** Tailing a rotation group is no longer a snapshot:
+  it follows the live (newest) member, picking up appends to `app.log` as they
+  happen, and continues seamlessly across a roll (logrotate `copytruncate`, or a
+  rename + recreate at the same path) — the already-indexed lines stay put while
+  new lines stream in. The newly-written bytes are folded into the concatenated
+  stream, so search, histogram, and watch rules all keep working over the group.
+- **Histogram interactions.** The time-volume histogram is now a control surface:
+  a **clear control** for the drag-selected time range (also drawn as a persistent
+  band so you can see what's filtered), and a **selectable bucket resolution**
+  (50/100/200/400) to trade detail for breadth.
+- **Regular-expression matching inside the query language**: `field:~pattern`
+  matches a field value against a regex (case-insensitive), so it composes with
+  the rest of a query — `level:error AND msg:~"time(d)? out" AND status:>=500`.
+  It evaluates against the index (no full-file scan), unlike the whole-line regex
+  search toggle. Quote the pattern to include spaces, parentheses, or quotes.
+
 ### Changed
 
+- **User-defined parsers now take precedence over built-ins.** If any of your
+  custom parsers parses a file well enough, it wins detection outright — even over
+  a built-in format that would match more lines — because you defined it on purpose.
+  (Previously a higher-scoring built-in could win.) You can still override the
+  choice from the status-bar parser picker.
 - Reports now **render Markdown in notes** in the HTML output — bold, lists, links,
   and inline code show formatted instead of literal. Applies to the app's HTML
   report export and the MCP `build_report` HTML format (its summary/section prose).
@@ -28,6 +71,13 @@ date and start a fresh `Unreleased` section.
 
 ### Fixed
 
+- Config changes made by the **MCP server** (e.g. `add_parser`) are now reflected
+  in the app without a restart — the server re-reads `config.json` when it changes
+  on disk instead of caching it for the process lifetime, so a parser added by an
+  agent shows up the next time **Settings → Custom parsers** is opened.
+- Clicking a level in the status bar now **narrows the current query** instead of
+  replacing it: the clicked `level:` filter is appended to whatever you've already
+  searched, and an existing level clause is updated in place rather than stacked.
 - Dragging a time range on the histogram now **updates the existing timestamp
   filter** in place instead of appending another, so repeatedly narrowing the
   selection no longer stacks `timestamp:` clauses in the query.
@@ -38,7 +88,7 @@ date and start a fresh `Unreleased` section.
   regular expression whose capture groups become structured fields (`timestamp`,
   `level`/`level2`, and `message` are treated as record metadata). Custom parsers
   are persisted in `~/.tracebox/config.json` and join format auto-detection
-  (preferred over the built-ins on a tie). Editing a parser re-indexes affected
+  (preferred over the built-ins). Editing a parser re-indexes affected
   files so their fields are re-extracted. Capture a number without its unit
   (`(?<duration>\d+)ms`) to make it numeric-comparable (`duration:>5000`). Manage
   them in **Settings → Custom parsers**, with a **live tester** that dry-runs the

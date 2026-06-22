@@ -1,7 +1,7 @@
 import { DatabaseSync, type StatementSync } from 'node:sqlite';
 import { type ParsedLine } from './parsers.ts';
 import { type QueryNode } from './queryParser.ts';
-import { compileQuery } from './queryCompiler.ts';
+import { compileQuery, registerRegexp, type CompiledQuery } from './queryCompiler.ts';
 
 /** Bumped when the on-disk schema changes so stale cached indexes are rebuilt. */
 export const SCHEMA_VERSION = '4';
@@ -117,6 +117,7 @@ export class IndexStore {
       PRAGMA synchronous = OFF;
       PRAGMA cache_size = -65536;
     `);
+    registerRegexp(this.db);
   }
 
   /** True if this database already contains a finished index for the given file fingerprint. */
@@ -350,6 +351,62 @@ export class IndexStore {
   }
 
   /**
+   * Candidate physical line numbers (ascending) for a whole-line-regex query: the
+   * pure-SQL superset that the regex leaves are then verified against. A
+   * `templateId` narrows to one cluster, as in {@link runSearch}.
+   */
+  candidateLines(prefilter: CompiledQuery, templateId: number | null = null): number[] {
+    const conds: string[] = [];
+    const p: (string | number)[] = [];
+    if (templateId !== null) {
+      conds.push('l.tmpl = ?');
+      p.push(templateId);
+    }
+    conds.push(`(${prefilter.where})`);
+    p.push(...prefilter.params);
+    const rows = this.db
+      .prepare(`SELECT l.line_no AS n FROM lines l WHERE ${conds.join(' AND ')} ORDER BY l.line_no`)
+      .all(...p) as { n: number }[];
+    return rows.map((r) => r.n);
+  }
+
+  /**
+   * Materialize the result set for a whole-line-regex query: load each regex
+   * leaf's verified line numbers into a temp table `_rx_<index>`, then run the
+   * exact query (which references those tables) like {@link runSearch}.
+   */
+  runRegexSearch(
+    exact: CompiledQuery,
+    leafMatches: number[][],
+    grouped: boolean,
+    templateId: number | null = null,
+  ): number {
+    for (let i = 0; i < leafMatches.length; i++) {
+      const t = `_rx_${i}`;
+      this.db.exec(`CREATE TEMP TABLE IF NOT EXISTS ${t}(line_no INTEGER PRIMARY KEY); DELETE FROM ${t};`);
+      const ins = this.db.prepare(`INSERT OR IGNORE INTO ${t}(line_no) VALUES (?)`);
+      this.db.exec('BEGIN');
+      for (const n of leafMatches[i]) ins.run(n);
+      this.db.exec('COMMIT');
+    }
+    const selectCol = grouped ? 'DISTINCT l.head' : 'l.line_no';
+    const orderCol = grouped ? 'l.head' : 'l.line_no';
+    const conds: string[] = [];
+    const p: (string | number)[] = [];
+    if (templateId !== null) {
+      conds.push('l.tmpl = ?');
+      p.push(templateId);
+    }
+    conds.push(`(${exact.where})`);
+    p.push(...exact.params);
+    this.db.exec(`DELETE FROM results; DELETE FROM sqlite_sequence WHERE name = 'results';`);
+    this.db
+      .prepare(`INSERT INTO results(line_no) SELECT ${selectCol} FROM lines l WHERE ${conds.join(' AND ')} ORDER BY ${orderCol}`)
+      .run(...p);
+    return this.resultCount();
+  }
+
+  /**
    * Evaluate a query over the half-open line range [fromLine, toLine) without
    * touching the materialized `results` table — used by watch rules to count
    * matches among newly-appended lines while a user's active search is intact.
@@ -520,6 +577,7 @@ export class IndexStore {
    * result set. Buckets are split per level.
    */
   histogram(filtered: boolean, bucketCount = 100): Histogram | null {
+    bucketCount = Math.min(Math.max(Math.floor(bucketCount) || 100, 10), 1000);
     const from = filtered ? `results r JOIN lines l ON l.line_no = r.line_no` : `lines l`;
     const range = this.db
       .prepare(`SELECT MIN(l.ts) AS lo, MAX(l.ts) AS hi, COUNT(*) AS n FROM ${from} WHERE l.ts IS NOT NULL`)

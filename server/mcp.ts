@@ -190,7 +190,7 @@ export class McpServer {
     if (this.lastSearch.get(s.id) === sig) {
       return { total: s.viewTotal, durationMs: 0 };
     }
-    const r = regex ? await s.setRegexSearch(query, grouped) : s.setSearch(query, grouped);
+    const r = regex ? await s.setRegexSearch(query, grouped) : await s.search(query, grouped);
     this.lastSearch.set(s.id, sig);
     return r;
   }

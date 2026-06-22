@@ -7,6 +7,8 @@
  *   status:>=500               numeric / lexicographic comparison
  *   timestamp:>2024-01-01      time comparison (eq matches the whole day/minute/…)
  *   path:/api/*                wildcard match
+ *   msg:~time.*out             regular-expression match on the field value
+ *   /timeout\d+/               regular-expression match on the whole line text
  *   user:*                     field-exists
  *   a AND b, a OR b, NOT a     boolean operators (implicit AND between terms)
  *   (a OR b) AND c             grouping
@@ -21,6 +23,8 @@ export type QueryNode =
   | { type: 'text'; value: string; phrase: boolean }
   | { type: 'field'; field: string; op: CmpOp; value: string }
   | { type: 'fieldLike'; field: string; pattern: string }
+  | { type: 'fieldRegex'; field: string; pattern: string }
+  | { type: 'regex'; pattern: string; flags: string }
   | { type: 'exists'; field: string }
   | { type: 'all' };
 
@@ -33,7 +37,59 @@ type Token =
   | { kind: 'lparen' }
   | { kind: 'rparen' }
   | { kind: 'word'; value: string }
-  | { kind: 'quoted'; value: string };
+  | { kind: 'quoted'; value: string }
+  | { kind: 'regex'; pattern: string; flags: string };
+
+/** Valid JavaScript RegExp flag letters, used to bound a `/regex/flags` literal. */
+const REGEX_FLAGS = 'dgimsuvy';
+
+/**
+ * Try to read a `/pattern/flags` regex literal starting at `s[start] === '/'`.
+ * Returns null (so it falls back to a normal word) unless the literal closes
+ * cleanly and is followed by a separator or end-of-input — so a bare path like
+ * `/var/log/app` stays a plain term rather than becoming a regex.
+ */
+function scanRegexLiteral(s: string, start: number): { pattern: string; flags: string; next: number } | null {
+  let j = start + 1;
+  let pattern = '';
+  let closed = false;
+  while (j < s.length) {
+    const ch = s[j];
+    if (ch === '\\' && j + 1 < s.length) {
+      pattern += ch + s[j + 1]; // keep the escape verbatim (e.g. \/ or \d)
+      j += 2;
+    } else if (ch === '/') {
+      closed = true;
+      j++;
+      break;
+    } else if (ch === '\n' || ch === '\r') {
+      return null;
+    } else {
+      pattern += ch;
+      j++;
+    }
+  }
+  if (!closed || pattern === '') return null;
+  let flags = '';
+  while (j < s.length && REGEX_FLAGS.includes(s[j])) {
+    flags += s[j];
+    j++;
+  }
+  const after = s[j];
+  if (after !== undefined && !' \t\n\r()'.includes(after)) return null;
+  return { pattern, flags, next: j };
+}
+
+function scanWord(s: string, start: number): { value: string; next: number } {
+  let j = start;
+  let value = '';
+  while (j < s.length && !' \t\n\r()'.includes(s[j])) {
+    if (s[j] === '"') break; // allow field:"phrase" — stop the word at a quote
+    value += s[j];
+    j++;
+  }
+  return { value, next: j };
+}
 
 function tokenize(input: string): Token[] {
   const tokens: Token[] = [];
@@ -64,17 +120,22 @@ function tokenize(input: string): Token[] {
       if (j >= n) throw new QuerySyntaxError('Unterminated quoted string');
       tokens.push({ kind: 'quoted', value });
       i = j + 1;
-    } else {
-      let j = i;
-      let value = '';
-      while (j < n && !' \t\n\r()'.includes(input[j])) {
-        // allow field:"phrase" — stop the word at a quote after a colon
-        if (input[j] === '"') break;
-        value += input[j];
-        j++;
+    } else if (c === '/') {
+      // a `/pattern/` whole-line regex literal, or — if it doesn't close cleanly
+      // — an ordinary word that happens to start with a slash
+      const rx = scanRegexLiteral(input, i);
+      if (rx) {
+        tokens.push({ kind: 'regex', pattern: rx.pattern, flags: rx.flags });
+        i = rx.next;
+      } else {
+        const w = scanWord(input, i);
+        tokens.push({ kind: 'word', value: w.value });
+        i = w.next;
       }
-      tokens.push({ kind: 'word', value });
-      i = j;
+    } else {
+      const w = scanWord(input, i);
+      tokens.push({ kind: 'word', value: w.value });
+      i = w.next;
     }
   }
   return tokens;
@@ -160,7 +221,20 @@ class Parser {
     if (t.kind === 'rparen') throw new QuerySyntaxError('Unexpected ")"');
     this.pos++;
     if (t.kind === 'quoted') return { type: 'text', value: t.value, phrase: true };
+    if (t.kind === 'regex') return this.makeRegex(t.pattern, t.flags);
     return this.termFromWord(t.value);
+  }
+
+  /** A `/pattern/flags` whole-line regex, validated up front so a bad pattern is a syntax error. */
+  private makeRegex(pattern: string, flags: string): QueryNode {
+    try {
+      new RegExp(pattern, flags || undefined);
+    } catch (err) {
+      throw new QuerySyntaxError(
+        `Invalid regular expression /${pattern}/${flags}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    return { type: 'regex', pattern, flags };
   }
 
   /** A bare word: either `field:value`, `field:` followed by a quoted phrase, or a text term. */
@@ -183,6 +257,22 @@ class Parser {
         return this.fieldEq(field, next.value);
       }
       throw new QuerySyntaxError(`Missing value for field "${field}"`);
+    }
+
+    // field:~regex — regular-expression match against the field value. The
+    // pattern may be quoted (`field:~"a (b)"`) to carry spaces, parens, or
+    // quotes that the tokenizer would otherwise treat as query syntax.
+    if (rest.startsWith('~')) {
+      let pattern = rest.slice(1);
+      if (pattern === '') {
+        const next = this.peek();
+        if (next?.kind !== 'quoted') {
+          throw new QuerySyntaxError(`Missing regular expression for field "${field}"`);
+        }
+        this.pos++;
+        pattern = next.value;
+      }
+      return this.fieldRegex(field, pattern);
     }
 
     let op: CmpOp = 'eq';
@@ -213,6 +303,19 @@ class Parser {
     if (value === '*') return { type: 'exists', field };
     if (value.includes('*')) return { type: 'fieldLike', field, pattern: value };
     return { type: 'field', field, op: 'eq', value };
+  }
+
+  /** A regex field predicate, validating the pattern up front so errors surface as syntax errors. */
+  private fieldRegex(field: string, pattern: string): QueryNode {
+    if (pattern === '') throw new QuerySyntaxError(`Missing regular expression for field "${field}"`);
+    try {
+      new RegExp(pattern);
+    } catch (err) {
+      throw new QuerySyntaxError(
+        `Invalid regular expression for field "${field}": ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    return { type: 'fieldRegex', field, pattern };
   }
 }
 

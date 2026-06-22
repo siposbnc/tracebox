@@ -6,14 +6,20 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { LogSession } from './session.ts';
 import { MergedTimeline } from './merged.ts';
+import { addParser, removeParser } from './config.ts';
 import type { WatchTrigger } from './watch.ts';
 
 const dir = mkdtempSync(path.join(tmpdir(), 'tracebox-test-'));
+// isolate custom-parser config to a temp dir so detection never picks up the
+// developer's ~/.tracebox parsers (which would shadow built-in format detection)
+const cfgDir = mkdtempSync(path.join(tmpdir(), 'tracebox-cfg-'));
+process.env.TRACEBOX_CONFIG_DIR = cfgDir;
 const openSessions: LogSession[] = [];
 
 after(async () => {
   for (const s of openSessions) await s.close();
   rmSync(dir, { recursive: true, force: true });
+  rmSync(cfgDir, { recursive: true, force: true });
 });
 
 function makeLogFile(name: string, lines: string[], trailingNewline = true): string {
@@ -123,6 +129,17 @@ test('JSON logs: nested fields, comparisons, wildcards, exists', async () => {
   const h = s.histogram();
   assert.ok(h);
   assert.equal(h.buckets.reduce((acc, b) => acc + b.total, 0), 100);
+
+  // bucket resolution is selectable and clamped; counts stay consistent
+  s.setSearch('');
+  const coarse = s.histogram(10);
+  const fine = s.histogram(400);
+  assert.ok(coarse && fine);
+  assert.ok(coarse.buckets.length <= 10);
+  assert.ok(fine.buckets.length > coarse.buckets.length);
+  assert.equal(fine.bucketMs < coarse.bucketMs, true);
+  // out-of-range requests are clamped, not honored verbatim
+  assert.ok(s.histogram(100000)!.buckets.length <= 1000);
 });
 
 test('facet: value breakdown over the whole file and the current result set', async () => {
@@ -400,6 +417,74 @@ test('regex search post-filters lines and groups by record', async () => {
   assert.equal((await s.setRegexSearch('', false)).total, 6);
 });
 
+test('field regex (field:~pattern) runs inside the query language', async () => {
+  const file = makeLogFile('field-regex.log', [
+    '2024-01-01 00:00:00 [INFO] user_42 logged in',
+    '2024-01-01 00:00:01 [INFO] user_9001 logged in',
+    '2024-01-01 00:00:02 [WARN] anonymous visit',
+    '2024-01-01 00:00:03 [ERROR] user_7 request timed out',
+  ]);
+  const s = await openAndIndex(file);
+
+  // regex on the extracted `message` field (case-insensitive)
+  assert.equal(s.setSearch('message:~USER_\\d{4,}').total, 1);
+  assert.deepEqual((await s.getRows(0, 10)).map((r) => r.lineNo), [1]);
+
+  // composes with the rest of the query language
+  assert.equal(s.setSearch('level:info AND message:~user_\\d+').total, 2);
+  assert.equal(s.setSearch('message:~"timed out" OR message:~anonymous').total, 2);
+  assert.equal(s.setSearch('NOT message:~user_').total, 1);
+
+  // an unparseable pattern is a syntax error, not a silent empty result
+  assert.throws(() => s.setSearch('message:~"(oops"'), /regular expression/);
+});
+
+test('whole-line /regex/ composes inside the query language', async () => {
+  const file = makeLogFile('wlre.log', [
+    '2024-01-01 00:00:00 [INFO] user_42 logged in',
+    '2024-01-01 00:00:01 [INFO] user_9001 logged in',
+    '2024-01-01 00:00:02 [WARN] anonymous visit',
+    '2024-01-01 00:00:03 [ERROR] user_7 request timed out after 1200ms',
+    '2024-01-01 00:00:04 [ERROR] db connection failed',
+  ]);
+  const s = await openAndIndex(file);
+
+  // a bare regex over the whole line text
+  assert.equal((await s.search('/user_\\d{4,}/')).total, 1); // only user_9001
+  assert.deepEqual((await s.getRows(0, 10)).map((r) => r.lineNo), [1]);
+
+  // composes with a field filter — the AND narrows the lines the regex scans
+  assert.equal((await s.search('level:ERROR AND /\\d+ms/')).total, 1);
+  assert.deepEqual((await s.getRows(0, 10)).map((r) => r.lineNo), [3]);
+
+  // OR and NOT compose correctly
+  assert.equal((await s.search('/anonymous/ OR /failed/')).total, 2);
+  assert.equal((await s.search('level:ERROR AND NOT /failed/')).total, 1);
+  assert.deepEqual((await s.getRows(0, 10)).map((r) => r.lineNo), [3]);
+
+  // case-insensitive by default, like the rest of the query language
+  assert.equal((await s.search('/USER_42/')).total, 1);
+
+  // an invalid pattern is a syntax error
+  await assert.rejects(() => s.search('/(/'), /Invalid regular expression/);
+
+  // clearing restores the whole file
+  assert.equal((await s.search('')).total, 5);
+});
+
+test('whole-line /regex/ groups matches by record', async () => {
+  const file = makeLogFile('wlre-grp.log', [
+    '2024-01-01 00:00:00 [INFO] starting up',
+    '2024-01-01 00:00:01 [ERROR] boom: java.lang.NullPointerException',
+    '\tat com.app.Svc.run(Svc.java:7)',
+    '2024-01-01 00:00:02 [INFO] done',
+  ]);
+  const s = await openAndIndex(file);
+  // a regex matching a stack-trace continuation surfaces its record head when grouped
+  assert.equal((await s.search('/Svc\\.java/', true)).total, 1);
+  assert.deepEqual((await s.getRows(0, 10, 'asc', false, true)).map((r) => r.lineNo), [1]);
+});
+
 test('nextMatch walks occurrences with wrap-around', async () => {
   const file = makeLogFile('nextmatch.log', appLogLines(50));
   const s = await openAndIndex(file);
@@ -623,6 +708,114 @@ test('opens a rotation group as one time-ordered stream', async () => {
   assert.match(boundary[0].text, /request 99 /); // last line of the older file
   assert.match(boundary[1].text, /request 100 /); // first line of the newer file
   assert.equal(s.setSearch('level:ERROR').total, Math.floor(200 / 6) + (200 % 6 > 4 ? 1 : 0));
+});
+
+test('tail follows appends to the live member of a rotation group', async () => {
+  const older = makeLogFile('roll.log.1', appLogLines(50));
+  const newer = makeLogFile('roll.log', ['2024-01-02 00:00:00 [INFO] newest line at open']);
+  const s = new LogSession(newer, { sources: [older, newer] });
+  openSessions.push(s);
+  const done = new Promise<void>((resolve, reject) => {
+    s.on('done', resolve);
+    s.on('error-event', (m: string) => reject(new Error(m)));
+  });
+  await s.start();
+  if (s.phase !== 'ready') await done;
+  assert.equal(s.lineCount, 51);
+
+  // tailing the group now follows the live (newest) file, not just the snapshot
+  s.setTail(true);
+  const appended = new Promise<void>((resolve) => s.once('append', () => resolve()));
+  appendFileSync(newer, '2024-01-02 00:00:01 [ERROR] live append after open\n');
+  await appended;
+
+  assert.equal(s.lineCount, 52);
+  const rows = await s.getRows(s.lineCount - 1, 1);
+  assert.match(rows[0].text, /live append after open/);
+  s.setTail(false);
+});
+
+test('tail follows a copytruncate rotation roll of the live file', async () => {
+  const older = makeLogFile('cycle.log.1', ['2024-01-01 00:00:00 [INFO] older member line']);
+  const newer = makeLogFile('cycle.log', ['2024-01-01 00:01:00 [INFO] live line before roll']);
+  const s = new LogSession(newer, { sources: [older, newer] });
+  openSessions.push(s);
+  const done = new Promise<void>((resolve, reject) => {
+    s.on('done', resolve);
+    s.on('error-event', (m: string) => reject(new Error(m)));
+  });
+  await s.start();
+  if (s.phase !== 'ready') await done;
+  assert.equal(s.lineCount, 2);
+
+  let rolled = false;
+  s.on('rotated', () => {
+    rolled = true;
+  });
+
+  // logrotate copytruncate: the live file is truncated to empty (a roll), then
+  // fresh content is written to the same path
+  writeFileSync(newer, '');
+  await s.refresh();
+  assert.equal(rolled, true);
+  assert.equal(s.lineCount, 2); // nothing lost; old content still indexed
+
+  writeFileSync(newer, '2024-01-01 00:02:00 [ERROR] fresh line after roll\n');
+  await s.refresh();
+
+  assert.equal(s.lineCount, 3);
+  const last = await s.getRows(2, 1);
+  assert.match(last[0].text, /fresh line after roll/);
+  // the pre-roll content stays browsable (it moved to a sibling but is indexed)
+  const head = await s.getRows(0, 2);
+  assert.match(head[0].text, /older member line/);
+  assert.match(head[1].text, /live line before roll/);
+});
+
+test('forcing a parser re-indexes the file with the chosen format', async () => {
+  const s = await openAndIndex(makeLogFile('force.log', appLogLines(60)));
+  assert.equal(s.status().format, 'timestamped');
+  assert.equal(s.status().parserForced, false);
+  assert.equal(s.availableParsers().includes('timestamped'), true);
+
+  // the message field the 'timestamped' parser carved out is present
+  assert.equal(s.status().fieldNames.some((f) => f.key === 'message'), true);
+
+  // force the raw parser → no structured fields extracted (it still sniffs levels)
+  await s.setParser('raw');
+  assert.equal(s.status().format, 'raw');
+  assert.equal(s.status().parserForced, true);
+  assert.equal(s.lineCount, 60);
+  assert.equal(s.status().fieldNames.some((f) => f.key === 'message'), false);
+
+  // returning to auto-detect re-indexes back to the detected format and its fields
+  await s.setParser(null);
+  assert.equal(s.status().format, 'timestamped');
+  assert.equal(s.status().parserForced, false);
+  assert.equal(s.status().fieldNames.some((f) => f.key === 'message'), true);
+  assert.equal(s.setSearch('level:ERROR').total, 10); // i%6==4 over 0..59
+
+  // an unknown parser is rejected without disturbing the current index
+  await assert.rejects(() => s.setParser('nope'), /Unknown parser/);
+  assert.equal(s.status().format, 'timestamped');
+});
+
+test('a parser added after a session opens is immediately selectable', async () => {
+  const s = await openAndIndex(makeLogFile('latep.log', appLogLines(30)));
+  assert.equal(s.availableParsers().includes('lateadd'), false);
+  try {
+    // a custom parser appears in config after the session opened (e.g. via MCP)
+    addParser({ name: 'lateadd', pattern: '^(?<timestamp>\\S+ \\S+) \\[(?<level>\\w+)\\] (?<body>.*)$' });
+
+    // the picker offers it and it can be forced without reopening the file
+    assert.equal(s.availableParsers().includes('lateadd'), true);
+    await s.setParser('lateadd');
+    assert.equal(s.status().format, 'lateadd');
+    assert.equal(s.status().parserForced, true);
+    assert.equal(s.status().fieldNames.some((f) => f.key === 'body'), true);
+  } finally {
+    removeParser('lateadd'); // don't leak the parser into other tests' detection
+  }
 });
 
 test('numericFacet summarizes a numeric field and facet reports numeric coverage', async () => {

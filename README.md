@@ -72,7 +72,9 @@ exactly these files:
 
 **Works with your logs as they are**
 - `.gz` files open transparently; a rotation group (`app.log` + `app.log.1` +
-  `app.log.2.gz`) opens as one time-ordered stream.
+  `app.log.2.gz`) opens as one time-ordered stream — and **tail follows the live
+  member across rotations**, picking up appends to `app.log` and continuing
+  seamlessly when it rolls.
 - Multiple files in tabs, plus a **merged timeline** that interleaves several files by time.
 - Read from a live command (`docker logs`, `journalctl`, …) as a streaming source.
 - Persistent index cache — reopening an unchanged file is instant.
@@ -131,6 +133,8 @@ No log handy? Generate one: `node scripts/genlog.mjs big.log 1gb app` (formats: 
 | `status:>=500` | numeric comparison (`>` `>=` `<` `<=` on any extracted field) |
 | `timestamp:>2024-01-31` | time comparison (`timestamp:2024-01-31` = that whole day) |
 | `path:/api/*` | wildcard match |
+| `msg:~time.*out` | regular-expression match on a field (`~`); quote it — `msg:~"(get\|put) /api"` — to include spaces, parentheses, or quotes |
+| `/timeout\d+/` | regular-expression match on the whole line; composes with the rest of the query (`level:error AND /timeout\d+/`), and the other filters narrow the lines it scans |
 | `user:*` | field exists |
 | `NOT database`, `-database` | exclusion |
 | `(level:error OR level:warn) AND service:payments` | grouping and boolean logic |

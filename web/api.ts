@@ -108,7 +108,10 @@ export const api = {
     request<ContextResult>(
       `/api/sessions/${id}/context?line=${line}&before=${before}&after=${after}`,
     ),
-  histogram: (id: string) => request<HistogramData | null>(`/api/sessions/${id}/histogram`),
+  histogram: (id: string, buckets?: number) =>
+    request<HistogramData | null>(
+      `/api/sessions/${id}/histogram${buckets ? `?buckets=${buckets}` : ''}`,
+    ),
   nextMatch: (id: string, after: number, dir: 'next' | 'prev', grouped: boolean) =>
     request<{ lineNo: number; viewIndex: number } | null>(
       `/api/sessions/${id}/next-match?after=${after}&dir=${dir}${grouped ? '&grouped=1' : ''}`,
@@ -132,6 +135,14 @@ export const api = {
       body: JSON.stringify({ on }),
     }),
   refresh: (id: string) => request<SessionStatus>(`/api/sessions/${id}/refresh`, { method: 'POST' }),
+  sessionParsers: (id: string) =>
+    request<{ active: string; forced: boolean; available: string[] }>(`/api/sessions/${id}/parsers`),
+  setParser: (id: string, parser: string | null) =>
+    request<SessionStatus>(`/api/sessions/${id}/parser`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ parser }),
+    }),
   setWatchRules: (id: string, rules: WatchRule[]) =>
     request<{ rules: WatchRule[] }>(`/api/sessions/${id}/watch`, {
       method: 'PUT',

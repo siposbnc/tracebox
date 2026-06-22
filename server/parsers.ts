@@ -371,36 +371,73 @@ export function compileCustomParsers(specs: { name: string; pattern: string }[])
   return out;
 }
 
+/** Built-in format names, in detection order, for the parser picker. */
+export const BUILTIN_PARSER_NAMES: string[] = [
+  'json',
+  ...REGEX_FORMATS.map((f) => f.name),
+  'logfmt',
+  'raw',
+];
+
+/** Instantiate a parser by name — a custom parser if one matches, else a built-in. */
+export function parserByName(name: string, custom: LogParser[] = []): LogParser | null {
+  const c = custom.find((p) => p.name === name);
+  if (c) return c;
+  if (name === 'json') return new JsonParser();
+  if (name === 'logfmt') return new LogfmtParser();
+  if (name === 'raw') return new RawParser();
+  const rf = REGEX_FORMATS.find((f) => f.name === name);
+  return rf ? new RegexParser(rf.name, rf.re) : null;
+}
+
+/** How well a parser matches a sample: the fraction of lines it parses structurally. */
+function scoreParser(parser: LogParser, sample: string[]): number {
+  let score = 0;
+  for (const line of sample) {
+    const p = parser.parse(line);
+    // a structured parse must beat the raw fallback: fields are only set on a real
+    // match (the fallback always returns fields: null)
+    if (parser.name === 'json' || parser.name === 'logfmt') {
+      if (p.fields && Object.keys(p.fields).length >= 2) score++;
+    } else if (p.fields) {
+      score++;
+    }
+  }
+  return score / sample.length;
+}
+
 /**
- * Pick the best parser for a sample. Custom parsers are tried first so that, on a
- * tie, a user's format wins over a built-in (a higher score always wins outright).
+ * Pick the best parser for a sample. User-defined parsers take precedence: if any
+ * of them parses the sample well enough, the best-scoring one wins outright — even
+ * over a built-in that would score higher — because the user defined it for this
+ * format on purpose. Only when none qualifies do the built-ins compete.
  */
 export function detectFormat(sampleLines: string[], custom: LogParser[] = []): LogParser {
   const sample = sampleLines.filter((l) => l.trim().length > 0).slice(0, 100);
   if (sample.length === 0) return new RawParser();
 
-  const candidates: LogParser[] = [
-    ...custom,
+  // user-defined parsers first, as a priority tier
+  let bestCustom: LogParser | null = null;
+  let bestCustomScore = 0;
+  for (const parser of custom) {
+    const ratio = scoreParser(parser, sample);
+    if (ratio > bestCustomScore) {
+      bestCustomScore = ratio;
+      bestCustom = parser;
+    }
+  }
+  if (bestCustom && bestCustomScore >= 0.5) return bestCustom;
+
+  // otherwise fall back to the built-in formats
+  const builtins: LogParser[] = [
     new JsonParser(),
     ...REGEX_FORMATS.map((f) => new RegexParser(f.name, f.re)),
     new LogfmtParser(),
   ];
-
   let best: LogParser = new RawParser();
   let bestScore = 0;
-  for (const parser of candidates) {
-    let score = 0;
-    for (const line of sample) {
-      const p = parser.parse(line);
-      // a structured parse must beat the raw fallback: fields are only set
-      // on a real match (the fallback always returns fields: null)
-      if (parser.name === 'json' || parser.name === 'logfmt') {
-        if (p.fields && Object.keys(p.fields).length >= 2) score++;
-      } else if (p.fields) {
-        score++;
-      }
-    }
-    const ratio = score / sample.length;
+  for (const parser of builtins) {
+    const ratio = scoreParser(parser, sample);
     if (ratio > bestScore) {
       bestScore = ratio;
       best = parser;

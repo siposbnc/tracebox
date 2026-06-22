@@ -37,6 +37,8 @@ export interface SessionStatus {
   bytesIndexed: number;
   lineCount: number;
   format: string;
+  /** True when `format` was forced via the parser picker rather than auto-detected. */
+  parserForced: boolean;
   reusedIndex: boolean;
   error: string | null;
   tail: boolean;

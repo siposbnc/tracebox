@@ -69,6 +69,52 @@ test('wildcards and exists', () => {
   assert.deepEqual(parseQuery('user:*'), { type: 'exists', field: 'user' });
 });
 
+test('field regex with the ~ operator', () => {
+  assert.deepEqual(parseQuery('msg:~time.*out'), { type: 'fieldRegex', field: 'msg', pattern: 'time.*out' });
+  // quoting carries spaces, parens, and quotes the tokenizer would otherwise split on
+  assert.deepEqual(parseQuery('msg:~"(read|write) timeout"'), {
+    type: 'fieldRegex',
+    field: 'msg',
+    pattern: '(read|write) timeout',
+  });
+  // a leading-slash value is still a wildcard/path value, not a regex
+  assert.deepEqual(parseQuery('path:/api/v1'), { type: 'field', field: 'path', op: 'eq', value: '/api/v1' });
+});
+
+test('invalid regex and empty regex are syntax errors', () => {
+  assert.throws(() => parseQuery('msg:~"(unclosed"'), QuerySyntaxError);
+  assert.throws(() => parseQuery('msg:~""'), QuerySyntaxError);
+});
+
+test('bare /regex/ is a whole-line regex term', () => {
+  assert.deepEqual(parseQuery('/timeout\\d+/'), { type: 'regex', pattern: 'timeout\\d+', flags: '' });
+  assert.deepEqual(parseQuery('/foo/i'), { type: 'regex', pattern: 'foo', flags: 'i' });
+  // an escaped slash stays inside the pattern
+  assert.deepEqual(parseQuery('/a\\/b/'), { type: 'regex', pattern: 'a\\/b', flags: '' });
+});
+
+test('whole-line regex composes with the rest of the query', () => {
+  const q = parseQuery('level:error AND /timeout\\d+/');
+  assert.equal(q.type, 'and');
+  const and = q as { children: { type: string }[] };
+  assert.equal(and.children[1].type, 'regex');
+  assert.deepEqual(parseQuery('NOT /retry/'), {
+    type: 'not',
+    child: { type: 'regex', pattern: 'retry', flags: '' },
+  });
+});
+
+test('a slash-bearing value is not mistaken for a regex', () => {
+  // a bare path that does not close as /…/ stays a plain term
+  assert.deepEqual(parseQuery('/var/log/app'), { type: 'text', value: '/var/log/app', phrase: false });
+  // a field value keeps its leading slash (wildcard path), unaffected by regex syntax
+  assert.deepEqual(parseQuery('path:/api/*'), { type: 'fieldLike', field: 'path', pattern: '/api/*' });
+});
+
+test('an invalid whole-line regex is a syntax error', () => {
+  assert.throws(() => parseQuery('/(unclosed/'), QuerySyntaxError);
+});
+
 test('complex nested query parses', () => {
   const q = parseQuery('(level:ERROR OR level:WARN) AND NOT (host:web1 status:>=500) "slow query"');
   assert.equal(q.type, 'and');

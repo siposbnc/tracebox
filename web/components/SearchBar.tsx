@@ -24,6 +24,8 @@ const SYNTAX_EXAMPLES: [string, string][] = [
   ['timestamp:>2024-01-31', 'after a date/time (also <, ranges by precision)'],
   ['path:/api/*', 'wildcard match (case-insensitive)'],
   ['msg:"*user logged in*"', 'wildcard value with spaces — quote it'],
+  ['msg:~time.*out', 'regex on a field — quote it for spaces/parens'],
+  ['/timeout\\d+/', 'regex on the whole line — composes with filters'],
   ['user:*', 'field exists'],
   ['(level:error OR level:warn) AND NOT db', 'boolean logic with grouping'],
   ['-debug', 'exclude a term'],

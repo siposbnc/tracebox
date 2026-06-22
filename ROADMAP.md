@@ -16,8 +16,6 @@ desktop app is the primary target.
 
 ## Ingest — meet logs where they actually live
 
-- **Live rotation following.** Rotation-aware open is a snapshot today; follow the
-  rotation as it happens (new `app.log` after a roll) the way single-file tail does.
 - **More archive formats.** Extend transparent decompression beyond `.gz` to
   `.zip` / `.bz2` / `.xz`, and support opening a whole `.zip` of logs.
 - **Pipe / command sources.** Read from stdin or `tracebox -- <command>` to view a
@@ -54,16 +52,10 @@ Often higher-value-per-effort than net-new features:
 - **Inline expand/collapse for grouped records.** Expand a stack trace in place in
   the row list (today the full record only shows in the detail panel). The most
   natural missing half of multi-line grouping; needs dynamic row measurement.
-- **Regex inside the query language.** Allow `level:error AND /timeout\d+/` so a
-  regex composes with field filters — which also lets the field filter *narrow*
-  the lines the regex has to scan, instead of regex being a whole-file mode.
-- **Columnar view as a real table.** Sortable, resizable, reorderable columns;
-  click a cell to filter to that value; remember widths per file.
-- **Histogram interactions.** Click a level in the legend to filter, a clear/reset
-  for the drag range, and a selectable bucket resolution.
-- **Range row selection.** Shift-click / Shift+Arrow to select a span of rows for
-  copy/export (today copy is all-or-the-filtered-set; there's no arbitrary
-  multi-row selection).
+- **Sortable columns in the columnar view.** Resizable + reorderable columns,
+  per-file widths, and click-a-cell-to-filter have shipped; sorting by a column
+  remains. Sorting needs the backend to ORDER BY a field (materialize results in
+  that order) rather than by line number, so paging stays O(1).
 - **Wider format coverage.** CEF, more key=value/`:` delimiter variants, pretty-
   printed (multi-line) JSON, and additional timestamp shapes in auto-detection.
 
@@ -74,8 +66,12 @@ Often higher-value-per-effort than net-new features:
 
 ## Performance & release
 
-- **Regex FTS-narrowing.** When a regex has a mandatory literal token, seed
-  candidates from FTS and regex-verify only those, instead of scanning the whole
-  file.
+- **Regex FTS-narrowing by a literal token.** Whole-line `/regex/` already lets
+  the surrounding field/term filters narrow the candidate lines it scans (a
+  superset gathered from the index, then regex-verified). The remaining win is
+  seeding candidates from the regex's *own* mandatory literal — but the default
+  FTS tokenizer matches whole tokens, so a substring literal isn't a sound
+  superset (it can miss `Xtimeout9`). Doing this correctly needs a trigram /
+  substring index (a second FTS5 table, larger on disk) to gate on.
 - **Windows code signing.** Ship a signed installer so SmartScreen stops warning on
   first run (the signing plumbing is already env-var driven; see `SIGNING.md`).

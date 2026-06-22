@@ -5,7 +5,7 @@ import path from 'node:path';
 import { LogSession, indexCacheDir } from './session.ts';
 import { type Histogram, type HistogramBucket } from './indexer.ts';
 import { parseQuery, type QueryNode } from './queryParser.ts';
-import { compileQuery } from './queryCompiler.ts';
+import { compileQuery, registerRegexp } from './queryCompiler.ts';
 
 /**
  * A time-ordered view across several open files, for correlating events between
@@ -70,6 +70,7 @@ export class MergedTimeline extends EventEmitter {
     this.dbPath = path.join(indexCacheDir(), `merged-${process.pid}-${Date.now()}.db`);
     this.db = new DatabaseSync(this.dbPath);
     this.db.exec(`PRAGMA journal_mode = OFF; PRAGMA synchronous = OFF;`);
+    registerRegexp(this.db);
     this.build();
     this.attachFollow();
   }

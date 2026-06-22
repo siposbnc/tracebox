@@ -24,16 +24,29 @@ const LEVEL_COLORS: Record<string, string> = {
 };
 
 const STACK_ORDER = ['NONE', 'TRACE', 'DEBUG', 'INFO', 'WARN', 'ERROR', 'FATAL'];
+/** Bucket-resolution presets offered by the resolution control. */
+const BUCKET_PRESETS = [50, 100, 200, 400];
 
 const HEIGHT = 90;
 
 export default function Histogram({
   data,
   onSelectRange,
+  activeRange = null,
+  onClearRange,
+  bucketCount,
+  onBucketCountChange,
   hint = 'drag to filter a time range',
 }: {
   data: HistogramData;
   onSelectRange: (startTs: number, endTs: number) => void;
+  /** A time-range filter currently in effect, drawn as a persistent band. */
+  activeRange?: { start: number; end: number } | null;
+  /** Clear the active time-range filter (enables the clear control). */
+  onClearRange?: () => void;
+  /** Current bucket-resolution request and its setter (enables the control). */
+  bucketCount?: number;
+  onBucketCountChange?: (count: number) => void;
   hint?: string;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -49,6 +62,7 @@ export default function Histogram({
   const span = Math.max(1, data.maxTs - data.minTs + data.bucketMs);
 
   const xFor = (ts: number): number => ((ts - data.minTs) / span) * 100;
+  const clampPct = (pct: number): number => Math.min(100, Math.max(0, pct));
   const widthPct = (data.bucketMs / span) * 100;
 
   const tsAtClientX = (clientX: number): number => {
@@ -156,6 +170,16 @@ export default function Histogram({
             </button>
           ))}
 
+        {activeRange && !drag && (
+          <div
+            className="pointer-events-none absolute bottom-0 top-0 border-x-2 border-sky-500/70 bg-sky-500/10"
+            style={{
+              left: `${clampPct(xFor(activeRange.start))}%`,
+              width: `${clampPct(xFor(activeRange.end)) - clampPct(xFor(activeRange.start))}%`,
+            }}
+          />
+        )}
+
         {drag && (
           <div
             className="pointer-events-none absolute bottom-0 top-0 border-x border-sky-400 bg-sky-400/15"
@@ -184,30 +208,54 @@ export default function Histogram({
       </div>
       <div className="flex items-center justify-between font-mono text-[10px] text-gray-600">
         <span>{formatTs(data.minTs, tz)}</span>
-        {anomalies.spikes.length > 0 || anomalies.gaps.length > 0 ? (
-          <span className="flex items-center gap-2 font-sans">
-            {anomalies.spikes.length > 0 && (
-              <button
-                onClick={() => setShowSpikes((v) => !v)}
-                className={`hover:text-red-300 ${showSpikes ? 'text-red-400' : 'text-gray-600 line-through'}`}
-                title={showSpikes ? 'Hide spike markers' : 'Show spike markers'}
+        <span className="flex items-center gap-2 font-sans">
+          {anomalies.spikes.length > 0 && (
+            <button
+              onClick={() => setShowSpikes((v) => !v)}
+              className={`hover:text-red-300 ${showSpikes ? 'text-red-400' : 'text-gray-600 line-through'}`}
+              title={showSpikes ? 'Hide spike markers' : 'Show spike markers'}
+            >
+              ⚡ {anomalies.spikes.length} spike{anomalies.spikes.length === 1 ? '' : 's'}
+            </button>
+          )}
+          {anomalies.gaps.length > 0 && (
+            <button
+              onClick={() => setShowGaps((v) => !v)}
+              className={`hover:text-gray-200 ${showGaps ? 'text-gray-400' : 'text-gray-600 line-through'}`}
+              title={showGaps ? 'Hide gap markers' : 'Show gap markers'}
+            >
+              ⏸ {anomalies.gaps.length} gap{anomalies.gaps.length === 1 ? '' : 's'}
+            </button>
+          )}
+          {activeRange && onClearRange && (
+            <button
+              onClick={onClearRange}
+              className="text-sky-400 hover:text-sky-300"
+              title="Clear the time-range filter"
+            >
+              ✕ range
+            </button>
+          )}
+          {bucketCount !== undefined && onBucketCountChange && (
+            <label className="flex items-center gap-1 text-gray-500" title="Histogram resolution (bucket count)">
+              <span>buckets</span>
+              <select
+                value={BUCKET_PRESETS.includes(bucketCount) ? bucketCount : 100}
+                onChange={(e) => onBucketCountChange(Number(e.target.value))}
+                className="rounded border border-edge bg-surface-2 px-1 py-0 text-[10px] text-gray-300 outline-none hover:text-gray-100"
               >
-                ⚡ {anomalies.spikes.length} spike{anomalies.spikes.length === 1 ? '' : 's'}
-              </button>
-            )}
-            {anomalies.gaps.length > 0 && (
-              <button
-                onClick={() => setShowGaps((v) => !v)}
-                className={`hover:text-gray-200 ${showGaps ? 'text-gray-400' : 'text-gray-600 line-through'}`}
-                title={showGaps ? 'Hide gap markers' : 'Show gap markers'}
-              >
-                ⏸ {anomalies.gaps.length} gap{anomalies.gaps.length === 1 ? '' : 's'}
-              </button>
-            )}
-          </span>
-        ) : (
-          <span className="text-gray-500">{hint}</span>
-        )}
+                {BUCKET_PRESETS.map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          {anomalies.spikes.length === 0 && anomalies.gaps.length === 0 && !activeRange && (
+            <span className="text-gray-500">{hint}</span>
+          )}
+        </span>
         <span>{formatTs(data.maxTs, tz)}</span>
       </div>
     </div>

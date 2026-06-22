@@ -124,6 +124,30 @@ test('a custom parser wins detection and its groups become fields', () => {
   assert.equal(p.fields?.dur, '35'); // bare number → numeric-comparable downstream
 });
 
+test('a user-defined parser wins over a higher-scoring built-in', () => {
+  // every line is valid 'timestamped' (the built-in matches all 20), but the user
+  // defined a parser for their format — it must win even though it matches fewer
+  const lines = Array.from({ length: 20 }, (_, i) =>
+    i % 10 < 7
+      ? `2024-01-01 00:00:0${i % 10} [INFO] GET /api/${i} 200`
+      : `2024-01-01 00:00:0${i % 10} [INFO] POST /api/${i} 500`,
+  );
+  assert.equal(detectFormat(lines).name, 'timestamped'); // built-in matches 100%
+
+  const custom = compileCustomParsers([
+    { name: 'apionly', pattern: '^(?<timestamp>\\S+ \\S+) \\[(?<level>\\w+)\\] GET (?<path>\\S+) (?<status>\\d+)$' },
+  ]);
+  // 'apionly' matches only the 14 GET lines (70%) — fewer than the built-in — yet wins
+  assert.equal(detectFormat(lines, custom).name, 'apionly');
+});
+
+test('a user-defined parser that barely matches yields to the built-ins', () => {
+  // when no custom parser clears the threshold, the best built-in still wins
+  const lines = Array.from({ length: 20 }, (_, i) => `2024-01-01 00:00:0${i % 10} [INFO] event ${i}`);
+  const custom = compileCustomParsers([{ name: 'rare', pattern: '^(?<x>never-matches-anything)$' }]);
+  assert.equal(detectFormat(lines, custom).name, 'timestamped');
+});
+
 test('compileCustomParsers skips an invalid regex without throwing', () => {
   const compiled = compileCustomParsers([
     { name: 'good', pattern: '^(?<message>.*)$' },
