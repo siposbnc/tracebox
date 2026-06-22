@@ -12,6 +12,8 @@ date and start a fresh `Unreleased` section.
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-06-22
+
 ### Added
 
 - **Multi-row selection.** Shift+click a row, or Shift+Arrow, to select a span of

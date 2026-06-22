@@ -3,6 +3,64 @@ import type { PatchNote } from './types';
 
 export const patchNotes: PatchNote[] = [
   {
+    "version": "1.4.0",
+    "date": "2026-06-22",
+    "sections": [
+      {
+        "title": "Added",
+        "items": [
+          "**Multi-row selection.** Shift+click a row, or Shift+Arrow, to select a span of lines; the status bar shows the count and **Copy** grabs just the selection (instead of the whole filtered view). Plain click/arrow clears it. **Ctrl/Cmd+C** runs the same \"copy rows to clipboard\" as the Export menu — the selection if any, else the whole view — and shows the same \"Copied N rows\" note. (It defers to the browser when you have a text selection, so copying a snippet still works.)",
+          "**Columnar view is now a real table.** Drag a column's right edge to **resize** it and drag its header to **reorder** — both persisted per file — and **click a cell to filter** the query to that `field:value`. The column picker lists fields A→Z with a filter box.",
+          "**Whole-line `/regex/` in the query language.** A bare `/pattern/` term matches the whole line and **composes** with everything else — `level:error AND /timeout\\d+/ AND status:>=500`. It's evaluated in two phases: the surrounding field/term filters gather candidate lines from the index first, so the regex only scans those lines instead of the whole file (the more selective your other filters, the less it reads). Case-insensitive by default, like the rest of the language; `AND`/`OR`/`NOT`, grouping, and record grouping all work. This is the composable counterpart to the standalone whole-file regex search toggle.",
+          "**Pick the parser.** The format chip in the status bar now shows the parser in use and opens a menu to **override it** — handy when a built-in format wins over a user-defined one, or you want to force `raw`. Choosing a parser re-indexes the file with it; \"auto-detect\" restores detection. The menu lists the current custom parsers each time it opens, so one added meanwhile (e.g. via MCP) is selectable right away — no reopen needed.",
+          "**Live rotation following.** Tailing a rotation group is no longer a snapshot: it follows the live (newest) member, picking up appends to `app.log` as they happen, and continues seamlessly across a roll (logrotate `copytruncate`, or a rename + recreate at the same path) — the already-indexed lines stay put while new lines stream in. The newly-written bytes are folded into the concatenated stream, so search, histogram, and watch rules all keep working over the group.",
+          "**Histogram interactions.** The time-volume histogram is now a control surface: a **clear control** for the drag-selected time range (also drawn as a persistent band so you can see what's filtered), and a **selectable bucket resolution** (50/100/200/400) to trade detail for breadth.",
+          "**Regular-expression matching inside the query language**: `field:~pattern` matches a field value against a regex (case-insensitive), so it composes with the rest of a query — `level:error AND msg:~\"time(d)? out\" AND status:>=500`. It evaluates against the index (no full-file scan), unlike the whole-line regex search toggle. Quote the pattern to include spaces, parentheses, or quotes."
+        ]
+      },
+      {
+        "title": "Changed",
+        "items": [
+          "**Tail now pauses a command/stdin source.** Turning tail off on a `tracebox -- <command>` (or stdin) session pauses reading its output — the producer is back-pressured and the view stops growing — and turning tail back on resumes from where it left off and drains what buffered. Previously a command kept streaming into the index regardless of the tail toggle.",
+          "**User-defined parsers now take precedence over built-ins.** If any of your custom parsers parses a file well enough, it wins detection outright — even over a built-in format that would match more lines — because you defined it on purpose. (Previously a higher-scoring built-in could win.) You can still override the choice from the status-bar parser picker.",
+          "Reports now **render Markdown in notes** in the HTML output — bold, lists, links, and inline code show formatted instead of literal. Applies to the app's HTML report export and the MCP `build_report` HTML format (its summary/section prose).",
+          "The rotated-files offer now **names the files** it found (e.g. \"Found 2 rotated files alongside this log: app.log.1, app.log.2\") so you can decide by name before opening the group as one stream.",
+          "The merged timeline is now **live**: while its files are tailing (or are command/capture sources), appended lines fold into the timeline as they arrive and slot into their place in time order — no manual Refresh needed. The view sticks to the live edge when you're already scrolled there, an active search keeps matching new lines, and the histogram updates as data streams in."
+        ]
+      },
+      {
+        "title": "Fixed",
+        "items": [
+          "Config changes made by the **MCP server** (e.g. `add_parser`) are now reflected in the app without a restart — the server re-reads `config.json` when it changes on disk instead of caching it for the process lifetime, so a parser added by an agent shows up the next time **Settings → Custom parsers** is opened.",
+          "Clicking a level in the status bar now **narrows the current query** instead of replacing it: the clicked `level:` filter is appended to whatever you've already searched, and an existing level clause is updated in place rather than stacked.",
+          "Dragging a time range on the histogram now **updates the existing timestamp filter** in place instead of appending another, so repeatedly narrowing the selection no longer stacks `timestamp:` clauses in the query."
+        ]
+      },
+      {
+        "title": "Added",
+        "items": [
+          "**User-defined parsers** — teach TraceBox a proprietary log format: a named regular expression whose capture groups become structured fields (`timestamp`, `level`/`level2`, and `message` are treated as record metadata). Custom parsers are persisted in `~/.tracebox/config.json` and join format auto-detection (preferred over the built-ins). Editing a parser re-indexes affected files so their fields are re-extracted. Capture a number without its unit (`(?<duration>\\d+)ms`) to make it numeric-comparable (`duration:>5000`). Manage them in **Settings → Custom parsers**, with a **live tester** that dry-runs the regex against the open log (or pasted lines) and shows the extracted fields before you save. Also drivable from the MCP server with `test_parser`, `add_parser`, `remove_parser`, and `list_parsers`.",
+          "**MCP server** — drive TraceBox from AI agents over the Model Context Protocol (`npm run mcp`, a stdio server). An agent opens and indexes a log, then searches and pages with the full query language and pulls aggregates (stats, histogram, clusters, field facets) — returning only the matching lines and summaries instead of streaming a multi-gigabyte file through its context window. Tools: `open_log`, `list_sessions`, `close_log`, `search`, `get_lines`, `get_context`, `get_record`, `fields`, `facet`, `stats`, `histogram`, `clusters`, `table`, `build_report`, plus `test_parser`/`add_parser`/`remove_parser`/`list_parsers` for user-defined formats. `table` is like `search` but projects only the fields you ask for as a compact table (column names once, then rows as value arrays), so an agent doesn't have to post-process large result sets. `build_report` is the deliverable step: the agent supplies a title, summary, and sections that cite evidence by line number, and TraceBox fills each citation with the **real indexed line** (timestamp, level, text) so the report quotes logs verbatim rather than paraphrasing them — rendered as **Markdown or HTML** and written to a file when `savePath` is given. The aggregates (`facet`, `stats`, `histogram`, `clusters`) take an optional `query` to scope themselves in a single call — pass `\"\"` for the whole file or omit it to reuse the active search — so an agent need not run a separate `search` first; `histogram` also takes `maxBuckets` to keep its output compact. It reuses the same session/query engine as the UI and is hand-rolled with no SDK and no runtime dependencies, holding no network sockets of its own — the offline, zero-dependency guarantees are preserved. The server is **opt-in and off by default**: it refuses to start until enabled in **Settings → MCP server**, which then shows the command to register it. The desktop build bundles it and launches it through the app executable (`ELECTRON_RUN_AS_NODE`) on demand, so an install never exposes the toolkit until you turn it on.",
+          "**Watch rules** turn live tailing into light monitoring. Define per-file alerts that fire as new lines arrive: a **match** rule on any query (e.g. `level:error AND timeout`), or a **rate** rule that fires when matches cross a threshold within a sliding window (e.g. \"20 errors in 60s\"). A new bell button on the toolbar opens the rules panel, where you add/enable rules and review recent alerts (click one to jump to the matching line). Triggers surface as in-app toasts and a per-tab badge — and, in the desktop app, as native OS notifications you can opt into per rule. Rules are evaluated by the backend for every tailing file, including background tabs, and are saved per file so they come back when you reopen it.",
+          "Settings are now reachable without a file open — from a gear button on the welcome screen and in the top bar. The settings panel moved out of the per-file toolbar to this single global location.",
+          "A **Tail all** button on the merged timeline toggles live tailing for every file in the timeline at once. It reads \"on\" only when all of them are tailing; with mixed states it shows off, and clicking it enables tailing on all of them.",
+          "Each open file's tab now shows a blinking green dot while that file is tailing, so you can tell at a glance which sources are following live output.",
+          "Clear feedback while a file is opening and indexing. Selecting a file now adds a **pending tab with a spinner** immediately (and a loading screen for the very first file) instead of leaving you staring at an unchanged tab bar while the index spins up, and the row list shows a spinning \"Indexing the file…\" state until the first lines are read — instead of a blank area or a misleading \"No matching log lines\" message."
+        ]
+      },
+      {
+        "title": "Fixed",
+        "items": [
+          "Running a search now filters the row list immediately. The list previously kept showing unfiltered rows until you toggled Highlight matches on and off again: the row blocks loaded before the search were only being invalidated as if data had been appended to the tail, so the stale unfiltered rows lingered. Full data-set changes (search, grouping, refresh) now discard every loaded block.",
+          "Reopening a file whose contents changed since it was last indexed no longer fails with \"table templates already exists\". The index rebuild now drops the `templates` table along with the others before recreating the schema. This most often hit regenerated/live test logs, which change between every run.",
+          "A file tab now follows the live edge whenever its tail mode is on — including when tailing was enabled from the merged timeline's **Tail all** — instead of only when toggled from that tab's own Tail button. Appended lines were being indexed (the histogram updated) but the row list stayed put.",
+          "Tailing in **newest-first** order now keeps the view live. Appended lines were indexed and the histogram and counts updated, but the row list froze on the newest rows. In newest-first order an appended line shifts every display position, so the whole loaded set is stale — the tail refresh was only discarding the last block (correct for oldest-first), leaving the visible newest rows cached. It now drops the full set in newest-first order.",
+          "Command & pipe sources: open the live output of a command instead of a file. A **Run a command** button on the welcome screen and in the tab bar opens a prompt (e.g. `docker logs -f web`, `journalctl -f`, `kubectl logs -f pod`) — TraceBox runs it through your shell, spools its output to a capture, and indexes and follows it exactly like a tailed log (search, histogram, clustering, fields all work live). stderr is captured alongside stdout (toggleable). A **Stop** control in the status bar freezes the captured data while keeping it searchable; it also freezes automatically when the process exits."
+        ]
+      }
+    ]
+  },
+  {
     "version": "1.3.1",
     "date": "2026-06-16",
     "sections": [
