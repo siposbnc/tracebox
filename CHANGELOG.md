@@ -14,6 +14,10 @@ date and start a fresh `Unreleased` section.
 
 ### Added
 
+- **Δt column.** An optional column (**Settings → Δt column**) shows the time gap
+  to the previous row, so stalls and latency jumps stand out inline — colour-graded
+  (amber past 1 s / 5 s, red past a minute). It follows the active filter and order
+  (the gap is to the previous *matching* row), in both the raw and columnar views.
 - **Optional level accent bars.** The small colored bar before WARN/ERROR/FATAL
   rows in the raw view can be switched off in **Settings → Level accent bars**, so
   every row lines up at the same position regardless of level. On by default.

@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { api, formatTs } from '../api';
-import { useOrder, useTz, useRowHeight, useLevelBars, getPageJump, getPageJumpBig, type Tz } from '../settings';
+import { api, formatTs, formatDelta } from '../api';
+import { useOrder, useTz, useRowHeight, useLevelBars, useDeltaColumn, getPageJump, getPageJumpBig, type Tz } from '../settings';
 import { useRedactor } from '../redaction';
 import { useBookmarks, toggleBookmark } from '../bookmarks';
 import { matchCommand, getChord, formatChord } from '../keybindings';
@@ -13,6 +13,15 @@ const BLOCK = 256;
 const TIME_W = 168;
 const LEVEL_W = 52;
 const COL_W = 190;
+const DELTA_W = 64;
+
+/** Tint the Δt value by magnitude so stalls/latency jumps stand out. */
+function deltaClass(ms: number): string {
+  if (ms >= 60_000) return 'text-red-400';
+  if (ms >= 5_000) return 'text-amber-400';
+  if (ms >= 1_000) return 'text-amber-300';
+  return 'text-gray-600';
+}
 
 const LEVEL_STYLES: Record<string, string> = {
   TRACE: 'bg-slate-800 text-slate-400',
@@ -125,6 +134,7 @@ export default function LogList({
   const rowHeight = useRowHeight();
   const { redact } = useRedactor();
   const levelBars = useLevelBars();
+  const deltaColumn = useDeltaColumn();
   const bookmarks = useBookmarks(file);
   const bookmarkSet = useMemo(() => new Set(bookmarks), [bookmarks]);
   const orderRef = useRef(order);
@@ -422,9 +432,18 @@ export default function LogList({
 
   const gutterWidth = Math.max(5, String(total).length) + 1;
 
+  // Δt = gap to the chronologically-previous row in the view (the row above in
+  // oldest-first, below in newest-first). Computed from adjacent loaded rows, so
+  // it respects the active filter/grouping; null until the neighbour is loaded.
+  const deltaFor = (index: number, row: RowData | null): number | null => {
+    if (!deltaColumn || !row || row.ts == null) return null;
+    const prev = order === 'asc' ? rowAt(index - 1) : rowAt(index + 1);
+    return prev && prev.ts != null ? row.ts - prev.ts : null;
+  };
+
   const widthOf = useCallback((c: string): number => columnWidths[c] ?? COL_W, [columnWidths]);
   const columnsPx = columns.reduce((sum, c) => sum + widthOf(c), 0);
-  const gridMinWidth = `calc(${gutterWidth + 2}ch + ${16 + TIME_W + LEVEL_W + columnsPx}px)`;
+  const gridMinWidth = `calc(${gutterWidth + 2}ch + ${16 + TIME_W + (deltaColumn ? DELTA_W : 0) + LEVEL_W + columnsPx}px)`;
 
   return (
     <div
@@ -457,6 +476,7 @@ export default function LogList({
             columns={columns}
             widthOf={widthOf}
             gutterWidth={gutterWidth}
+            showDelta={deltaColumn}
             onResize={onColumnResize}
             onReorder={onReorderColumns}
           />
@@ -490,6 +510,8 @@ export default function LogList({
                       gutterWidth={gutterWidth}
                       tz={tz}
                       redact={redact}
+                      showDelta={deltaColumn}
+                      delta={deltaFor(item.index, row)}
                     />
                   ) : (
                     <div className="flex h-6 items-center px-3">
@@ -539,6 +561,8 @@ export default function LogList({
                     wrap={wrap}
                     redact={redact}
                     levelBars={levelBars}
+                    showDelta={deltaColumn}
+                    delta={deltaFor(item.index, row)}
                   />
                 ) : (
                   <div className="flex h-6 items-center px-3">
@@ -571,6 +595,8 @@ const Row = memo(function Row({
   wrap,
   redact,
   levelBars,
+  showDelta,
+  delta,
 }: {
   row: RowData;
   viewIndex: number;
@@ -588,6 +614,8 @@ const Row = memo(function Row({
   wrap: boolean;
   redact: (text: string) => string;
   levelBars: boolean;
+  showDelta: boolean;
+  delta: number | null;
 }) {
   const levelClass = row.level ? (LEVEL_STYLES[row.level] ?? 'bg-slate-800 text-slate-300') : '';
   const bar = row.level ? LEVEL_BAR[row.level] : undefined;
@@ -643,6 +671,15 @@ const Row = memo(function Row({
       </span>
       {levelBars && bar && !selected && <span className={`h-3.5 w-0.5 shrink-0 rounded ${bar}`} />}
       <span className="shrink-0 whitespace-nowrap text-xs text-gray-500">{formatTs(row.ts, tz)}</span>
+      {showDelta && (
+        <span
+          className={`shrink-0 select-none whitespace-nowrap text-right text-[11px] ${delta == null ? 'text-gray-700' : deltaClass(delta)}`}
+          style={{ width: DELTA_W }}
+          title={delta == null ? undefined : `${formatDelta(delta)} since the previous row`}
+        >
+          {delta == null ? '' : formatDelta(delta)}
+        </span>
+      )}
       {row.level && (
         <span
           className={`w-12 shrink-0 rounded px-1 text-center text-[10px] font-semibold leading-4 ${levelClass}`}
@@ -696,6 +733,8 @@ const GridRow = memo(function GridRow({
   gutterWidth,
   tz,
   redact,
+  showDelta,
+  delta,
 }: {
   row: RowData;
   viewIndex: number;
@@ -710,6 +749,8 @@ const GridRow = memo(function GridRow({
   gutterWidth: number;
   tz: Tz;
   redact: (text: string) => string;
+  showDelta: boolean;
+  delta: number | null;
 }) {
   const levelClass = row.level ? (LEVEL_STYLES[row.level] ?? 'bg-slate-800 text-slate-300') : '';
   return (
@@ -744,6 +785,15 @@ const GridRow = memo(function GridRow({
       <span className="shrink-0 whitespace-nowrap text-xs text-gray-500" style={{ width: TIME_W }}>
         {formatTs(row.ts, tz)}
       </span>
+      {showDelta && (
+        <span
+          className={`shrink-0 text-right text-[11px] ${delta == null ? 'text-gray-700' : deltaClass(delta)}`}
+          style={{ width: DELTA_W }}
+          title={delta == null ? undefined : `${formatDelta(delta)} since the previous row`}
+        >
+          {delta == null ? '' : formatDelta(delta)}
+        </span>
+      )}
       <span className="shrink-0" style={{ width: LEVEL_W }}>
         {row.level && (
           <span className={`rounded px-1 text-[10px] font-semibold leading-4 ${levelClass}`}>{row.level}</span>
@@ -781,12 +831,14 @@ function GridHeader({
   columns,
   widthOf,
   gutterWidth,
+  showDelta,
   onResize,
   onReorder,
 }: {
   columns: string[];
   widthOf: (c: string) => number;
   gutterWidth: number;
+  showDelta: boolean;
   onResize: (col: string, width: number) => void;
   onReorder: (cols: string[]) => void;
 }) {
@@ -824,6 +876,11 @@ function GridHeader({
       <span className="shrink-0" style={{ width: TIME_W }}>
         time
       </span>
+      {showDelta && (
+        <span className="shrink-0 text-right" style={{ width: DELTA_W }} title="Time since the previous row">
+          Δt
+        </span>
+      )}
       <span className="shrink-0" style={{ width: LEVEL_W }}>
         level
       </span>

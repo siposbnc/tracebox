@@ -36,10 +36,6 @@ desktop app is the primary target.
   level) down one axis, time across the other, each cell shaded by count — so you
   can see *which* value started spiking *when*. Fuses the histogram and faceting
   code; bucket on the server so it holds up on big files.
-- **Δ-time column.** Show the time gap between consecutive rows (and Δ-since the
-  selected row) as an optional column, so stalls and latency jumps are visible
-  inline without opening the histogram. Cheap on top of the already-indexed
-  timestamps.
 
 ## Workflow — keep an investigation
 

@@ -41,6 +41,7 @@ const DETAIL_VIEW_KEY = 'tracebox.detailView';
 const THEME_KEY = 'tracebox.theme';
 const FONT_SIZE_KEY = 'tracebox.fontSize';
 const LEVEL_BARS_KEY = 'tracebox.levelBars';
+const DELTA_COLUMN_KEY = 'tracebox.deltaColumn';
 
 let order: Order = clientStore.getItem(ORDER_KEY) === 'desc' ? 'desc' : 'asc';
 let tz: Tz = clientStore.getItem(TZ_KEY) === 'local' ? 'local' : 'utc';
@@ -48,6 +49,8 @@ let wrap = clientStore.getItem(WRAP_KEY) === 'true';
 let columnar = clientStore.getItem(COLUMNAR_KEY) === 'true';
 // the colored level-accent bar before WARN+ rows; on by default
 let levelBars = clientStore.getItem(LEVEL_BARS_KEY) !== 'false';
+// the Δt column showing the gap to the previous row; off by default
+let deltaColumn = clientStore.getItem(DELTA_COLUMN_KEY) === 'true';
 let detailView: DetailView = clientStore.getItem(DETAIL_VIEW_KEY) === 'json' ? 'json' : 'flat';
 
 function loadTheme(): Theme {
@@ -234,6 +237,22 @@ export function setLevelBars(next: boolean): void {
 /** Whether the colored accent bar marks WARN/ERROR/FATAL rows. Off aligns every row. */
 export function useLevelBars(): boolean {
   return useSyncExternalStore(subscribe, getLevelBars);
+}
+
+export function getDeltaColumn(): boolean {
+  return deltaColumn;
+}
+
+export function setDeltaColumn(next: boolean): void {
+  if (next === deltaColumn) return;
+  deltaColumn = next;
+  clientStore.setItem(DELTA_COLUMN_KEY, String(next));
+  emit();
+}
+
+/** Whether a Δt column shows the time gap to the previous row. */
+export function useDeltaColumn(): boolean {
+  return useSyncExternalStore(subscribe, getDeltaColumn);
 }
 
 export function getDetailView(): DetailView {

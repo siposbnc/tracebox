@@ -238,6 +238,31 @@ export function formatCount(n: number): string {
   return n.toLocaleString('en-US');
 }
 
+/**
+ * Compact duration for the Δt column — the gap between two log rows. Negatives
+ * (out-of-order timestamps) clamp to zero. e.g. `340ms`, `2.3s`, `45s`, `3m 5s`,
+ * `2h 10m`, `1d 3h`.
+ */
+export function formatDelta(ms: number): string {
+  if (ms <= 0) return '0ms';
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  const s = ms / 1000;
+  if (s < 60) return `${s < 10 ? s.toFixed(1) : Math.round(s)}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) {
+    const rem = Math.round(s % 60);
+    return rem ? `${m}m ${rem}s` : `${m}m`;
+  }
+  const h = Math.floor(m / 60);
+  if (h < 24) {
+    const rem = m % 60;
+    return rem ? `${h}h ${rem}m` : `${h}h`;
+  }
+  const d = Math.floor(h / 24);
+  const rem = h % 24;
+  return rem ? `${d}d ${rem}h` : `${d}d`;
+}
+
 function pad(n: number, len = 2): string {
   return String(n).padStart(len, '0');
 }

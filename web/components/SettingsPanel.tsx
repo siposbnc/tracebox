@@ -7,6 +7,8 @@ import {
   setWrap,
   useLevelBars,
   setLevelBars,
+  useDeltaColumn,
+  setDeltaColumn,
   useContextLines,
   setContextLines,
   useHistogramDefault,
@@ -160,6 +162,7 @@ export default function SettingsPanel({
   const tz = useTz();
   const wrap = useWrap();
   const levelBars = useLevelBars();
+  const deltaColumn = useDeltaColumn();
   const contextLines = useContextLines();
   const histogramDefault = useHistogramDefault();
   const pageJump = usePageJump();
@@ -242,6 +245,9 @@ export default function SettingsPanel({
             </Row>
             <Row label="Histogram on open" hint="Show the time histogram when a file opens">
               <Toggle checked={histogramDefault} onChange={setHistogramDefault} label="Histogram on open" />
+            </Row>
+            <Row label="Δt column" hint="Show the time gap to the previous row">
+              <Toggle checked={deltaColumn} onChange={setDeltaColumn} label="Delta time column" />
             </Row>
           </Section>
 
