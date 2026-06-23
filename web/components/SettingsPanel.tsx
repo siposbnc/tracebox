@@ -116,7 +116,7 @@ function NavRow({ label, hint, onClick }: { label: string; hint: string; onClick
       className="group flex w-full items-center justify-between gap-4 px-3 py-2.5 text-left transition-colors hover:bg-surface-3/40"
     >
       <div className="min-w-0">
-        <div className="text-sm text-gray-200 group-hover:text-white">{label}</div>
+        <div className="text-sm text-gray-200 group-hover:text-gray-100">{label}</div>
         <div className="mt-0.5 text-xs text-gray-500">{hint}</div>
       </div>
       <span className="shrink-0 text-base text-gray-600 transition-all group-hover:translate-x-0.5 group-hover:text-sky-300">›</span>

@@ -76,7 +76,7 @@ export default function StatusBar({
             </span>
             <button
               onClick={onStop}
-              className="rounded bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-gray-300 hover:bg-surface-3 hover:text-white"
+              className="rounded bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-gray-300 hover:bg-surface-3 hover:text-gray-100"
               title="Stop the command and freeze the captured data"
             >
               ◼ Stop
