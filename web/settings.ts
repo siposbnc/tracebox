@@ -32,6 +32,7 @@ const ORDER_KEY = 'tracebox.order';
 const TZ_KEY = 'tracebox.tz';
 const CONTEXT_KEY = 'tracebox.contextLines';
 const HISTOGRAM_KEY = 'tracebox.histogramDefault';
+const TRIAGE_KEY = 'tracebox.triageOnOpen';
 const PAGE_JUMP_KEY = 'tracebox.pageJump';
 const PAGE_JUMP_BIG_KEY = 'tracebox.pageJumpBig';
 
@@ -75,6 +76,8 @@ function loadNumber(key: string, fallback: number, min = 0, max = 1_000_000): nu
 
 let contextLines = loadNumber(CONTEXT_KEY, 5, 0, 1000);
 let histogramDefault = clientStore.getItem(HISTOGRAM_KEY) !== 'false';
+// show the triage landing dashboard when a file opens; on by default
+let triageOnOpen = clientStore.getItem(TRIAGE_KEY) !== 'false';
 let pageJump = loadNumber(PAGE_JUMP_KEY, 100, 1);
 let pageJumpBig = loadNumber(PAGE_JUMP_BIG_KEY, 1000, 1);
 
@@ -336,4 +339,20 @@ export function setHistogramDefault(next: boolean): void {
 /** Whether the histogram is shown by default when a file opens. */
 export function useHistogramDefault(): boolean {
   return useSyncExternalStore(subscribe, getHistogramDefault);
+}
+
+export function getTriageOnOpen(): boolean {
+  return triageOnOpen;
+}
+
+export function setTriageOnOpen(next: boolean): void {
+  if (next === triageOnOpen) return;
+  triageOnOpen = next;
+  clientStore.setItem(TRIAGE_KEY, String(next));
+  emit();
+}
+
+/** Whether the triage landing dashboard auto-opens when a file finishes indexing. */
+export function useTriageOnOpen(): boolean {
+  return useSyncExternalStore(subscribe, getTriageOnOpen);
 }

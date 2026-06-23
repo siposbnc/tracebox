@@ -63,6 +63,7 @@ export default function SearchBar({
   onOpenFile,
   exportUrls,
   onCopyRows,
+  onShowTriage,
   copyNote,
   histogramOpen,
   onToggleHistogram,
@@ -109,6 +110,7 @@ export default function SearchBar({
   exportUrls: { csv: string; json: string };
   /** Run the copy (selection or whole view); owns the transient note via `copyNote`. */
   onCopyRows: () => void;
+  onShowTriage: () => void;
   /** Transient "Copied N rows" note shown beside the Export menu (managed by the parent). */
   copyNote: string | null;
   histogramOpen: boolean;
@@ -517,6 +519,11 @@ export default function SearchBar({
       {/* Row 2 — view & display controls */}
       <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
         {/* panels */}
+        <button onClick={onShowTriage} className={toolCls(false)} title="Triage — what's wrong in this file">
+          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 12h3.5l2 6 3.5-12 2.5 9 1.5-3H21" />
+          </svg>
+        </button>
         <button onClick={onToggleHistogram} className={toolCls(histogramOpen)} title="Toggle histogram">
           <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
             <rect x="3" y="12" width="4" height="9" rx="1" />

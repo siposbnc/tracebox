@@ -10,6 +10,7 @@ import DetailPanel from './DetailPanel';
 import ReportDialog from './ReportDialog';
 import FacetPanel from './FacetPanel';
 import FilterBreadcrumb from './FilterBreadcrumb';
+import TriagePanel from './TriagePanel';
 import ClusterPanel from './ClusterPanel';
 import StatsPanel from './StatsPanel';
 import WatchPanel from './WatchPanel';
@@ -18,7 +19,7 @@ import GoToLine from './GoToLine';
 import ShortcutsHelp from './ShortcutsHelp';
 import Histogram from './Histogram';
 import StatusBar from './StatusBar';
-import { getHistogramDefault, useWrap, getWrap, setWrap, getOrder, useColumnar } from '../settings';
+import { getHistogramDefault, getTriageOnOpen, useWrap, getWrap, setWrap, getOrder, useColumnar } from '../settings';
 import { useColumns, defaultColumns, setColumns } from '../columns';
 import { useCaptures, upsertCapture, removeCapture, compileExtractors, type Capture } from '../captures';
 import { useRedactor, redactExportParams, getRedactOn, setRedactOn } from '../redaction';
@@ -112,6 +113,8 @@ export default function LogView({
   const [facetsOpen, setFacetsOpen] = useState(false);
   const [clustersOpen, setClustersOpen] = useState(false);
   const [statsOpen, setStatsOpen] = useState(false);
+  const [triageOpen, setTriageOpen] = useState(false);
+  const triageShownRef = useRef(false);
   const [watchOpen, setWatchOpen] = useState(false);
   const [activeTemplate, setActiveTemplate] = useState<number | null>(null);
   const templateRef = useRef<number | null>(null);
@@ -240,6 +243,14 @@ export default function LogView({
   useEffect(() => {
     if (status.phase === 'ready') refreshHistogram();
   }, [status.phase, refreshHistogram]);
+
+  // open the triage landing dashboard once, when the file finishes indexing
+  useEffect(() => {
+    if (status.phase === 'ready' && !triageShownRef.current) {
+      triageShownRef.current = true;
+      if (getTriageOnOpen()) setTriageOpen(true);
+    }
+  }, [status.phase]);
 
   // --- search ---------------------------------------------------------------
   const runSearch = useCallback(
@@ -654,6 +665,7 @@ export default function LogView({
         }}
         onCopyRows={runCopy}
         copyNote={copyNote}
+        onShowTriage={() => setTriageOpen(true)}
         histogramOpen={histogramOpen}
         onToggleHistogram={() => setHistogramOpen((v) => !v)}
         facetsOpen={facetsOpen}
@@ -840,6 +852,18 @@ export default function LogView({
       )}
 
       {shortcutsOpen && <ShortcutsHelp onClose={() => setShortcutsOpen(false)} />}
+
+      {triageOpen && status.phase === 'ready' && (
+        <TriagePanel
+          sessionId={id}
+          file={status.file}
+          onClose={() => setTriageOpen(false)}
+          onFilterLevel={filterLevel}
+          onDrillCluster={drillCluster}
+          onTimeRange={onTimeRange}
+          onQuery={submitQuery}
+        />
+      )}
     </div>
   );
 }

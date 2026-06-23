@@ -9,6 +9,7 @@ import type {
   ParserTestResult,
   FacetResult,
   HistogramData,
+  TriageResult,
   LineDetail,
   MergedBuild,
   MergedRow,
@@ -141,6 +142,7 @@ export const api = {
     ),
   clusters: (id: string, limit = 50) =>
     request<ClustersResult>(`/api/sessions/${id}/clusters?limit=${limit}`),
+  triage: (id: string) => request<TriageResult>(`/api/sessions/${id}/triage`),
   correlate: (id: string, limit = 8) =>
     request<Correlations>(`/api/sessions/${id}/correlate?limit=${limit}`),
   stats: (id: string, grouped = false) =>

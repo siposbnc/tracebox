@@ -14,6 +14,11 @@ date and start a fresh `Unreleased` section.
 
 ### Added
 
+- **Triage on open.** When a file finishes indexing, a "what's wrong" landing
+  dashboard surfaces the level breakdown, the top log-pattern clusters among
+  errors, activity spikes & gaps, and a slowest-field summary (p50/p95/max) —
+  each finding clickable to drill straight into the matching view. Auto-opens by
+  default (toggle in **Settings → Triage on open**) and reopens from the toolbar.
 - **Δt column.** An optional column (**Settings → Δt column**) shows the time gap
   to the previous row, so stalls and latency jumps stand out inline — colour-graded
   (amber past 1 s / 5 s, red past a minute). It follows the active filter and order

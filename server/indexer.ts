@@ -771,6 +771,20 @@ export class IndexStore {
     return { patterns, distinctCount: agg.distinctCount, covered: agg.covered };
   }
 
+  /** Top log-pattern templates among whole-file lines of the given levels (for triage). */
+  clustersByLevel(levels: string[], limit = 6): { id: number; pattern: string; count: number }[] {
+    if (levels.length === 0) return [];
+    const ph = levels.map(() => '?').join(',');
+    return this.db
+      .prepare(
+        `SELECT t.id AS id, t.pattern AS pattern, COUNT(*) AS count
+         FROM lines l JOIN templates t ON t.id = l.tmpl
+         WHERE l.level IN (${ph})
+         GROUP BY l.tmpl ORDER BY count DESC, t.id LIMIT ?`,
+      )
+      .all(...levels, limit) as { id: number; pattern: string; count: number }[];
+  }
+
   /**
    * "Concentrated in" analysis for the current result set: the field=value pairs
    * that dominate the results and are over-represented relative to the whole file

@@ -1068,6 +1068,35 @@ test('export iteration covers all results in order', async () => {
   for (let i = 1; i < all.length; i++) assert.ok(all[i] > all[i - 1]);
 });
 
+test('triage summarizes errors, clusters, and the slowest field', async () => {
+  // app text format: errors cluster into patterns, no duration field
+  const lines = appLogLines(3000);
+  const s1 = await openAndIndex(makeLogFile('triage-app.log', lines));
+  const t1 = s1.triage();
+  assert.equal(t1.total, 3000);
+  assert.equal(t1.errorTotal, lines.filter((_, i) => i % 6 === 4).length);
+  assert.ok(t1.levels.some((l) => l.level === 'ERROR'));
+  assert.ok(t1.errorClusters.length > 0, 'errors should cluster into patterns');
+  assert.ok(t1.errorClusters.every((c) => c.count > 0 && c.pattern.length > 0));
+  assert.equal(t1.slowest, null); // the text format has no duration field
+
+  // json with a duration_ms field: the slowest card is populated
+  const jlines = Array.from({ length: 1000 }, (_, i) =>
+    JSON.stringify({
+      timestamp: new Date(Date.UTC(2024, 0, 1) + i * 1000).toISOString(),
+      level: i % 5 === 0 ? 'ERROR' : 'INFO',
+      duration_ms: i % 1000,
+    }),
+  );
+  const s2 = await openAndIndex(makeLogFile('triage.jsonl', jlines));
+  const t2 = s2.triage();
+  assert.ok(t2.slowest, 'should detect duration_ms');
+  assert.equal(t2.slowest?.field, 'duration_ms');
+  assert.equal(t2.slowest?.count, 1000);
+  assert.ok((t2.slowest?.max ?? 0) >= (t2.slowest?.p95 ?? 0) && (t2.slowest?.p95 ?? 0) >= (t2.slowest?.p50 ?? 0));
+  assert.equal(t2.errorTotal, 200);
+});
+
 test('countQuery counts without disturbing the active search', async () => {
   const lines = appLogLines(3000);
   const s = await openAndIndex(makeLogFile('count.log', lines));

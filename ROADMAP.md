@@ -27,11 +27,6 @@ desktop app is the primary target.
 - **Numeric field trends.** Chart a numeric field over time (`duration_ms`,
   response bytes) with p50/p95, not just line volume. Builds on the histogram +
   stats code; turns the tool into a mini offline observability view.
-- **Triage view on open.** When a file opens, surface a one-screen summary of
-  what's wrong: top error clusters, rate spikes and gaps, patterns that are new
-  versus the baseline, and the slowest operations. Assembles the existing
-  clustering, gap/spike, and stats analyses into a landing dashboard instead of
-  starting from a raw scroll.
 - **Facet-over-time heatmap.** A 2-D grid — a field's values (status, service,
   level) down one axis, time across the other, each cell shaded by count — so you
   can see *which* value started spiking *when*. Fuses the histogram and faceting

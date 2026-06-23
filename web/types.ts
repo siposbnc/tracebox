@@ -95,6 +95,15 @@ export interface FacetResult {
   scanned?: number;
 }
 
+export interface TriageResult {
+  total: number;
+  span: { start: number | null; end: number | null };
+  levels: { level: string; count: number }[];
+  errorTotal: number;
+  errorClusters: { id: number; pattern: string; count: number }[];
+  slowest: { field: string; count: number; p50: number; p95: number; max: number } | null;
+}
+
 export interface NumericFacet {
   field: string;
   count: number;

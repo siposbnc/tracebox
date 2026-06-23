@@ -63,6 +63,18 @@ export interface RowData {
   cols?: Record<string, string>;
 }
 
+/** A "what's wrong" summary of the whole file for the triage landing view. */
+export interface TriageResult {
+  total: number;
+  span: { start: number | null; end: number | null };
+  levels: { level: string; count: number }[];
+  errorTotal: number;
+  /** Top log-pattern clusters among error/fatal lines (template id → pattern). */
+  errorClusters: { id: number; pattern: string; count: number }[];
+  /** Distribution of a duration-like field, when the file has one. */
+  slowest: { field: string; count: number; p50: number; p95: number; max: number } | null;
+}
+
 export interface SessionStatus {
   id: string;
   file: string;
@@ -1093,6 +1105,53 @@ export class LogSession extends EventEmitter {
         return { key, distinctCount: f.distinctCount, covered: f.covered, values: f.values };
       });
     return { ...base, peakPerMin, fields };
+  }
+
+  /**
+   * A "what's wrong" snapshot of the whole file for the triage landing view:
+   * level counts, the top log-pattern clusters among error/fatal lines, and the
+   * distribution of a duration-like field when one is present. Computed over the
+   * whole file (independent of any active search) and reuses the existing
+   * clustering / stats / numeric-facet analyses. Spikes and gaps are derived
+   * client-side from the histogram the panel already fetches.
+   */
+  triage(): TriageResult {
+    const s = this.store.stats(false, false);
+    const errorLevels = ['ERROR', 'FATAL'];
+    const errorTotal = s.levels.filter((l) => errorLevels.includes(l.level)).reduce((a, l) => a + l.count, 0);
+    const errorClusters = this.store.clustersByLevel(errorLevels, 6);
+
+    let slowest: TriageResult['slowest'] = null;
+    const durField = this.detectDurationField();
+    if (durField) {
+      const nf = this.store.numericFacet(durField, false, 1);
+      if (nf && nf.count > 0) {
+        slowest = { field: durField, count: nf.count, p50: nf.p50, p95: nf.p95, max: nf.max };
+      }
+    }
+
+    return {
+      total: this.index.lineCount,
+      span: { start: s.minTs, end: s.maxTs },
+      levels: s.levels.filter((l) => l.level !== 'NONE'),
+      errorTotal,
+      errorClusters,
+      slowest,
+    };
+  }
+
+  /** Pick a duration-like numeric field (by name) for the triage "slowest" card. */
+  private detectDurationField(): string | null {
+    const DUR = /^(duration(_?ms|_?s)?|latency(_?ms)?|elapsed(_?ms)?|took(_?ms)?|response_?time|resp_?time|ttfb|rt|dur)$/i;
+    let best: string | null = null;
+    let bestCount = 0;
+    for (const [key, count] of this.fieldCounts) {
+      if (DUR.test(key) && count > bestCount) {
+        best = key;
+        bestCount = count;
+      }
+    }
+    return best;
   }
 
   /**

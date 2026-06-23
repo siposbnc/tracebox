@@ -401,6 +401,10 @@ export function createApp(distDir: string): TraceBoxApp {
     sendJson(res, 200, getSession(params.id).clusters(limit));
   });
 
+  router.add('GET', '/api/sessions/:id/triage', (_req, res, params) => {
+    sendJson(res, 200, getSession(params.id).triage());
+  });
+
   router.add('GET', '/api/sessions/:id/stats', (_req, res, params, query) => {
     sendJson(res, 200, getSession(params.id).stats(query.get('grouped') === '1'));
   });
