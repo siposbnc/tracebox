@@ -9,6 +9,7 @@ import LogList from './LogList';
 import DetailPanel from './DetailPanel';
 import ReportDialog from './ReportDialog';
 import FacetPanel from './FacetPanel';
+import FilterBreadcrumb from './FilterBreadcrumb';
 import ClusterPanel from './ClusterPanel';
 import StatsPanel from './StatsPanel';
 import WatchPanel from './WatchPanel';
@@ -19,6 +20,7 @@ import Histogram from './Histogram';
 import StatusBar from './StatusBar';
 import { getHistogramDefault, useWrap, getWrap, setWrap, getOrder, useColumnar } from '../settings';
 import { useColumns, defaultColumns, setColumns } from '../columns';
+import { useCaptures, upsertCapture, removeCapture, compileExtractors, type Capture } from '../captures';
 import { useColumnWidths, setColumnWidth } from '../columnWidths';
 
 /** A `level:` predicate (optionally negated, with a comparison/regex operator). */
@@ -141,6 +143,15 @@ export default function LogView({
   );
   const columnWidths = useColumnWidths(status.file);
 
+  // ad-hoc capture fields: defined per file, sent with searches (so `dur:>500`
+  // filters server-side) and compiled into client-side extractors for columns.
+  const captures = useCaptures(status.file);
+  const capturesRef = useRef(captures);
+  capturesRef.current = captures;
+  const captureExtractors = useMemo(() => compileExtractors(captures), [captures]);
+  // a sample line so the capture editor can preview what a regex would extract
+  const [sampleText, setSampleText] = useState<string | undefined>(undefined);
+
   const refreshHistogram = useCallback(() => {
     void api
       .histogram(id, bucketCountRef.current)
@@ -229,7 +240,7 @@ export default function LogView({
       setSearching(true);
       setSearchError(null);
       try {
-        const r = await api.search(id, q, groupingActiveRef.current, templateRef.current, regexRef.current);
+        const r = await api.search(id, q, groupingActiveRef.current, templateRef.current, regexRef.current, capturesRef.current);
         setTotal(r.total);
         setSelected(null);
         setEpoch((e) => e + 1);
@@ -341,6 +352,29 @@ export default function LogView({
     prevRegexRef.current = regexMode;
     void runSearch(query);
   }, [regexMode, runSearch, query]);
+
+  // re-run the active search when capture definitions change, so a query that
+  // references a capture (e.g. `dur:>500`) re-filters with the new pattern
+  const prevCapturesRef = useRef(captures);
+  useEffect(() => {
+    if (prevCapturesRef.current === captures) return;
+    prevCapturesRef.current = captures;
+    // a query that references a capture must re-filter; otherwise just invalidate
+    // the rows so capture columns re-extract with the new patterns
+    if (statusRef.current.search && !regexMode) void runSearch(statusRef.current.search.query);
+    else setEpoch((e) => e + 1);
+  }, [captures, runSearch, regexMode]);
+
+  // fetch one line as a preview sample for the capture editor
+  useEffect(() => {
+    let live = true;
+    void api.rows(id, 0, 1, 'asc', false, false).then((r) => {
+      if (live) setSampleText(r.rows[0]?.text);
+    });
+    return () => {
+      live = false;
+    };
+  }, [id]);
 
   // report search state up for workspace saving (cheap; runs on change)
   useEffect(() => {
@@ -618,6 +652,13 @@ export default function LogView({
         watchUnseen={watchUnseen}
         columns={columns}
         onColumnsChange={(cols) => setColumns(status.file, cols)}
+        captures={captures}
+        captureSample={sampleText}
+        onUpsertCapture={(c) => upsertCapture(status.file, c)}
+        onRemoveCapture={(name) => {
+          removeCapture(status.file, name);
+          if (columns.includes(name)) setColumns(status.file, columns.filter((c) => c !== name));
+        }}
         highlightMode={highlightMode}
         onToggleHighlight={toggleHighlight}
         regexMode={regexMode}
@@ -632,6 +673,18 @@ export default function LogView({
         fieldNames={status.fieldNames}
         levelCounts={status.levelCounts}
       />
+
+      {!regexMode && (
+        <FilterBreadcrumb
+          sessionId={id}
+          query={query}
+          captures={captures}
+          grouped={groupingActive}
+          lineCount={status.lineCount}
+          epoch={epoch}
+          onChange={submitQuery}
+        />
+      )}
 
       {histogramOpen && histogram && histogram.buckets.length > 0 && (
         <Histogram
@@ -650,6 +703,7 @@ export default function LogView({
             sessionId={id}
             epoch={epoch}
             fieldNames={status.fieldNames}
+            captures={captures}
             hasSearch={status.search !== null}
             onAddFilter={addFilter}
             onClose={() => setFacetsOpen(false)}
@@ -710,6 +764,7 @@ export default function LogView({
             wrap={wrap}
             columnar={columnar}
             columns={columns}
+            captureExtractors={captureExtractors}
             columnWidths={columnWidths}
             onColumnResize={(col, w) => setColumnWidth(status.file, col, w)}
             onReorderColumns={(cols) => setColumns(status.file, cols)}

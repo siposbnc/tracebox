@@ -13,6 +13,10 @@ import {
   setPageJump,
   usePageJumpBig,
   setPageJumpBig,
+  useTheme,
+  setTheme,
+  useFontSize,
+  setFontSize,
 } from '../settings';
 import { tzAbbr } from '../api';
 import { useEscapeKey } from '../escStack';
@@ -69,6 +73,8 @@ export default function SettingsPanel({
   onManageParsers: () => void;
   onManageMcp: () => void;
 }) {
+  const theme = useTheme();
+  const fontSize = useFontSize();
   const order = useOrder();
   const tz = useTz();
   const wrap = useWrap();
@@ -93,6 +99,31 @@ export default function SettingsPanel({
         </div>
 
         <div className="divide-y divide-edge/50 px-4 py-2">
+          <Row label="Theme" hint="Color theme for the whole app">
+            <Segmented
+              value={theme}
+              onChange={setTheme}
+              options={[
+                { value: 'dark', label: 'Dark' },
+                { value: 'light', label: 'Light' },
+                { value: 'hc', label: 'High contrast' },
+              ]}
+            />
+          </Row>
+
+          <Row label="Font size" hint="Reading size for log rows and detail">
+            <Segmented
+              value={fontSize}
+              onChange={setFontSize}
+              options={[
+                { value: 'sm', label: 'S' },
+                { value: 'md', label: 'M' },
+                { value: 'lg', label: 'L' },
+                { value: 'xl', label: 'XL' },
+              ]}
+            />
+          </Row>
+
           <Row label="Row order" hint="Order log rows by time">
             <Segmented
               value={order}

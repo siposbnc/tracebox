@@ -97,11 +97,24 @@ export const api = {
         columns && columns.length > 0 ? `&cols=${columns.map(encodeURIComponent).join(',')}` : ''
       }`,
     ),
-  search: (id: string, query: string, grouped = false, templateId: number | null = null, regex = false) =>
+  search: (
+    id: string,
+    query: string,
+    grouped = false,
+    templateId: number | null = null,
+    regex = false,
+    captures?: { name: string; pattern: string }[],
+  ) =>
     request<{ total: number; durationMs: number }>(`/api/sessions/${id}/search`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query, grouped, templateId, regex }),
+      body: JSON.stringify({ query, grouped, templateId, regex, captures }),
+    }),
+  count: (id: string, query: string, captures?: { name: string; pattern: string }[], grouped = false) =>
+    request<{ count: number | null }>(`/api/sessions/${id}/count`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query, captures, grouped }),
     }),
   detail: (id: string, lineNo: number) => request<LineDetail>(`/api/sessions/${id}/line/${lineNo}`),
   context: (id: string, line: number, before: number, after: number) =>
@@ -116,8 +129,12 @@ export const api = {
     request<{ lineNo: number; viewIndex: number } | null>(
       `/api/sessions/${id}/next-match?after=${after}&dir=${dir}${grouped ? '&grouped=1' : ''}`,
     ),
-  facet: (id: string, field: string, limit = 25) =>
-    request<FacetResult>(`/api/sessions/${id}/facet?field=${encodeURIComponent(field)}&limit=${limit}`),
+  facet: (id: string, field: string, limit = 25, pattern?: string) =>
+    request<FacetResult>(
+      `/api/sessions/${id}/facet?field=${encodeURIComponent(field)}&limit=${limit}${
+        pattern ? `&pattern=${encodeURIComponent(pattern)}` : ''
+      }`,
+    ),
   numericFacet: (id: string, field: string, buckets = 24) =>
     request<NumericFacet | null>(
       `/api/sessions/${id}/numeric-facet?field=${encodeURIComponent(field)}&buckets=${buckets}`,

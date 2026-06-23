@@ -197,7 +197,7 @@ export default function ValueViewer({
           )}
         </div>
 
-        <pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words bg-surface-0 p-4 font-mono text-[13px] leading-6 text-gray-200">
+        <pre className="tb-log-text min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words bg-surface-0 p-4 font-mono text-gray-200">
           {body}
         </pre>
       </div>

@@ -10,6 +10,24 @@ export type Tz = 'utc' | 'local';
 /** How the detail panel renders a structured line: flattened fields or a JSON tree. */
 export type DetailView = 'flat' | 'json';
 
+/** Color theme for the whole UI. */
+export type Theme = 'dark' | 'light' | 'hc';
+
+/** Reading font size for log content (rows, detail, context). */
+export type FontSize = 'sm' | 'md' | 'lg' | 'xl';
+
+/**
+ * Font-size presets → content metrics, in px. `font` drives the `--tb-row-font`
+ * CSS variable used by log text; `line` is both its line-height and the
+ * virtualized row height, so rows stay aligned at every size.
+ */
+export const FONT_METRICS: Record<FontSize, { font: number; line: number }> = {
+  sm: { font: 12, line: 22 },
+  md: { font: 13, line: 24 },
+  lg: { font: 15, line: 27 },
+  xl: { font: 17, line: 30 },
+};
+
 const ORDER_KEY = 'tracebox.order';
 const TZ_KEY = 'tracebox.tz';
 const CONTEXT_KEY = 'tracebox.contextLines';
@@ -20,12 +38,26 @@ const PAGE_JUMP_BIG_KEY = 'tracebox.pageJumpBig';
 const WRAP_KEY = 'tracebox.wrap';
 const COLUMNAR_KEY = 'tracebox.columnar';
 const DETAIL_VIEW_KEY = 'tracebox.detailView';
+const THEME_KEY = 'tracebox.theme';
+const FONT_SIZE_KEY = 'tracebox.fontSize';
 
 let order: Order = clientStore.getItem(ORDER_KEY) === 'desc' ? 'desc' : 'asc';
 let tz: Tz = clientStore.getItem(TZ_KEY) === 'local' ? 'local' : 'utc';
 let wrap = clientStore.getItem(WRAP_KEY) === 'true';
 let columnar = clientStore.getItem(COLUMNAR_KEY) === 'true';
 let detailView: DetailView = clientStore.getItem(DETAIL_VIEW_KEY) === 'json' ? 'json' : 'flat';
+
+function loadTheme(): Theme {
+  const raw = clientStore.getItem(THEME_KEY);
+  return raw === 'light' || raw === 'hc' ? raw : 'dark';
+}
+function loadFontSize(): FontSize {
+  const raw = clientStore.getItem(FONT_SIZE_KEY);
+  return raw === 'sm' || raw === 'lg' || raw === 'xl' ? raw : 'md';
+}
+
+let theme: Theme = loadTheme();
+let fontSize: FontSize = loadFontSize();
 
 /** Read a non-negative integer setting, falling back to `fallback` when unset/invalid. */
 function loadNumber(key: string, fallback: number, min = 0, max = 1_000_000): number {
@@ -49,6 +81,76 @@ function emit(): void {
 function subscribe(listener: () => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
+}
+
+// ---- Appearance (theme + font size) ----------------------------------------
+// Theme is a `data-theme` attribute on <html>; the CSS variable overrides in
+// styles.css repaint the whole UI. Font size is exposed as CSS variables that
+// log content reads, and as a row height the virtualized lists size rows by.
+
+function applyTheme(t: Theme): void {
+  if (typeof document !== 'undefined') document.documentElement.dataset.theme = t;
+}
+
+function applyFontSize(f: FontSize): void {
+  if (typeof document === 'undefined') return;
+  const m = FONT_METRICS[f];
+  const el = document.documentElement;
+  el.style.setProperty('--tb-row-font', `${m.font}px`);
+  el.style.setProperty('--tb-row-line', `${m.line}px`);
+}
+
+/**
+ * Apply the persisted theme and font size to the document. Call once at startup
+ * (before first paint) so the UI never flashes the wrong theme.
+ */
+export function initAppearance(): void {
+  applyTheme(theme);
+  applyFontSize(fontSize);
+}
+
+export function getTheme(): Theme {
+  return theme;
+}
+
+export function setTheme(next: Theme): void {
+  if (next === theme) return;
+  theme = next;
+  clientStore.setItem(THEME_KEY, next);
+  applyTheme(next);
+  emit();
+}
+
+/** React hook for the active color theme. */
+export function useTheme(): Theme {
+  return useSyncExternalStore(subscribe, getTheme);
+}
+
+export function getFontSize(): FontSize {
+  return fontSize;
+}
+
+export function setFontSize(next: FontSize): void {
+  if (next === fontSize) return;
+  fontSize = next;
+  clientStore.setItem(FONT_SIZE_KEY, next);
+  applyFontSize(next);
+  emit();
+}
+
+/** React hook for the reading font size of log content. */
+export function useFontSize(): FontSize {
+  return useSyncExternalStore(subscribe, getFontSize);
+}
+
+/** Virtualized log-row height (px) for the active font size. */
+export function getRowHeight(): number {
+  return FONT_METRICS[fontSize].line;
+}
+
+/** React hook for the virtualized log-row height (px). Re-renders on font change. */
+export function useRowHeight(): number {
+  return FONT_METRICS[useFontSize()].line;
 }
 
 export function getOrder(): Order {

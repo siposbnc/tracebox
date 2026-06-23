@@ -16,6 +16,7 @@ import { listRoots, listDir, getRecents, addRecent } from './files.ts';
 import { detectRotationGroup } from './rotation.ts';
 import { RegexParser } from './parsers.ts';
 import { QuerySyntaxError } from './queryParser.ts';
+import { CaptureError, type CaptureField } from './captureField.ts';
 
 export interface TraceBoxApp {
   server: Server;
@@ -322,19 +323,26 @@ export function createApp(distDir: string): TraceBoxApp {
       grouped?: boolean;
       templateId?: number | null;
       regex?: boolean;
+      captures?: CaptureField[];
     };
     try {
       const result = body.regex
         ? await s.setRegexSearch(body.query ?? '', Boolean(body.grouped))
-        : await s.search(body.query ?? '', Boolean(body.grouped), body.templateId ?? null);
+        : await s.search(body.query ?? '', Boolean(body.grouped), body.templateId ?? null, body.captures);
       sendJson(res, 200, result);
     } catch (err) {
-      if (err instanceof QuerySyntaxError) {
+      if (err instanceof QuerySyntaxError || err instanceof CaptureError) {
         sendJson(res, 400, { error: err.message });
       } else {
         throw err;
       }
     }
+  });
+
+  router.add('POST', '/api/sessions/:id/count', async (req, res, params) => {
+    const s = getSession(params.id);
+    const body = (await readJsonBody(req)) as { query?: string; captures?: CaptureField[]; grouped?: boolean };
+    sendJson(res, 200, { count: s.countQuery(body.query ?? '', body.captures, Boolean(body.grouped)) });
   });
 
   router.add('GET', '/api/sessions/:id/line/:no', async (_req, res, params) => {
@@ -352,14 +360,24 @@ export function createApp(distDir: string): TraceBoxApp {
     sendJson(res, 200, getSession(params.id).histogram(Number.isFinite(buckets) ? buckets : undefined));
   });
 
-  router.add('GET', '/api/sessions/:id/facet', (_req, res, params, query) => {
+  router.add('GET', '/api/sessions/:id/facet', async (_req, res, params, query) => {
     const field = query.get('field');
     if (!field) {
       sendJson(res, 400, { error: 'Missing "field"' });
       return;
     }
     const limit = Number(query.get('limit') ?? 25);
-    sendJson(res, 200, getSession(params.id).facet(field, limit));
+    // an ad-hoc capture passes its `pattern`; without it, `field` is an indexed field
+    const pattern = query.get('pattern');
+    try {
+      const facet = pattern
+        ? await getSession(params.id).captureFacet(field, pattern, limit)
+        : getSession(params.id).facet(field, limit);
+      sendJson(res, 200, facet);
+    } catch (err) {
+      if (err instanceof CaptureError) sendJson(res, 400, { error: err.message });
+      else throw err;
+    }
   });
 
   router.add('GET', '/api/sessions/:id/numeric-facet', (_req, res, params, query) => {

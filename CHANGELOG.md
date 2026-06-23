@@ -14,6 +14,24 @@ date and start a fresh `Unreleased` section.
 
 ### Added
 
+- **Filter breadcrumb.** The active query shows as a funnel of removable chips
+  beneath the search bar — the whole-file count, then each top-level clause with
+  the running match count after it (`194,917 → level:error 24,205 → connection
+  4,832`). Pop any clause with × to widen the search, or **Clear all**. Counts
+  follow the current grouping and never disturb the active result set; a
+  top-level `OR` query stays a single chip.
+- **Ad-hoc capture fields.** Define a throwaway named-regex capture (e.g.
+  `(?<dur>\d+)ms`) from the columnar column picker — with a live preview of what
+  it extracts — and immediately use it as a column, **filter** on it in the query
+  language (`dur:>500`, `dur:*`, `dur:~…`), and **break it down** in the field
+  panel. Captures are evaluated against the raw line text (reusing the whole-line
+  regex path), so they work on any already-indexed file without committing a full
+  custom parser.
+- **Appearance settings: themes and font size.** Settings → Appearance adds a
+  **Theme** choice — Dark (the default), **Light**, and **High contrast** — and a
+  **Font size** for log content (S / M / L / XL), which scales the rows, columnar
+  cells, context peek, and value viewer together. Both persist and are applied
+  before the first paint, so there's no flash on launch.
 - **Hotkey for context peek.** Press **C** (rebindable in Settings → Shortcuts)
   to open the "grep -C" surrounding-lines peek for the selected line, in both the
   single-file and merged timeline views.

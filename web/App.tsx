@@ -527,7 +527,7 @@ export default function App() {
           <span className="min-w-0">
             Found {rotationOffer.count - 1} rotated {rotationOffer.count - 1 === 1 ? 'file' : 'files'} alongside this
             log:{' '}
-            <span className="font-mono text-sky-100" title={rotationOffer.siblings.join('\n')}>
+            <span className="font-mono text-sky-200" title={rotationOffer.siblings.join('\n')}>
               {rotationOffer.siblings.slice(0, 5).join(', ')}
               {rotationOffer.siblings.length > 5 ? `, +${rotationOffer.siblings.length - 5} more` : ''}
             </span>

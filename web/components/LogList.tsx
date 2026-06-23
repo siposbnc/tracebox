@@ -1,13 +1,12 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { api, formatTs } from '../api';
-import { useOrder, useTz, getPageJump, getPageJumpBig, type Tz } from '../settings';
+import { useOrder, useTz, useRowHeight, getPageJump, getPageJumpBig, type Tz } from '../settings';
 import { useBookmarks, toggleBookmark } from '../bookmarks';
 import { matchCommand, getChord, formatChord } from '../keybindings';
 import type { RowData } from '../types';
 
 const BLOCK = 256;
-const ROW_HEIGHT = 24;
 
 // columnar (grid) view fixed column widths, in px
 const TIME_W = 168;
@@ -55,6 +54,7 @@ export default function LogList({
   wrap,
   columnar,
   columns,
+  captureExtractors,
   columnWidths,
   onColumnResize,
   onReorderColumns,
@@ -92,6 +92,8 @@ export default function LogList({
   wrap: boolean;
   columnar: boolean;
   columns: string[];
+  /** Ad-hoc capture columns: name → extractor over the row text (client-side). */
+  captureExtractors?: Map<string, (text: string) => string | undefined>;
   /** Per-column pixel widths (file-persisted); columns without one use the default. */
   columnWidths: Record<string, number>;
   /** Persist a dragged column width. */
@@ -119,6 +121,7 @@ export default function LogList({
   const appendEpochRef = useRef(appendEpoch);
   const order = useOrder();
   const tz = useTz();
+  const rowHeight = useRowHeight();
   const bookmarks = useBookmarks(file);
   const bookmarkSet = useMemo(() => new Set(bookmarks), [bookmarks]);
   const orderRef = useRef(order);
@@ -164,9 +167,14 @@ export default function LogList({
   const virtualizer = useVirtualizer({
     count: total,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => ROW_HEIGHT,
+    estimateSize: () => rowHeight,
     overscan: 30,
   });
+
+  // Re-measure when the font-size preset changes the row height.
+  useEffect(() => {
+    virtualizer.measure();
+  }, [rowHeight, virtualizer]);
 
   // a reset (new search, grouping/order change, append) invalidates display
   // positions, so drop any multi-row selection
@@ -201,16 +209,31 @@ export default function LogList({
       loadingRef.current.add(blockIdx);
       const requestEpoch = epochRef.current;
       const requestOrder = orderRef.current;
+      // capture columns are computed client-side from the row text — the backend
+      // only projects real indexed fields, so don't ask it for capture names
+      const backendCols = columnar
+        ? columns.filter((c) => !captureExtractors?.has(c))
+        : undefined;
       void api
-        .rows(sessionId, blockIdx * BLOCK, BLOCK, requestOrder, highlight, grouped, columnar ? columns : undefined)
+        .rows(sessionId, blockIdx * BLOCK, BLOCK, requestOrder, highlight, grouped, backendCols)
         .then((r) => {
           if (epochRef.current !== requestEpoch || orderRef.current !== requestOrder) return; // stale
+          if (columnar && captureExtractors && captureExtractors.size > 0) {
+            for (const row of r.rows) {
+              const cols = { ...(row.cols ?? {}) };
+              for (const c of columns) {
+                const ex = captureExtractors.get(c);
+                if (ex) cols[c] = ex(row.text) ?? '';
+              }
+              row.cols = cols;
+            }
+          }
           blocksRef.current.set(blockIdx, { epoch: requestEpoch, rows: r.rows });
           forceRender((n) => n + 1);
         })
         .finally(() => loadingRef.current.delete(blockIdx));
     },
-    [sessionId, highlight, grouped, columnar, columns],
+    [sessionId, highlight, grouped, columnar, columns, captureExtractors],
   );
 
   const items = virtualizer.getVirtualItems();
@@ -389,10 +412,10 @@ export default function LogList({
     // the "live edge" is the bottom in ascending order, the top in descending
     const atLiveEdge =
       order === 'desc'
-        ? el.scrollTop <= ROW_HEIGHT * 2
-        : el.scrollTop + el.clientHeight >= el.scrollHeight - ROW_HEIGHT * 2;
+        ? el.scrollTop <= rowHeight * 2
+        : el.scrollTop + el.clientHeight >= el.scrollHeight - rowHeight * 2;
     if (atLiveEdge) onScrolledToEnd();
-  }, [onScrolledToEnd, order]);
+  }, [onScrolledToEnd, order, rowHeight]);
 
   const gutterWidth = Math.max(5, String(total).length) + 1;
 
@@ -490,7 +513,7 @@ export default function LogList({
                   top: 0,
                   left: 0,
                   width: '100%',
-                  ...(wrap ? { minHeight: ROW_HEIGHT } : { height: item.size }),
+                  ...(wrap ? { minHeight: rowHeight } : { height: item.size }),
                   transform: `translateY(${item.start}px)`,
                 }}
               >
@@ -575,8 +598,8 @@ const Row = memo(function Row({
       onMouseDown={(e) => {
         if (e.shiftKey) e.preventDefault();
       }}
-      className={`group row-text relative flex cursor-pointer gap-2 border-l-2 pr-3 font-mono text-[13px] leading-6 ${
-        wrap ? 'min-h-6 items-start py-px' : 'h-full items-center'
+      className={`group row-text tb-log-text relative flex cursor-pointer gap-2 border-l-2 pr-3 font-mono ${
+        wrap ? 'items-start py-px' : 'h-full items-center'
       } ${
         selected
           ? 'border-sky-400 bg-sky-950/60'
@@ -682,7 +705,7 @@ const GridRow = memo(function GridRow({
       onMouseDown={(e) => {
         if (e.shiftKey) e.preventDefault();
       }}
-      className={`group flex h-full cursor-pointer items-center gap-2 border-l-2 pr-3 font-mono text-[13px] leading-6 ${
+      className={`group tb-log-text flex h-full cursor-pointer items-center gap-2 border-l-2 pr-3 font-mono ${
         selected
           ? 'border-sky-400 bg-sky-950/60'
           : inRange

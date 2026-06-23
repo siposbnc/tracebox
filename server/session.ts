@@ -29,16 +29,25 @@ import {
   templateOf,
   type LogParser,
 } from './parsers.ts';
-import { IndexStore } from './indexer.ts';
+import { IndexStore, type Facet } from './indexer.ts';
 import { parseQuery, QuerySyntaxError, type QueryNode } from './queryParser.ts';
-import { hasRegex, planRegexSearch, regexFlags } from './queryCompiler.ts';
+import { hasPostFilter, planPostSearch } from './queryCompiler.ts';
 import { getConfig, parsersSignature } from './config.ts';
 import { CaptureSource, type CaptureStatus } from './capture.ts';
+import {
+  type CaptureField,
+  type CompiledCapture,
+  compileCapture,
+  compileCaptures,
+  extractCapture,
+} from './captureField.ts';
 import { compileRules, type CompiledRule, type WatchRule, type WatchTrigger } from './watch.ts';
 
 const READ_CHUNK = 4 * 1024 * 1024;
 const BATCH_LINES = 20_000;
 const DISPLAY_TEXT_CAP = 4096;
+/** Max lines an ad-hoc capture facet reads before reporting an approximate result. */
+const CAPTURE_FACET_SCAN_CAP = 250_000;
 
 export interface RowData {
   lineNo: number;
@@ -619,11 +628,19 @@ export class LogSession extends EventEmitter {
    * (gather candidates in SQL, verify the regex against them); everything else is
    * the fully-indexed search. Async because regex verification reads line text.
    */
-  async search(query: string, grouped = false, templateId: number | null = null): Promise<{ total: number; durationMs: number }> {
+  async search(
+    query: string,
+    grouped = false,
+    templateId: number | null = null,
+    captures?: CaptureField[],
+  ): Promise<{ total: number; durationMs: number }> {
     const trimmed = query.trim();
     if (trimmed !== '') {
       const ast = parseQuery(trimmed);
-      if (hasRegex(ast)) return this.applyRegexQuery(trimmed, ast, grouped, templateId);
+      const capMap = compileCaptures(captures);
+      if (hasPostFilter(ast, new Set(capMap.keys()))) {
+        return this.applyPostQuery(trimmed, ast, grouped, templateId, capMap);
+      }
     }
     return this.setSearch(query, grouped, templateId);
   }
@@ -654,21 +671,22 @@ export class LogSession extends EventEmitter {
   }
 
   /**
-   * Two-phase whole-line-regex query: SQL gathers a candidate superset (where the
-   * surrounding field/term filters already narrow the lines), the regex leaves are
-   * verified against those lines' text, and the exact query is materialized from
-   * the verified matches. A snapshot — it doesn't auto-extend while tailing.
+   * Two-phase query for predicates SQL can't evaluate — whole-line `/regex/` and
+   * ad-hoc capture fields (`dur:>500`). SQL gathers a candidate superset (where the
+   * surrounding field/term filters already narrow the lines), each leaf's test is
+   * run against those lines' text, and the exact query is materialized from the
+   * verified matches. A snapshot — it doesn't auto-extend while tailing.
    */
-  private async applyRegexQuery(
+  private async applyPostQuery(
     query: string,
     ast: QueryNode,
     grouped: boolean,
     templateId: number | null,
+    captures: Map<string, CompiledCapture>,
   ): Promise<{ total: number; durationMs: number }> {
     const t0 = performance.now();
-    const plan = planRegexSearch(ast, (i) => `_rx_${i}`);
+    const plan = planPostSearch(ast, (i) => `_rx_${i}`, captures);
     const candidates = this.store.candidateLines(plan.prefilter, templateId);
-    const compiled = plan.leaves.map((l) => new RegExp(l.pattern, regexFlags(l.flags)));
     const matches: number[][] = plan.leaves.map(() => []);
     const CHUNK = 4000;
     for (let s = 0; s < candidates.length; s += CHUNK) {
@@ -677,8 +695,8 @@ export class LogSession extends EventEmitter {
       const texts = await this.readTexts(chunk);
       for (let k = 0; k < chunk.length; k++) {
         const text = texts[k];
-        for (let li = 0; li < compiled.length; li++) {
-          if (compiled[li].test(text)) matches[li].push(chunk[k]);
+        for (let li = 0; li < plan.leaves.length; li++) {
+          if (plan.leaves[li].test(text)) matches[li].push(chunk[k]);
         }
       }
     }
@@ -913,9 +931,85 @@ export class LogSession extends EventEmitter {
     return this.store.facet(field, this.hasSearch, limit);
   }
 
+  /**
+   * Value breakdown for an ad-hoc capture over the current view, by reading each
+   * line's text and extracting the capture (the index has no column for it).
+   * Capped at {@link CAPTURE_FACET_SCAN_CAP} lines; `approx` flags a larger view.
+   */
+  async captureFacet(name: string, pattern: string, limit = 25): Promise<Facet & { approx: boolean; scanned: number }> {
+    limit = Math.min(Math.max(limit, 1), 1000);
+    const cap = compileCapture({ name, pattern });
+    const counts = new Map<string, number>();
+    let covered = 0;
+    let numericCount = 0;
+    let scanned = 0;
+    for await (const text of this.scanViewTexts(CAPTURE_FACET_SCAN_CAP)) {
+      scanned++;
+      const v = extractCapture(cap, text);
+      if (v !== undefined) {
+        covered++;
+        if (v !== '' && Number.isFinite(Number(v))) numericCount++;
+        counts.set(v, (counts.get(v) ?? 0) + 1);
+      }
+    }
+    const viewSize = this.hasSearch ? this.store.resultCount() : this.index.lineCount;
+    const values = [...counts.entries()]
+      .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+      .slice(0, limit)
+      .map(([value, count]) => ({ value, count }));
+    return { field: name, values, distinctCount: counts.size, covered, numericCount, approx: viewSize > scanned, scanned };
+  }
+
+  /** Yield up to `cap` lines of text from the current view (results, or the whole file). */
+  private async *scanViewTexts(cap: number): AsyncGenerator<string> {
+    let n = 0;
+    if (this.hasSearch) {
+      for (const batch of this.store.iterateResults(8000)) {
+        const texts = await this.readTexts(batch);
+        for (const t of texts) {
+          if (n >= cap || this.closed) return;
+          n++;
+          yield t;
+        }
+      }
+    } else {
+      const total = this.index.lineCount;
+      const STEP = 8000;
+      for (let start = 0; start < total; start += STEP) {
+        if (this.closed) return;
+        const count = Math.min(STEP, total - start);
+        const texts = await this.reader.readLines(start, count);
+        for (const t of texts) {
+          if (n >= cap) return;
+          n++;
+          yield t ?? '';
+        }
+      }
+    }
+  }
+
   /** Numeric distribution for one field over the current view. */
   numericFacet(field: string, buckets?: number): ReturnType<IndexStore['numericFacet']> {
     return this.store.numericFacet(field, this.hasSearch, buckets);
+  }
+
+  /**
+   * Count matches for a query over the whole file without disturbing the active
+   * search — powers the filter breadcrumb's per-step funnel. Returns null for an
+   * unparseable query, or one that needs the read-line-text path (whole-line
+   * regex or an ad-hoc capture), which is too costly to evaluate per step.
+   */
+  countQuery(query: string, captures?: CaptureField[], grouped = false): number | null {
+    const trimmed = query.trim();
+    if (trimmed === '') return grouped ? this.store.recordCount() : this.index.lineCount;
+    try {
+      const ast = parseQuery(trimmed);
+      const names = new Set(compileCaptures(captures).keys());
+      if (hasPostFilter(ast, names)) return null;
+      return this.store.matchCount(ast, grouped);
+    } catch {
+      return null;
+    }
   }
 
   /** Field=value pairs the current result set concentrates in (empty without a search). */

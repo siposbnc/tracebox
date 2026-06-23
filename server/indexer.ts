@@ -428,6 +428,18 @@ export class IndexStore {
     return { count, lastLine: row.m };
   }
 
+  /**
+   * Count matches for a query over the whole file without materializing them —
+   * counts distinct records (heads) when grouped, else physical lines. Powers the
+   * filter breadcrumb's funnel while the user's active search stays intact.
+   */
+  matchCount(node: QueryNode, grouped: boolean): number {
+    const { where, params } = compileQuery(node);
+    const col = grouped ? 'COUNT(DISTINCT l.head)' : 'COUNT(*)';
+    const row = this.db.prepare(`SELECT ${col} AS n FROM lines l WHERE ${where}`).get(...params) as { n: number };
+    return row.n;
+  }
+
   /** Drop result rows for lines >= lineNo (before re-running an incremental search over them). */
   pruneResultsFrom(lineNo: number): void {
     this.db.prepare(`DELETE FROM results WHERE line_no >= ?`).run(lineNo);

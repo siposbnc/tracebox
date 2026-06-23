@@ -1,6 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { type QueryNode, type CmpOp, QuerySyntaxError } from './queryParser.ts';
 import { normalizeLevel } from './parsers.ts';
+import { type CompiledCapture, extractCapture, globToRegExp } from './captureField.ts';
 
 /**
  * Compiles a query AST into a SQL boolean expression over the index schema
@@ -92,27 +93,50 @@ export function registerRegexp(db: DatabaseSync): void {
   });
 }
 
-/** A whole-line `/regex/` leaf, numbered in compile order; its matches are
- *  materialized into a temp table the exact query then references. */
-export interface RegexLeaf {
+/**
+ * A leaf that SQL can't evaluate — a whole-line `/regex/`, or a predicate over an
+ * ad-hoc capture field — numbered in compile (DFS) order. Its matching lines are
+ * found by running {@link PostLeaf.test} over candidate line text and loaded into
+ * a temp table the exact query then references.
+ */
+export interface PostLeaf {
   index: number;
-  pattern: string;
-  flags: string;
+  /** True when this line's text satisfies the leaf. */
+  test: (text: string) => boolean;
 }
 
 class Compiler {
   params: (string | number)[] = [];
-  /** Whole-line regex leaves encountered, in compile (DFS) order. */
-  readonly leaves: RegexLeaf[] = [];
+  /** Post-filter leaves (whole-line regex + capture predicates), in compile order. */
+  readonly leaves: PostLeaf[] = [];
   /** Schema prefix for the fts/fields tables (e.g. `s0.` for an attached DB), '' for the local schema. */
   private readonly p: string;
-  /** Resolves a regex leaf's index to the temp table holding its matches; absent
-   *  when whole-line regex isn't supported in this context (then it throws). */
+  /** Resolves a post-filter leaf's index to the temp table holding its matches;
+   *  absent when these leaves aren't supported in this context (then it throws). */
   private readonly regexTable?: (index: number) => string;
+  /** Ad-hoc capture fields in scope, keyed by lower-cased name. */
+  private readonly captures: Map<string, CompiledCapture>;
 
-  constructor(schema = '', regexTable?: (index: number) => string) {
+  constructor(schema = '', regexTable?: (index: number) => string, captures?: Map<string, CompiledCapture>) {
     this.p = schema;
     this.regexTable = regexTable;
+    this.captures = captures ?? new Map();
+  }
+
+  /** Field-bearing nodes whose field is an ad-hoc capture report their name here. */
+  private captureField(node: QueryNode): string | undefined {
+    if (node.type === 'field' || node.type === 'exists' || node.type === 'fieldLike' || node.type === 'fieldRegex') {
+      if (this.captures.has(node.field.toLowerCase())) return node.field;
+    }
+    return undefined;
+  }
+
+  /** Register a post-filter leaf with the given line test and emit its membership SQL. */
+  private postLeaf(test: (text: string) => boolean): string {
+    if (!this.regexTable) throw new QuerySyntaxError('This predicate is not supported in this context');
+    const index = this.leaves.length;
+    this.leaves.push({ index, test });
+    return `l.line_no IN (SELECT line_no FROM ${this.regexTable(index)})`;
   }
 
   compile(node: QueryNode): string {
@@ -126,12 +150,8 @@ class Compiler {
       case 'not':
         return `(NOT ${this.compile(node.child)})`;
       case 'regex': {
-        if (!this.regexTable) {
-          throw new QuerySyntaxError('Whole-line /regex/ is not supported in this context');
-        }
-        const index = this.leaves.length;
-        this.leaves.push({ index, pattern: node.pattern, flags: node.flags });
-        return `l.line_no IN (SELECT line_no FROM ${this.regexTable(index)})`;
+        const re = new RegExp(node.pattern, regexFlags(node.flags));
+        return this.postLeaf((t) => re.test(t));
       }
       case 'text': {
         this.params.push(ftsQueryFor(node.value, node.phrase));
@@ -139,6 +159,8 @@ class Compiler {
         return `l.line_no IN (SELECT rowid FROM ${this.p}fts WHERE content MATCH ?)`;
       }
       case 'exists': {
+        const cap = this.captures.get(node.field.toLowerCase());
+        if (cap) return this.postLeaf((t) => extractCapture(cap, t) !== undefined);
         const f = node.field.toLowerCase();
         if (LEVEL_FIELDS.has(f)) return `l.level IS NOT NULL`;
         if (TS_FIELDS.has(f)) return `l.ts IS NOT NULL`;
@@ -146,6 +168,14 @@ class Compiler {
         return `l.line_no IN (SELECT line_no FROM ${this.p}fields WHERE key = ?)`;
       }
       case 'fieldLike': {
+        const cap = this.captures.get(node.field.toLowerCase());
+        if (cap) {
+          const re = globToRegExp(node.pattern);
+          return this.postLeaf((t) => {
+            const v = extractCapture(cap, t);
+            return v !== undefined && re.test(v);
+          });
+        }
         const f = node.field.toLowerCase();
         if (LEVEL_FIELDS.has(f)) {
           this.params.push(likePattern(node.pattern.toUpperCase()));
@@ -158,6 +188,14 @@ class Compiler {
         return `l.line_no IN (SELECT line_no FROM ${this.p}fields WHERE key = ? AND value LIKE ? ESCAPE '\\')`;
       }
       case 'fieldRegex': {
+        const cap = this.captures.get(node.field.toLowerCase());
+        if (cap) {
+          const re = new RegExp(node.pattern, 'i');
+          return this.postLeaf((t) => {
+            const v = extractCapture(cap, t);
+            return v !== undefined && re.test(v);
+          });
+        }
         const f = node.field.toLowerCase();
         if (TS_FIELDS.has(f)) {
           throw new QuerySyntaxError('Regular expressions are not supported on the timestamp field');
@@ -169,8 +207,11 @@ class Compiler {
         this.params.push(node.field, node.pattern);
         return `l.line_no IN (SELECT line_no FROM ${this.p}fields WHERE key = ? AND value REGEXP ?)`;
       }
-      case 'field':
+      case 'field': {
+        const cap = this.captures.get(node.field.toLowerCase());
+        if (cap) return this.postLeaf(captureCmpTest(cap, node.op, node.value));
         return this.fieldCmp(node.field, node.op, node.value);
+      }
     }
   }
 
@@ -233,8 +274,70 @@ class Compiler {
       case 'not':
         return `(NOT ${this.prefilter(node.child, !positive)})`;
       default:
-        return this.compile(node); // exact SQL for every non-regex leaf
+        // capture predicates can't be evaluated in SQL either — approximate like regex
+        if (this.captureField(node)) return positive ? '1' : '0';
+        return this.compile(node); // exact SQL for every other leaf
     }
+  }
+}
+
+/**
+ * Build a line-text test for `capture op value`, mirroring {@link Compiler.fieldCmp}:
+ * `eq` is case-insensitive string equality; the ordered comparisons are numeric
+ * when the query value is a number (non-numeric extractions then don't match),
+ * otherwise case-insensitive lexicographic.
+ */
+function captureCmpTest(cap: CompiledCapture, op: CmpOp, value: string): (text: string) => boolean {
+  if (op === 'eq') {
+    const target = value.toLowerCase();
+    return (t) => {
+      const v = extractCapture(cap, t);
+      return v !== undefined && v.toLowerCase() === target;
+    };
+  }
+  const num = value === '' ? NaN : Number(value);
+  if (Number.isFinite(num)) {
+    return (t) => {
+      const v = extractCapture(cap, t);
+      if (v === undefined) return false;
+      const n = Number(v);
+      return Number.isFinite(n) && cmpNum(n, op, num);
+    };
+  }
+  const target = value.toLowerCase();
+  return (t) => {
+    const v = extractCapture(cap, t);
+    return v !== undefined && cmpStr(v.toLowerCase(), op, target);
+  };
+}
+
+function cmpNum(a: number, op: CmpOp, b: number): boolean {
+  switch (op) {
+    case 'gt':
+      return a > b;
+    case 'gte':
+      return a >= b;
+    case 'lt':
+      return a < b;
+    case 'lte':
+      return a <= b;
+    default:
+      return a === b;
+  }
+}
+
+function cmpStr(a: string, op: CmpOp, b: string): boolean {
+  switch (op) {
+    case 'gt':
+      return a > b;
+    case 'gte':
+      return a >= b;
+    case 'lt':
+      return a < b;
+    case 'lte':
+      return a <= b;
+    default:
+      return a === b;
   }
 }
 
@@ -267,25 +370,52 @@ export function hasRegex(node: QueryNode): boolean {
   }
 }
 
+/**
+ * Whether a query needs the two-phase (read-line-text) path: it has a whole-line
+ * `/regex/`, or it references one of the in-scope ad-hoc capture fields.
+ */
+export function hasPostFilter(node: QueryNode, captureNames: Set<string>): boolean {
+  switch (node.type) {
+    case 'regex':
+      return true;
+    case 'field':
+    case 'exists':
+    case 'fieldLike':
+    case 'fieldRegex':
+      return captureNames.has(node.field.toLowerCase());
+    case 'and':
+    case 'or':
+      return node.children.some((c) => hasPostFilter(c, captureNames));
+    case 'not':
+      return hasPostFilter(node.child, captureNames);
+    default:
+      return false;
+  }
+}
+
 export interface RegexPlan {
-  /** The regex leaves to verify, indexed to match the temp tables `regexTable` names. */
-  leaves: RegexLeaf[];
+  /** The post-filter leaves to verify, indexed to match the temp tables `regexTable` names. */
+  leaves: PostLeaf[];
   /** Superset SQL over `lines l` to gather candidate lines for verification. */
   prefilter: CompiledQuery;
-  /** Exact SQL over `lines l`; each regex leaf references its temp table of verified lines. */
+  /** Exact SQL over `lines l`; each post-filter leaf references its temp table of verified lines. */
   exact: CompiledQuery;
 }
 
 /**
- * Plan a two-phase search for a query containing whole-line regex terms: gather
- * candidates with {@link RegexPlan.prefilter}, verify each regex leaf against
- * those lines, load the matches into the temp tables `regexTable(index)`, then
- * materialize the result with {@link RegexPlan.exact}.
+ * Plan a two-phase search for a query with whole-line regex and/or ad-hoc capture
+ * predicates: gather candidates with {@link RegexPlan.prefilter}, run each leaf's
+ * {@link PostLeaf.test} over those lines' text, load the matches into the temp
+ * tables `regexTable(index)`, then materialize the result with {@link RegexPlan.exact}.
  */
-export function planRegexSearch(node: QueryNode, regexTable: (index: number) => string): RegexPlan {
-  const exact = new Compiler('', regexTable);
+export function planPostSearch(
+  node: QueryNode,
+  regexTable: (index: number) => string,
+  captures?: Map<string, CompiledCapture>,
+): RegexPlan {
+  const exact = new Compiler('', regexTable, captures);
   const exactWhere = exact.compile(node);
-  const pref = new Compiler('');
+  const pref = new Compiler('', undefined, captures);
   const prefWhere = pref.prefilter(node, true);
   return {
     leaves: exact.leaves,

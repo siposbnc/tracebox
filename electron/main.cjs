@@ -177,13 +177,27 @@ function setupAutoUpdates() {
 
 // ---------------------------------------------------------------------------
 
+// Window background per persisted theme, so the shell behind the UI (and any
+// briefly-unpainted area on resize) matches instead of flashing dark.
+const THEME_BG = { dark: '#0b1018', light: '#ffffff', hc: '#000000' };
+
+function persistedBackgroundColor() {
+  try {
+    const stateFile = path.join(require('node:os').homedir(), '.tracebox', 'state.json');
+    const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+    return THEME_BG[state['tracebox.theme']] ?? THEME_BG.dark;
+  } catch {
+    return THEME_BG.dark;
+  }
+}
+
 function createWindow(port) {
   mainWindow = new BrowserWindow({
     width: 1500,
     height: 950,
     minWidth: 900,
     minHeight: 600,
-    backgroundColor: '#0b1018',
+    backgroundColor: persistedBackgroundColor(),
     autoHideMenuBar: true,
     show: false,
     webPreferences: {

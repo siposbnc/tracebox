@@ -89,6 +89,10 @@ export interface FacetResult {
   covered: number;
   /** Of `covered`, how many values parse as a number (enables the range view). */
   numericCount: number;
+  /** Ad-hoc capture facets only: true when the view was larger than the scan cap. */
+  approx?: boolean;
+  /** Ad-hoc capture facets only: how many lines were scanned. */
+  scanned?: number;
 }
 
 export interface NumericFacet {

@@ -1039,3 +1039,75 @@ test('export iteration covers all results in order', async () => {
   assert.equal(all.length, s.viewTotal);
   for (let i = 1; i < all.length; i++) assert.ok(all[i] > all[i - 1]);
 });
+
+test('countQuery counts without disturbing the active search', async () => {
+  const lines = appLogLines(3000);
+  const s = await openAndIndex(makeLogFile('count.log', lines));
+
+  // establish an active search; counting must not change it
+  const active = s.setSearch('level:ERROR');
+  const errors = lines.filter((_, i) => i % 6 === 4).length;
+  assert.equal(active.total, errors);
+
+  assert.equal(s.countQuery(''), 3000); // empty query → whole file
+  assert.equal(s.countQuery('level:WARN'), lines.filter((_, i) => i % 6 === 3).length);
+  assert.equal(s.countQuery('level:ERROR AND level:WARN'), 0);
+
+  // grouped counts distinct records — single-line records here, so same totals
+  assert.equal(s.countQuery('', undefined, true), 3000);
+  assert.equal(s.countQuery('level:WARN', undefined, true), lines.filter((_, i) => i % 6 === 3).length);
+
+  // queries needing the read-line-text path aren't counted (null)
+  assert.equal(s.countQuery('/timeout\\d+/'), null);
+  assert.equal(s.countQuery('dur:>500', [{ name: 'dur', pattern: '(\\d+)ms' }]), null);
+  assert.equal(s.countQuery('('), null); // unparseable
+
+  // the active search is intact
+  assert.equal(s.viewTotal, errors);
+});
+
+test('ad-hoc capture fields: filter, combine, exists, range, and facet', async () => {
+  const lines = appLogLines(3000); // each ends with "took <i%900>ms"
+  const file = makeLogFile('capture.log', lines);
+  const s = await openAndIndex(file);
+  const captures = [{ name: 'dur', pattern: '(\\d+)ms' }];
+  const durOf = (i: number): number => i % 900;
+
+  // numeric filter on the captured value
+  let r = await s.search('dur:>500', false, null, captures);
+  assert.equal(r.total, lines.filter((_, i) => durOf(i) > 500).length);
+
+  // combine with an indexed filter — the index narrows the lines the regex scans
+  r = await s.search('level:ERROR AND dur:>500', false, null, captures);
+  assert.equal(r.total, lines.filter((_, i) => i % 6 === 4 && durOf(i) > 500).length);
+
+  // a half-open numeric range
+  r = await s.search('dur:>=100 AND dur:<200', false, null, captures);
+  assert.equal(r.total, lines.filter((_, i) => durOf(i) >= 100 && durOf(i) < 200).length);
+
+  // exists matches every line (all have a "<n>ms" duration)
+  r = await s.search('dur:*', false, null, captures);
+  assert.equal(r.total, 3000);
+
+  // exact equality is case-insensitive string match on the captured value
+  r = await s.search('dur:0', false, null, captures);
+  assert.equal(r.total, lines.filter((_, i) => durOf(i) === 0).length);
+
+  // a capture the query references but no line yields → no matches
+  r = await s.search('missing:*', false, null, [{ name: 'missing', pattern: 'NOPE(?<missing>\\d+)' }]);
+  assert.equal(r.total, 0);
+
+  // facet over the whole file
+  s.setSearch('');
+  const f = await s.captureFacet('dur', '(\\d+)ms', 5);
+  assert.equal(f.covered, 3000);
+  assert.equal(f.numericCount, 3000);
+  assert.equal(f.distinctCount, 900);
+  assert.equal(f.approx, false);
+  assert.equal(f.values.length, 5);
+
+  // facet scoped to the current (filtered) view
+  s.setSearch('level:ERROR');
+  const fe = await s.captureFacet('dur', '(\\d+)ms', 5);
+  assert.equal(fe.covered, lines.filter((_, i) => i % 6 === 4).length);
+});

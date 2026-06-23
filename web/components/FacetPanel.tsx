@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, formatCount } from '../api';
+import type { Capture } from '../captures';
 import type { FacetResult, NumericFacet } from '../types';
 
 /** Quote a field value for the query language (empty value matches the empty string). */
@@ -26,6 +27,7 @@ export default function FacetPanel({
   sessionId,
   epoch,
   fieldNames,
+  captures,
   hasSearch,
   onAddFilter,
   onClose,
@@ -33,6 +35,7 @@ export default function FacetPanel({
   sessionId: string;
   epoch: number;
   fieldNames: { key: string; count: number }[];
+  captures: Capture[];
   hasSearch: boolean;
   onAddFilter: (clause: string) => void;
   onClose: () => void;
@@ -52,10 +55,21 @@ export default function FacetPanel({
   const [fieldQuery, setFieldQuery] = useState('');
   const [sort, setSort] = useState<'name' | 'count'>('name');
 
+  const captureByName = new Map(captures.map((c) => [c.name, c]));
+  const activeCapture = field !== null ? captureByName.get(field) : undefined;
+
   const q = fieldQuery.trim().toLowerCase();
-  const shownFields = fieldNames
-    .filter((f) => q === '' || f.key.toLowerCase().includes(q))
-    .sort((a, b) => (sort === 'name' ? a.key.localeCompare(b.key) : b.count - a.count || a.key.localeCompare(b.key)));
+  // ad-hoc capture fields lead the list (no index count); then the detected fields
+  const shownFields: { key: string; count: number | null; pattern?: string }[] = [
+    ...captures
+      .filter((c) => q === '' || c.name.toLowerCase().includes(q))
+      .map((c) => ({ key: c.name, count: null, pattern: c.pattern })),
+    ...fieldNames
+      .filter((f) => q === '' || f.key.toLowerCase().includes(q))
+      .sort((a, b) => (sort === 'name' ? a.key.localeCompare(b.key) : b.count - a.count || a.key.localeCompare(b.key)))
+      .map((f) => ({ key: f.key, count: f.count as number | null })),
+  ];
+  const hasEntries = fieldNames.length > 0 || captures.length > 0;
 
   // (re)load the expanded field whenever it changes or the result set does
   useEffect(() => {
@@ -67,15 +81,16 @@ export default function FacetPanel({
     setLoading(true);
     setError(null);
     void api
-      .facet(sessionId, field, 50)
+      .facet(sessionId, field, 50, activeCapture?.pattern)
       .then((f) => {
         if (cancelled) return;
         setFacet(f);
         // default to the range view for high-cardinality numeric fields, where a
-        // value list is useless; otherwise keep the value list
+        // value list is useless; otherwise keep the value list. Captures have no
+        // numeric-distribution endpoint, so they always use the value list.
         if (autoField.current !== field) {
           autoField.current = field;
-          const numericish = f.numericCount >= f.covered * 0.9 && f.distinctCount > f.values.length;
+          const numericish = !activeCapture && f.numericCount >= f.covered * 0.9 && f.distinctCount > f.values.length;
           setMode(numericish ? 'range' : 'values');
         }
       })
@@ -88,11 +103,12 @@ export default function FacetPanel({
     return () => {
       cancelled = true;
     };
-  }, [sessionId, field, epoch]);
+  }, [sessionId, field, epoch, activeCapture?.pattern]);
 
   // load the numeric distribution lazily, only while the range view is showing
+  // (indexed fields only — captures have no numeric-distribution endpoint)
   useEffect(() => {
-    if (field === null || mode !== 'range') {
+    if (field === null || mode !== 'range' || activeCapture) {
       setNumeric(null);
       return;
     }
@@ -131,7 +147,7 @@ export default function FacetPanel({
         </button>
       </div>
 
-      {fieldNames.length > 0 && (
+      {hasEntries && (
         <div className="flex items-center gap-1.5 border-b border-edge px-2 py-1.5">
           <div className="relative min-w-0 flex-1">
             <input
@@ -162,13 +178,14 @@ export default function FacetPanel({
       )}
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {fieldNames.length === 0 ? (
+        {!hasEntries ? (
           <div className="p-3 text-xs text-gray-600">No structured fields detected in this file.</div>
         ) : shownFields.length === 0 ? (
           <div className="p-3 text-xs text-gray-600">No fields match “{fieldQuery}”.</div>
         ) : (
           shownFields.map((f) => {
             const open = f.key === field;
+            const isCapture = f.count === null;
             return (
               <div key={f.key} className="border-b border-edge/40">
                 <button
@@ -179,16 +196,22 @@ export default function FacetPanel({
                 >
                   <span className="flex min-w-0 items-center gap-1.5">
                     <span className={`text-gray-600 transition-transform ${open ? 'rotate-90' : ''}`}>›</span>
-                    <span className="truncate font-mono">{f.key}</span>
+                    <span className={`truncate font-mono ${isCapture ? 'text-sky-300' : ''}`} title={isCapture ? f.pattern : undefined}>
+                      {f.key}
+                    </span>
                   </span>
-                  <span className="shrink-0 text-[10px] text-gray-500">{formatCount(f.count)}</span>
+                  {isCapture ? (
+                    <span className="shrink-0 rounded bg-surface-3 px-1 text-[9px] uppercase tracking-wide text-gray-400">capture</span>
+                  ) : (
+                    <span className="shrink-0 text-[10px] text-gray-500">{formatCount(f.count ?? 0)}</span>
+                  )}
                 </button>
 
                 {open && (
                   <div className="px-2 pb-2">
                     {loading && <div className="animate-pulse-subtle px-1 py-1 text-[11px] text-gray-500">Loading…</div>}
                     {error && <div className="px-1 py-1 text-[11px] text-red-400">{error}</div>}
-                    {facet && !loading && facet.numericCount > 0 && (
+                    {facet && !loading && facet.numericCount > 0 && !isCapture && (
                       <div className="mb-1.5 flex overflow-hidden rounded border border-edge text-[10px]">
                         <button
                           className={`flex-1 py-0.5 ${mode === 'values' ? 'bg-surface-2 text-sky-300' : 'text-gray-500 hover:text-gray-300'}`}
@@ -253,6 +276,7 @@ export default function FacetPanel({
                         <div className="mt-1 px-1.5 text-[10px] text-gray-600">
                           {formatCount(facet.distinctCount)} distinct
                           {facet.distinctCount > facet.values.length && ` · top ${facet.values.length}`}
+                          {facet.approx && ` · ~ first ${formatCount(facet.scanned ?? 0)} lines`}
                         </div>
                       </>
                     ) : null}

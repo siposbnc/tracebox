@@ -146,7 +146,7 @@ export default function ContextPeek({
                 ref={isCenter ? centerRef : undefined}
                 onClick={() => onJumpToLine(row.lineNo)}
                 title="Open in full view at this line"
-                className={`flex cursor-pointer items-center gap-2 border-l-2 px-2 font-mono text-[13px] leading-6 ${
+                className={`tb-log-text flex cursor-pointer items-center gap-2 border-l-2 px-2 font-mono ${
                   isCenter
                     ? 'border-sky-400 bg-sky-950/60'
                     : isMatch

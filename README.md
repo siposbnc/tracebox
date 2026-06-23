@@ -48,6 +48,9 @@ exactly these files:
 - **Summary stats** and a per-level breakdown with one-click filters.
 - **User-defined parsers** — teach TraceBox a proprietary format with a regex (named groups
   become fields), with a live tester.
+- **Ad-hoc capture fields** — pull a value out of raw lines with a one-off regex
+  (`(?<dur>\d+)ms`) straight from the column picker, then filter (`dur:>500`), column,
+  and break it down on it — no re-indexing or saved parser needed.
 
 **Field breakdown**
 

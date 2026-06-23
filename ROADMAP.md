@@ -27,12 +27,31 @@ desktop app is the primary target.
 - **Numeric field trends.** Chart a numeric field over time (`duration_ms`,
   response bytes) with p50/p95, not just line volume. Builds on the histogram +
   stats code; turns the tool into a mini offline observability view.
+- **Triage view on open.** When a file opens, surface a one-screen summary of
+  what's wrong: top error clusters, rate spikes and gaps, patterns that are new
+  versus the baseline, and the slowest operations. Assembles the existing
+  clustering, gap/spike, and stats analyses into a landing dashboard instead of
+  starting from a raw scroll.
+- **Facet-over-time heatmap.** A 2-D grid — a field's values (status, service,
+  level) down one axis, time across the other, each cell shaded by count — so you
+  can see *which* value started spiking *when*. Fuses the histogram and faceting
+  code; bucket on the server so it holds up on big files.
+- **Δ-time column.** Show the time gap between consecutive rows (and Δ-since the
+  selected row) as an optional column, so stalls and latency jumps are visible
+  inline without opening the histogram. Cheap on top of the already-indexed
+  timestamps.
 
 ## Workflow — keep an investigation
 
 - **Richer workspaces.** Saved workspaces capture the open files and their searches
   today; also persist the column layout and open-panel state so a workspace
   restores the full view, not just the filters.
+- **Live filtered tail.** Keep the active query applied while tailing, so a follow
+  only streams the new lines that match (`tail -f | grep`). Combines the existing
+  live-tail and filtering paths into one continuously-updating filtered view.
+- **Redaction for sharing.** A toggle to mask emails, tokens, IPs, and other
+  sensitive values in the view and in screenshot / report export, so an
+  investigation can be shared without leaking secrets.
 
 ## AI access — let agents drive TraceBox
 
@@ -58,11 +77,6 @@ Often higher-value-per-effort than net-new features:
   that order) rather than by line number, so paging stays O(1).
 - **Wider format coverage.** CEF, more key=value/`:` delimiter variants, pretty-
   printed (multi-line) JSON, and additional timestamp shapes in auto-detection.
-
-## Customization
-
-- **Appearance.** A light / high-contrast theme and adjustable font size; the UI is
-  dark-only today.
 
 ## Performance & release
 

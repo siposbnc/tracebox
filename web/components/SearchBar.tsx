@@ -14,6 +14,7 @@ import { computeSuggestions, tokenBounds, type Suggestion } from '../querySugges
 import { matchCommand, formatChord, useBindings } from '../keybindings';
 import BookmarksMenu from './BookmarksMenu';
 import ColumnsMenu from './ColumnsMenu';
+import type { Capture } from '../captures';
 import type { SessionStatus } from '../types';
 
 const SYNTAX_EXAMPLES: [string, string][] = [
@@ -75,6 +76,10 @@ export default function SearchBar({
   watchUnseen,
   columns,
   onColumnsChange,
+  captures,
+  captureSample,
+  onUpsertCapture,
+  onRemoveCapture,
   highlightMode,
   onToggleHighlight,
   regexMode,
@@ -119,6 +124,11 @@ export default function SearchBar({
   watchUnseen: number;
   columns: string[];
   onColumnsChange: (cols: string[]) => void;
+  captures: Capture[];
+  /** A sample line for the capture editor's live preview. */
+  captureSample?: string;
+  onUpsertCapture: (cap: Capture) => void;
+  onRemoveCapture: (name: string) => void;
   highlightMode: boolean;
   onToggleHighlight: () => void;
   regexMode: boolean;
@@ -583,7 +593,17 @@ export default function SearchBar({
             <rect x="3" y="4" width="18" height="16" rx="1" /><path d="M9 4v16M15 4v16M3 10h18" />
           </svg>
         </button>
-        {columnar && <ColumnsMenu fieldNames={fieldNames} columns={columns} onChange={onColumnsChange} />}
+        {columnar && (
+          <ColumnsMenu
+            fieldNames={fieldNames}
+            columns={columns}
+            onChange={onColumnsChange}
+            captures={captures}
+            sampleText={captureSample}
+            onUpsertCapture={onUpsertCapture}
+            onRemoveCapture={onRemoveCapture}
+          />
+        )}
 
         <div className="grow" />
 

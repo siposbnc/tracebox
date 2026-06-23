@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { api, formatTs } from '../api';
-import { useOrder, setOrder, useTz, useWrap, setWrap, getPageJump, getPageJumpBig, type Tz } from '../settings';
+import { useOrder, setOrder, useTz, useWrap, setWrap, useRowHeight, getPageJump, getPageJumpBig, type Tz } from '../settings';
 import { getBookmarks, toggleBookmark, useBookmarkVersion } from '../bookmarks';
 import { matchCommand } from '../keybindings';
 import { extractHighlightTerms, highlightRegexFor } from '../highlightTerms';
@@ -11,7 +11,6 @@ import DetailPanel from './DetailPanel';
 import ContextPeek from './ContextPeek';
 
 const BLOCK = 256;
-const ROW_HEIGHT = 24;
 
 const LEVEL_STYLES: Record<string, string> = {
   TRACE: 'bg-slate-800 text-slate-400',
@@ -38,6 +37,9 @@ export default function MergedView({
   const order = useOrder();
   const tz = useTz();
   const wrap = useWrap();
+  const rowHeight = useRowHeight();
+  const rowHeightRef = useRef(rowHeight);
+  rowHeightRef.current = rowHeight;
   useBookmarkVersion(); // re-render when bookmarks change anywhere
 
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(() => new Set(files.map((f) => f.id)));
@@ -154,7 +156,7 @@ export default function MergedView({
       update: (p) => {
         // decide whether to keep pinned to the live edge before the list grows
         const el = parentRef.current;
-        const slack = ROW_HEIGHT * 3;
+        const slack = rowHeightRef.current * 3;
         followEdgeRef.current = el
           ? orderRef.current === 'asc'
             ? el.scrollHeight - el.scrollTop - el.clientHeight <= slack
@@ -253,9 +255,14 @@ export default function MergedView({
   const virtualizer = useVirtualizer({
     count: listTotal,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => ROW_HEIGHT,
+    estimateSize: () => rowHeight,
     overscan: 30,
   });
+
+  // Re-measure when the font-size preset changes the row height.
+  useEffect(() => {
+    virtualizer.measure();
+  }, [rowHeight, virtualizer]);
 
   const fetchBlock = useCallback((blockIdx: number) => {
     if (blocksRef.current.has(blockIdx) || loadingRef.current.has(blockIdx)) return;
@@ -558,7 +565,7 @@ export default function MergedView({
                     key={item.key}
                     ref={wrap ? virtualizer.measureElement : undefined}
                     data-index={item.index}
-                    style={{ position: 'absolute', top: 0, left: 0, width: '100%', ...(wrap ? { minHeight: ROW_HEIGHT } : { height: item.size }), transform: `translateY(${item.start}px)` }}
+                    style={{ position: 'absolute', top: 0, left: 0, width: '100%', ...(wrap ? { minHeight: rowHeight } : { height: item.size }), transform: `translateY(${item.start}px)` }}
                   >
                     {row ? (
                       <Row
@@ -661,8 +668,8 @@ const Row = memo(function Row({
   return (
     <div
       onClick={onSelect}
-      className={`group flex cursor-pointer gap-2 border-l-2 pr-3 font-mono text-[13px] leading-6 ${
-        wrap ? 'min-h-6 items-start py-px' : 'h-full items-center'
+      className={`group tb-log-text flex cursor-pointer gap-2 border-l-2 pr-3 font-mono ${
+        wrap ? 'items-start py-px' : 'h-full items-center'
       } ${selected ? 'bg-sky-950/60' : isMatch ? 'bg-amber-950/25 hover:bg-amber-950/40' : 'hover:bg-surface-1'}`}
       style={{ borderColor: selected ? '#38bdf8' : color }}
       title={`${baseName(row.file)} — click for detail`}
