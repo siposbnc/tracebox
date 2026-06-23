@@ -46,9 +46,6 @@ desktop app is the primary target.
 - **Richer workspaces.** Saved workspaces capture the open files and their searches
   today; also persist the column layout and open-panel state so a workspace
   restores the full view, not just the filters.
-- **Live filtered tail.** Keep the active query applied while tailing, so a follow
-  only streams the new lines that match (`tail -f | grep`). Combines the existing
-  live-tail and filtering paths into one continuously-updating filtered view.
 
 ## AI access — let agents drive TraceBox
 

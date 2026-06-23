@@ -14,6 +14,15 @@ date and start a fresh `Unreleased` section.
 
 ### Added
 
+- **Optional level accent bars.** The small colored bar before WARN/ERROR/FATAL
+  rows in the raw view can be switched off in **Settings → Level accent bars**, so
+  every row lines up at the same position regardless of level. On by default.
+- **Live filtered tail.** Tailing now keeps *any* active query applied as the file
+  grows — including whole-line `/regex/`, ad-hoc capture filters (`dur:>500`), and
+  regex mode, which previously froze as a snapshot while tailing. Appended lines
+  are verified against the filter and only the matches stream into the view
+  (`tail -f | grep`). Plain field/term filters already did this; now every query
+  type does.
 - **Redaction for sharing.** A toolbar toggle (**Ctrl/Cmd+Shift+R**, rebindable, or
   **Settings → Redaction**) masks sensitive values — emails, IPv4/IPv6, JWTs, `Bearer`/`key=secret` pairs,
   Luhn-checked card numbers, and long opaque tokens — across the view (so
@@ -51,6 +60,11 @@ date and start a fresh `Unreleased` section.
 
 ### Changed
 
+- **Settings panel, reorganized.** The growing flat list is now grouped into
+  labeled cards — **Appearance**, **Log display**, **Navigation**, and **Manage**
+  — and the sub-panel entry points (shortcuts, parsers, redaction, MCP, cache) are
+  full-row links instead of right-aligned buttons. The panel scrolls if it
+  outgrows the window.
 - **Detail panel: one structured view, not two.** The flattened **Fields** table
   and the JSON tree no longer show the same data side by side. A **Flat / JSON**
   toggle (remembered across lines) switches between them, and JSON is only offered

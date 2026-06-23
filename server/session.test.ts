@@ -564,6 +564,34 @@ test('tail mode picks up appended lines and extends active search', async () => 
   s.setTail(false);
 });
 
+test('tail extends a live post-filter (regex / capture) search', async () => {
+  const file = makeLogFile('tailpost.log', appLogLines(100)); // durations i%900 = 0..99
+  const s = await openAndIndex(file);
+
+  // whole-line /regex/ — none of the first 100 lines match
+  await s.search('/appended failure/');
+  assert.equal(s.viewTotal, 0);
+
+  s.setTail(true);
+  let appended = new Promise<void>((resolve) => s.once('append', () => resolve()));
+  appendFileSync(file, '2024-01-01 01:00:00 [ERROR] appended failure\n2024-01-01 01:00:01 [INFO] appended ok\n');
+  await appended;
+  assert.equal(s.viewTotal, 1); // the matching new line streamed into the filtered view
+  const rows = await s.getRows(0, 1);
+  assert.match(rows[0].text, /appended failure/);
+
+  // ad-hoc capture filter dur:>800 — nothing so far (max duration is 99)
+  await s.search('dur:>800', false, null, [{ name: 'dur', pattern: '(\\d+)ms' }]);
+  assert.equal(s.viewTotal, 0);
+  appended = new Promise<void>((resolve) => s.once('append', () => resolve()));
+  appendFileSync(file, '2024-01-01 02:00:00 [WARN] slow took 950ms\n2024-01-01 02:00:01 [WARN] fast took 10ms\n');
+  await appended;
+  assert.equal(s.viewTotal, 1); // only the 950ms line matches dur:>800
+  const capRows = await s.getRows(0, 1);
+  assert.match(capRows[0].text, /950ms/);
+  s.setTail(false);
+});
+
 test('tail mode re-indexes a growing unterminated line', async () => {
   const file = makeLogFile('partial.log', ['complete line'], true);
   appendFileSync(file, '2024-01-01 00:00:00 [ERR'); // partial write mid-line

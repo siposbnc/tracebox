@@ -40,11 +40,14 @@ const COLUMNAR_KEY = 'tracebox.columnar';
 const DETAIL_VIEW_KEY = 'tracebox.detailView';
 const THEME_KEY = 'tracebox.theme';
 const FONT_SIZE_KEY = 'tracebox.fontSize';
+const LEVEL_BARS_KEY = 'tracebox.levelBars';
 
 let order: Order = clientStore.getItem(ORDER_KEY) === 'desc' ? 'desc' : 'asc';
 let tz: Tz = clientStore.getItem(TZ_KEY) === 'local' ? 'local' : 'utc';
 let wrap = clientStore.getItem(WRAP_KEY) === 'true';
 let columnar = clientStore.getItem(COLUMNAR_KEY) === 'true';
+// the colored level-accent bar before WARN+ rows; on by default
+let levelBars = clientStore.getItem(LEVEL_BARS_KEY) !== 'false';
 let detailView: DetailView = clientStore.getItem(DETAIL_VIEW_KEY) === 'json' ? 'json' : 'flat';
 
 function loadTheme(): Theme {
@@ -215,6 +218,22 @@ export function setColumnar(next: boolean): void {
 /** Whether structured logs render as a column grid instead of raw lines. */
 export function useColumnar(): boolean {
   return useSyncExternalStore(subscribe, getColumnar);
+}
+
+export function getLevelBars(): boolean {
+  return levelBars;
+}
+
+export function setLevelBars(next: boolean): void {
+  if (next === levelBars) return;
+  levelBars = next;
+  clientStore.setItem(LEVEL_BARS_KEY, String(next));
+  emit();
+}
+
+/** Whether the colored accent bar marks WARN/ERROR/FATAL rows. Off aligns every row. */
+export function useLevelBars(): boolean {
+  return useSyncExternalStore(subscribe, getLevelBars);
 }
 
 export function getDetailView(): DetailView {

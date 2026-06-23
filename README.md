@@ -127,7 +127,9 @@ npm start -- --no-open            # don't launch the browser
 ```
 
 No log handy? Generate one: `node scripts/genlog.mjs big.log 1gb app` (formats: `app`,
-`json`, `access`).
+`json`, `access`). For a *live*, growing log to try the tail with, run
+`node scripts/genlive.mjs` (writes to `./live-logs/` until Ctrl+C). See
+[`scripts/README.md`](scripts/README.md) for all the generators.
 
 ## Query language
 

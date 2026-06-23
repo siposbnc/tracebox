@@ -332,9 +332,11 @@ export class IndexStore {
    * (used by regex search, which post-filters off the index). When grouped, the
    * matches are mapped to their record heads. `lineNos` must be ascending.
    */
-  materializeLineSet(lineNos: number[], grouped: boolean): number {
-    this.db.exec(`DELETE FROM results; DELETE FROM sqlite_sequence WHERE name = 'results';`);
-    if (lineNos.length === 0) return 0;
+  materializeLineSet(lineNos: number[], grouped: boolean, append = false): number {
+    // append: keep existing results and add these lines (the caller prunes the tail
+    // first) — extends a live regex-mode search; otherwise replace the whole set
+    if (!append) this.db.exec(`DELETE FROM results; DELETE FROM sqlite_sequence WHERE name = 'results';`);
+    if (lineNos.length === 0) return this.resultCount();
     this.db.exec(`CREATE TEMP TABLE IF NOT EXISTS _set(line_no INTEGER PRIMARY KEY); DELETE FROM _set;`);
     const ins = this.db.prepare(`INSERT OR IGNORE INTO _set(line_no) VALUES (?)`);
     this.db.exec('BEGIN');
@@ -355,12 +357,17 @@ export class IndexStore {
    * pure-SQL superset that the regex leaves are then verified against. A
    * `templateId` narrows to one cluster, as in {@link runSearch}.
    */
-  candidateLines(prefilter: CompiledQuery, templateId: number | null = null): number[] {
+  candidateLines(prefilter: CompiledQuery, templateId: number | null = null, fromLine = 0): number[] {
     const conds: string[] = [];
     const p: (string | number)[] = [];
     if (templateId !== null) {
       conds.push('l.tmpl = ?');
       p.push(templateId);
+    }
+    // narrow to the appended tail when extending a live search incrementally
+    if (fromLine > 0) {
+      conds.push('l.line_no >= ?');
+      p.push(fromLine);
     }
     conds.push(`(${prefilter.where})`);
     p.push(...prefilter.params);
@@ -371,15 +378,21 @@ export class IndexStore {
   }
 
   /**
-   * Materialize the result set for a whole-line-regex query: load each regex
-   * leaf's verified line numbers into a temp table `_rx_<index>`, then run the
-   * exact query (which references those tables) like {@link runSearch}.
+   * Materialize the result set for a whole-line-regex / capture query: load each
+   * post-filter leaf's verified line numbers into a temp table `_rx_<index>`, then
+   * run the exact query (which references those tables) like {@link runSearch}.
+   *
+   * With `fromLine` set, this *appends* the matches at or after that line instead
+   * of replacing the whole result set — extending a live search over the tail (the
+   * caller prunes results from `fromLine` first). The temp tables then need only
+   * the tail's verified matches.
    */
   runRegexSearch(
     exact: CompiledQuery,
     leafMatches: number[][],
     grouped: boolean,
     templateId: number | null = null,
+    fromLine?: number,
   ): number {
     for (let i = 0; i < leafMatches.length; i++) {
       const t = `_rx_${i}`;
@@ -397,9 +410,14 @@ export class IndexStore {
       conds.push('l.tmpl = ?');
       p.push(templateId);
     }
+    if (fromLine !== undefined) {
+      conds.push('l.line_no >= ?');
+      p.push(fromLine);
+    } else {
+      this.db.exec(`DELETE FROM results; DELETE FROM sqlite_sequence WHERE name = 'results';`);
+    }
     conds.push(`(${exact.where})`);
     p.push(...exact.params);
-    this.db.exec(`DELETE FROM results; DELETE FROM sqlite_sequence WHERE name = 'results';`);
     this.db
       .prepare(`INSERT INTO results(line_no) SELECT ${selectCol} FROM lines l WHERE ${conds.join(' AND ')} ORDER BY ${orderCol}`)
       .run(...p);

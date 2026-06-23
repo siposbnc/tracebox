@@ -39,7 +39,8 @@ See the architecture tree in `README.md`. In short:
   sessions, HTTP/SSE). Not desktop-specific.
 - `web/` — React UI (Vite + Tailwind).
 - `electron/` — desktop shell only; `server/` and `web/` stay platform-agnostic.
-- `scripts/` — dev runner, esbuild bundler, icon + synthetic-log generators.
+- `scripts/` — dev runner, esbuild bundler, icon + synthetic-log generators
+  (incl. `genlive.mjs` for live tail). See `scripts/README.md` for usage.
 - `build/` — icon and NSIS installer script.
 
 ## Conventions
@@ -114,3 +115,7 @@ Code signing is env-var driven (`CSC_LINK` / `CSC_KEY_PASSWORD`); see
   `npm run dev`) — don't edit `web/patchnotes.ts` by hand.
 - Keep `server/` dependency-free and `127.0.0.1`-only (offline guarantee).
 - Run `npm test` before considering backend work done.
+- **Commit every shipped feature — this is mandatory.** When a feature is complete
+  and verified (tests green, builds), commit it before moving on; don't let
+  finished work pile up uncommitted. One focused commit per feature where the
+  files allow it. **Push only when the whole task is done**, not after each commit.

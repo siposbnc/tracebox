@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { api, formatTs } from '../api';
-import { useOrder, useTz, useRowHeight, getPageJump, getPageJumpBig, type Tz } from '../settings';
+import { useOrder, useTz, useRowHeight, useLevelBars, getPageJump, getPageJumpBig, type Tz } from '../settings';
 import { useRedactor } from '../redaction';
 import { useBookmarks, toggleBookmark } from '../bookmarks';
 import { matchCommand, getChord, formatChord } from '../keybindings';
@@ -124,6 +124,7 @@ export default function LogList({
   const tz = useTz();
   const rowHeight = useRowHeight();
   const { redact } = useRedactor();
+  const levelBars = useLevelBars();
   const bookmarks = useBookmarks(file);
   const bookmarkSet = useMemo(() => new Set(bookmarks), [bookmarks]);
   const orderRef = useRef(order);
@@ -537,6 +538,7 @@ export default function LogList({
                     tz={tz}
                     wrap={wrap}
                     redact={redact}
+                    levelBars={levelBars}
                   />
                 ) : (
                   <div className="flex h-6 items-center px-3">
@@ -568,6 +570,7 @@ const Row = memo(function Row({
   tz,
   wrap,
   redact,
+  levelBars,
 }: {
   row: RowData;
   viewIndex: number;
@@ -584,6 +587,7 @@ const Row = memo(function Row({
   tz: Tz;
   wrap: boolean;
   redact: (text: string) => string;
+  levelBars: boolean;
 }) {
   const levelClass = row.level ? (LEVEL_STYLES[row.level] ?? 'bg-slate-800 text-slate-300') : '';
   const bar = row.level ? LEVEL_BAR[row.level] : undefined;
@@ -637,7 +641,7 @@ const Row = memo(function Row({
       >
         {row.lineNo + 1}
       </span>
-      {bar && !selected && <span className={`h-3.5 w-0.5 shrink-0 rounded ${bar}`} />}
+      {levelBars && bar && !selected && <span className={`h-3.5 w-0.5 shrink-0 rounded ${bar}`} />}
       <span className="shrink-0 whitespace-nowrap text-xs text-gray-500">{formatTs(row.ts, tz)}</span>
       {row.level && (
         <span

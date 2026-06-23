@@ -180,9 +180,12 @@ export class LogSession extends EventEmitter {
   private searchGrouped = false;
   /** Active regex search (whole-file post-filter *mode*); null when using the query language. */
   private searchRegex: RegExp | null = null;
-  /** Whether the active query-language search contains a whole-line `/regex/` term
-   *  (a snapshot result that doesn't auto-extend while tailing). */
-  private searchHasRegex = false;
+  /** Whether the active query needs the two-phase path — a whole-line `/regex/` or
+   *  an ad-hoc capture predicate. It's extended over the tail incrementally (read
+   *  the new lines' text and verify) rather than re-run from scratch. */
+  private searchPostFilter = false;
+  /** Compiled captures of the active post-filter search, for extending it on append. */
+  private searchCaptures: Map<string, CompiledCapture> = new Map();
   /** Active cluster drill-down (a template id), ANDed with any text query. */
   private templateId: number | null = null;
   /** Lines below this number have been through the current search. */
@@ -650,7 +653,8 @@ export class LogSession extends EventEmitter {
     this.searchGrouped = grouped;
     this.templateId = templateId;
     this.searchRegex = null;
-    this.searchHasRegex = false;
+    this.searchPostFilter = false;
+    this.searchCaptures = new Map();
     if (trimmed === '' && templateId === null) {
       this.searchQuery = '';
       this.searchAst = null;
@@ -707,9 +711,49 @@ export class LogSession extends EventEmitter {
     this.searchQuery = query;
     this.searchAst = ast;
     this.searchRegex = null;
-    this.searchHasRegex = true;
+    this.searchPostFilter = true;
+    this.searchCaptures = captures;
     this.searchedUpTo = this.index.lineCount;
     return { total: this.searchTotal, durationMs: this.searchDurationMs };
+  }
+
+  /**
+   * Extend an active post-filter search over the appended tail: gather candidates
+   * at/after `firstNewLine`, verify the regex/capture leaves against their text,
+   * and append the matches to the result set — the live-tail counterpart of
+   * {@link applyPostQuery}. Mirrors the indexed extend in {@link appendOnce}.
+   */
+  private async extendPostSearch(firstNewLine: number, rebuildFrom: number): Promise<void> {
+    if (this.searchAst === null) return;
+    const from = this.searchGrouped ? Math.min(firstNewLine, rebuildFrom) : firstNewLine;
+    const plan = planPostSearch(this.searchAst, (i) => `_rx_${i}`, this.searchCaptures);
+    const candidates = this.store.candidateLines(plan.prefilter, this.templateId, from);
+    const matches: number[][] = plan.leaves.map(() => []);
+    const CHUNK = 4000;
+    for (let s = 0; s < candidates.length; s += CHUNK) {
+      if (this.closed) break;
+      const chunk = candidates.slice(s, s + CHUNK);
+      const texts = await this.readTexts(chunk);
+      for (let k = 0; k < chunk.length; k++) {
+        for (let li = 0; li < plan.leaves.length; li++) {
+          if (plan.leaves[li].test(texts[k])) matches[li].push(chunk[k]);
+        }
+      }
+    }
+    this.store.pruneResultsFrom(from);
+    this.searchTotal = this.store.runRegexSearch(plan.exact, matches, this.searchGrouped, this.templateId, from);
+    this.searchedUpTo = this.index.lineCount;
+  }
+
+  /** Extend an active regex-mode search over the appended tail (the counterpart of
+   *  {@link setRegexSearch} for live tailing). */
+  private async extendRegexSearch(firstNewLine: number, rebuildFrom: number): Promise<void> {
+    if (this.searchRegex === null) return;
+    const from = this.searchGrouped ? Math.min(firstNewLine, rebuildFrom) : firstNewLine;
+    const matches = await this.scanRegex(this.searchRegex, from);
+    this.store.pruneResultsFrom(from);
+    this.searchTotal = this.store.materializeLineSet(matches, this.searchGrouped, true);
+    this.searchedUpTo = this.index.lineCount;
   }
 
   /** Read the text of an ascending list of line numbers, batching contiguous runs. */
@@ -736,7 +780,8 @@ export class LogSession extends EventEmitter {
     const trimmed = pattern.trim();
     this.searchGrouped = grouped;
     this.templateId = null;
-    this.searchHasRegex = false;
+    this.searchPostFilter = false;
+    this.searchCaptures = new Map();
     if (trimmed === '') {
       this.searchAst = null;
       this.searchRegex = null;
@@ -1381,12 +1426,22 @@ export class LogSession extends EventEmitter {
       // extend the active search over the new lines. A grouped search keys off the
       // record head, so re-run it from the rebuilt region's head to catch records
       // whose continuation lines just arrived; an ungrouped one resumes by line.
-      // (A whole-line-regex query is a snapshot and isn't extended.)
-      if (this.searchAst !== null && !this.searchHasRegex && this.index.lineCount > firstNewLine) {
-        const from = this.searchGrouped ? Math.min(firstNewLine, rebuildFrom) : firstNewLine;
-        this.store.pruneResultsFrom(from);
-        this.searchTotal = this.store.runSearch(this.searchAst, this.searchGrouped, from, this.templateId);
-        this.searchedUpTo = this.index.lineCount;
+      // Post-filter queries (whole-line `/regex/`, ad-hoc captures) and the regex
+      // mode verify the new lines' text and append their matches — a live filtered
+      // tail, so the view keeps narrowing to matches as the file grows.
+      if (this.index.lineCount > firstNewLine) {
+        if (this.searchAst !== null) {
+          if (this.searchPostFilter) {
+            await this.extendPostSearch(firstNewLine, rebuildFrom);
+          } else {
+            const from = this.searchGrouped ? Math.min(firstNewLine, rebuildFrom) : firstNewLine;
+            this.store.pruneResultsFrom(from);
+            this.searchTotal = this.store.runSearch(this.searchAst, this.searchGrouped, from, this.templateId);
+            this.searchedUpTo = this.index.lineCount;
+          }
+        } else if (this.searchRegex !== null) {
+          await this.extendRegexSearch(firstNewLine, rebuildFrom);
+        }
       }
       this.persistMeta(st.size);
       this.emit('append');
