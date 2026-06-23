@@ -37,6 +37,14 @@ function onKeyDown(e: KeyboardEvent): void {
   top.run();
 }
 
+/**
+ * Whether any modal-layer surface (a dialog, the value viewer, …) is currently
+ * open. Used to suppress background-view shortcuts that a modal owns instead.
+ */
+export function isModalOpen(): boolean {
+  return stack.some((e) => e.priority === LAYER_PRIORITY.modal);
+}
+
 function install(): void {
   if (installed) return;
   installed = true;

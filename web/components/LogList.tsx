@@ -5,6 +5,7 @@ import { useOrder, useTz, useRowHeight, useLevelBars, useDeltaColumn, getPageJum
 import { useRedactor } from '../redaction';
 import { useBookmarks, toggleBookmark } from '../bookmarks';
 import { matchCommand, getChord, formatChord } from '../keybindings';
+import { isModalOpen } from '../escStack';
 import type { RowData } from '../types';
 
 const BLOCK = 256;
@@ -378,25 +379,34 @@ export default function LogList({
           e.preventDefault();
           selectAtViewIndex(total - 1, 'end');
           break;
-        case 'nextMatch':
-        case 'prevMatch': {
-          if (!highlight) return;
-          e.preventDefault();
-          const dir = matchCommand(e) === 'prevMatch' ? 'prev' : 'next';
-          const after = selected ?? (dir === 'next' ? -1 : total);
-          void api.nextMatch(sessionId, after, dir, grouped).then((m) => {
-            if (!m) return;
-            const display = orderRef.current === 'desc' ? total - 1 - m.viewIndex : m.viewIndex;
-            virtualizer.scrollToIndex(Math.max(0, Math.min(total - 1, display)), { align: 'center' });
-            onSelect(m.lineNo);
-          });
-          break;
-        }
       }
     };
     el.addEventListener('keydown', onKey);
     return () => el.removeEventListener('keydown', onKey);
-  }, [selected, total, onSelect, virtualizer, highlight, grouped, sessionId]);
+  }, [selected, total, onSelect, virtualizer]);
+
+  // Find next/previous match (highlight mode). Unlike the focus-scoped list
+  // navigation above, this is a window listener so it also works while typing in
+  // the search bar — but it yields to any open modal (e.g. the value viewer,
+  // which has its own match navigation).
+  useEffect(() => {
+    if (!highlight) return;
+    const onKey = (e: KeyboardEvent): void => {
+      const cmd = matchCommand(e);
+      if ((cmd !== 'nextMatch' && cmd !== 'prevMatch') || isModalOpen()) return;
+      e.preventDefault();
+      const dir = cmd === 'prevMatch' ? 'prev' : 'next';
+      const after = selected ?? (dir === 'next' ? -1 : total);
+      void api.nextMatch(sessionId, after, dir, grouped).then((m) => {
+        if (!m) return;
+        const display = orderRef.current === 'desc' ? total - 1 - m.viewIndex : m.viewIndex;
+        virtualizer.scrollToIndex(Math.max(0, Math.min(total - 1, display)), { align: 'center' });
+        onSelect(m.lineNo);
+      });
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [highlight, selected, total, grouped, sessionId, onSelect, virtualizer]);
 
   const highlightRegex = useMemo(() => {
     // in regex mode, highlight the pattern itself; otherwise the literal terms

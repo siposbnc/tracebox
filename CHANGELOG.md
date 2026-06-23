@@ -76,6 +76,11 @@ date and start a fresh `Unreleased` section.
 
 ### Fixed
 
+- **Find next/previous match works from the search bar.** The match-navigation
+  hotkeys (F3 / Shift+F3 by default, in highlight mode) now fire while the search
+  input is focused, not only when the row list has focus — so you can type a query
+  and jump straight through its matches. They yield to an open modal (e.g. the
+  value viewer, which has its own match navigation).
 - **Search autocomplete matches nested field names anywhere.** Typing `trace` now
   suggests `error.stack_trace`, not just fields that *start* with the text. Matches
   are ranked: whole-field prefixes first, then segment-boundary matches (after a
