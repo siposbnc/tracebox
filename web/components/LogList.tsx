@@ -771,7 +771,7 @@ const GridRow = memo(function GridRow({
       onMouseDown={(e) => {
         if (e.shiftKey) e.preventDefault();
       }}
-      className={`group tb-log-text flex h-full cursor-pointer items-stretch gap-2 border-l-2 pr-3 font-mono ${
+      className={`group tb-log-text flex h-full cursor-pointer items-stretch border-l-2 pr-3 font-mono ${
         selected
           ? 'border-sky-400 bg-sky-950/60'
           : inRange
@@ -791,7 +791,7 @@ const GridRow = memo(function GridRow({
       >
         {bookmarked ? '⚑' : '⚐'}
       </button>
-      <span className="flex shrink-0 select-none items-center justify-end text-[11px] text-gray-600" style={{ width: `${gutterWidth}ch` }}>
+      <span className="flex shrink-0 select-none items-center justify-end pr-1.5 text-[11px] text-gray-600" style={{ width: `${gutterWidth}ch` }}>
         {row.lineNo + 1}
       </span>
       <span className={`flex shrink-0 items-center whitespace-nowrap pl-2 text-xs text-gray-500 ${COL_DIVIDER}`} style={{ width: TIME_W }}>
@@ -892,9 +892,9 @@ function GridHeader({
   };
 
   return (
-    <div className="sticky top-0 z-10 flex select-none items-stretch gap-2 border-b border-l-2 border-edge border-l-transparent bg-surface-1 pr-3 text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+    <div className="sticky top-0 z-10 flex select-none items-stretch border-b border-l-2 border-edge border-l-transparent bg-surface-1 pr-3 text-[10px] font-semibold uppercase tracking-wide text-gray-500">
       <span className="w-4 shrink-0" />
-      <span className="flex shrink-0 items-center justify-end py-1 font-mono text-[11px] normal-case" style={{ width: `${gutterWidth}ch` }}>
+      <span className="flex shrink-0 items-center justify-end py-1 pr-1.5 font-mono text-[11px] normal-case" style={{ width: `${gutterWidth}ch` }}>
         #
       </span>
       <span className={`flex shrink-0 items-center py-1 ${COL_DIVIDER}`} style={{ width: TIME_W }}>
