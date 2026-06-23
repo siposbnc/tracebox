@@ -15,6 +15,8 @@ const TIME_W = 168;
 const LEVEL_W = 52;
 const COL_W = 190;
 const DELTA_W = 64;
+/** Vertical divider between columnar cells (header + rows), so column edges read. */
+const COL_DIVIDER = 'border-l border-edge';
 
 /** Tint the Δt value by magnitude so stalls/latency jumps stand out. */
 function deltaClass(ms: number): string {
@@ -769,7 +771,7 @@ const GridRow = memo(function GridRow({
       onMouseDown={(e) => {
         if (e.shiftKey) e.preventDefault();
       }}
-      className={`group tb-log-text flex h-full cursor-pointer items-center gap-2 border-l-2 pr-3 font-mono ${
+      className={`group tb-log-text flex h-full cursor-pointer items-stretch gap-2 border-l-2 pr-3 font-mono ${
         selected
           ? 'border-sky-400 bg-sky-950/60'
           : inRange
@@ -783,28 +785,28 @@ const GridRow = memo(function GridRow({
           onToggleBookmark();
         }}
         title={bookmarked ? 'Remove bookmark' : 'Bookmark this line'}
-        className={`w-4 shrink-0 select-none text-center text-[11px] ${
+        className={`flex w-4 shrink-0 select-none items-center justify-center text-[11px] ${
           bookmarked ? 'text-amber-400' : 'text-gray-700 opacity-0 hover:text-amber-300 group-hover:opacity-100'
         }`}
       >
         {bookmarked ? '⚑' : '⚐'}
       </button>
-      <span className="shrink-0 select-none text-right text-[11px] text-gray-600" style={{ width: `${gutterWidth}ch` }}>
+      <span className="flex shrink-0 select-none items-center justify-end text-[11px] text-gray-600" style={{ width: `${gutterWidth}ch` }}>
         {row.lineNo + 1}
       </span>
-      <span className="shrink-0 whitespace-nowrap text-xs text-gray-500" style={{ width: TIME_W }}>
+      <span className={`flex shrink-0 items-center whitespace-nowrap pl-2 text-xs text-gray-500 ${COL_DIVIDER}`} style={{ width: TIME_W }}>
         {formatTs(row.ts, tz)}
       </span>
       {showDelta && (
         <span
-          className={`shrink-0 text-right text-[11px] ${delta == null ? 'text-gray-700' : deltaClass(delta)}`}
+          className={`flex shrink-0 items-center justify-end pl-2 text-[11px] ${COL_DIVIDER} ${delta == null ? 'text-gray-700' : deltaClass(delta)}`}
           style={{ width: DELTA_W }}
           title={delta == null ? undefined : `${formatDelta(delta)} since the previous row`}
         >
           {delta == null ? '' : formatDelta(delta)}
         </span>
       )}
-      <span className="shrink-0" style={{ width: LEVEL_W }}>
+      <span className={`flex shrink-0 items-center pl-2 ${COL_DIVIDER}`} style={{ width: LEVEL_W }}>
         {row.level && (
           <span className={`rounded px-1 text-[10px] font-semibold leading-4 ${levelClass}`}>{row.level}</span>
         )}
@@ -813,14 +815,18 @@ const GridRow = memo(function GridRow({
         const value = row.cols?.[c];
         const shown = value ? redact(value) : value;
         return (
-          <span key={c} className="shrink-0 truncate px-1" style={{ width: columnWidths[c] ?? COL_W }}>
+          <span
+            key={c}
+            className={`flex shrink-0 items-center overflow-hidden pl-2 pr-1 ${COL_DIVIDER}`}
+            style={{ width: columnWidths[c] ?? COL_W }}
+          >
             {value ? (
               <button
                 onClick={(e) => {
                   e.stopPropagation();
                   onAddFilter(`${c}:"${value.replace(/"/g, '\\"')}"`);
                 }}
-                className="max-w-full truncate text-left align-bottom text-gray-300 hover:text-sky-300 hover:underline"
+                className="min-w-0 max-w-full truncate text-left text-gray-300 hover:text-sky-300 hover:underline"
                 title={`${shown}\n\nClick to filter ${c} to this value`}
               >
                 {shown}
@@ -853,14 +859,18 @@ function GridHeader({
   onReorder: (cols: string[]) => void;
 }) {
   const dragCol = useRef<string | null>(null);
+  const [dragOver, setDragOver] = useState<string | null>(null);
+  const resizing = useRef(false);
 
   const startResize = (col: string, e: React.MouseEvent): void => {
     e.preventDefault();
     e.stopPropagation();
+    resizing.current = true;
     const startX = e.clientX;
     const startW = widthOf(col);
     const onMove = (m: MouseEvent): void => onResize(col, startW + (m.clientX - startX));
     const onUp = (): void => {
+      resizing.current = false;
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onUp);
     };
@@ -871,6 +881,7 @@ function GridHeader({
   const drop = (target: string): void => {
     const from = dragCol.current;
     dragCol.current = null;
+    setDragOver(null);
     if (!from || from === target) return;
     const next = columns.filter((c) => c !== from);
     next.splice(next.indexOf(target), 0, from);
@@ -878,41 +889,66 @@ function GridHeader({
   };
 
   return (
-    <div className="sticky top-0 z-10 flex select-none items-center gap-2 border-b border-edge bg-surface-1 pr-3 text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+    <div className="sticky top-0 z-10 flex select-none items-stretch gap-2 border-b border-edge bg-surface-1 pr-3 text-[10px] font-semibold uppercase tracking-wide text-gray-500">
       <span className="w-4 shrink-0" />
-      <span className="shrink-0 text-right" style={{ width: `${gutterWidth}ch` }}>
+      <span className="flex shrink-0 items-center justify-end py-1" style={{ width: `${gutterWidth}ch` }}>
         #
       </span>
-      <span className="shrink-0" style={{ width: TIME_W }}>
+      <span className={`flex shrink-0 items-center py-1 ${COL_DIVIDER}`} style={{ width: TIME_W }}>
         time
       </span>
       {showDelta && (
-        <span className="shrink-0 text-right" style={{ width: DELTA_W }} title="Time since the previous row">
+        <span className={`flex shrink-0 items-center justify-end py-1 ${COL_DIVIDER}`} style={{ width: DELTA_W }} title="Time since the previous row">
           Δt
         </span>
       )}
-      <span className="shrink-0" style={{ width: LEVEL_W }}>
+      <span className={`flex shrink-0 items-center py-1 ${COL_DIVIDER}`} style={{ width: LEVEL_W }}>
         level
       </span>
       {columns.map((c) => (
-        <span key={c} className="relative flex shrink-0 items-center" style={{ width: widthOf(c) }}>
+        <div
+          key={c}
+          className={`group/col relative flex shrink-0 items-stretch ${COL_DIVIDER} ${dragOver === c ? 'bg-sky-500/15' : ''}`}
+          style={{ width: widthOf(c) }}
+          onDragOver={(e) => {
+            e.preventDefault();
+            if (dragCol.current && dragCol.current !== c && dragOver !== c) setDragOver(c);
+          }}
+          onDragLeave={() => setDragOver((d) => (d === c ? null : d))}
+          onDrop={() => drop(c)}
+        >
+          {dragOver === c && <span className="pointer-events-none absolute inset-y-0 left-0 w-0.5 bg-sky-400" />}
           <span
             draggable
-            onDragStart={() => {
+            onDragStart={(e) => {
               dragCol.current = c;
+              e.dataTransfer.effectAllowed = 'move';
             }}
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={() => drop(c)}
-            className="min-w-0 flex-1 cursor-grab truncate px-1 font-mono normal-case active:cursor-grabbing"
-            title={`${c} — drag to reorder, drag the right edge to resize`}
+            onDragEnd={() => {
+              dragCol.current = null;
+              setDragOver(null);
+            }}
+            className="flex min-w-0 flex-1 cursor-grab items-center gap-1 py-1 pl-2 active:cursor-grabbing"
+            title={`${c} — drag to reorder`}
           >
-            {c}
+            <svg className="h-3 w-1.5 shrink-0 text-gray-600 group-hover/col:text-gray-400" viewBox="0 0 4 12" fill="currentColor" aria-hidden>
+              <circle cx="1" cy="2" r="0.8" /><circle cx="3" cy="2" r="0.8" />
+              <circle cx="1" cy="6" r="0.8" /><circle cx="3" cy="6" r="0.8" />
+              <circle cx="1" cy="10" r="0.8" /><circle cx="3" cy="10" r="0.8" />
+            </svg>
+            <span className="truncate font-mono normal-case">{c}</span>
           </span>
+          {/* resize handle: a wide hit zone straddling the right edge, with a line
+              that brightens on hover so the grab point is easy to find */}
           <span
             onMouseDown={(e) => startResize(c, e)}
-            className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-sky-500/40"
-          />
-        </span>
+            onClick={(e) => e.stopPropagation()}
+            title="Drag to resize this column"
+            className="group/rs absolute -right-1.5 top-0 z-20 flex h-full w-3 cursor-col-resize items-center justify-center"
+          >
+            <span className="h-full w-0.5 bg-transparent transition-colors group-hover/rs:bg-sky-400" />
+          </span>
+        </div>
       ))}
     </div>
   );

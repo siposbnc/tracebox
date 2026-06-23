@@ -69,6 +69,10 @@ date and start a fresh `Unreleased` section.
 
 ### Changed
 
+- **Clearer columnar grid.** The columnar view now draws visible dividers between
+  every column, shows a grip handle on each column header (with a drop-position
+  indicator while dragging), and a wider, highlight-on-hover resize handle on the
+  column edge — so reordering and resizing columns are easy to find and do.
 - **Settings panel, reorganized.** The growing flat list is now grouped into
   labeled cards — **Appearance**, **Log display**, **Navigation**, and **Manage**
   — and the sub-panel entry points (shortcuts, parsers, redaction, MCP, cache) are
