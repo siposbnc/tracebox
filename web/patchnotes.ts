@@ -3,6 +3,44 @@ import type { PatchNote } from './types';
 
 export const patchNotes: PatchNote[] = [
   {
+    "version": "1.5.0",
+    "date": "2026-06-24",
+    "sections": [
+      {
+        "title": "Added",
+        "items": [
+          "**Triage on open.** When a file finishes indexing, a \"what's wrong\" landing dashboard surfaces the level breakdown, the top log-pattern clusters among errors, activity spikes & gaps, and a slowest-field summary (p50/p95/max) — each finding clickable to drill straight into the matching view. Auto-opens by default (toggle in **Settings → Triage on open**) and reopens from the toolbar.",
+          "**Δt column.** An optional column (**Settings → Δt column**) shows the time gap to the previous row, so stalls and latency jumps stand out inline — colour-graded (amber past 1 s / 5 s, red past a minute). It follows the active filter and order (the gap is to the previous *matching* row), in both the raw and columnar views.",
+          "**Optional level accent bars.** The small colored bar before WARN/ERROR/FATAL rows in the raw view can be switched off in **Settings → Level accent bars**, so every row lines up at the same position regardless of level. On by default.",
+          "**Live filtered tail.** Tailing now keeps *any* active query applied as the file grows — including whole-line `/regex/`, ad-hoc capture filters (`dur:>500`), and regex mode, which previously froze as a snapshot while tailing. Appended lines are verified against the filter and only the matches stream into the view (`tail -f | grep`). Plain field/term filters already did this; now every query type does.",
+          "**Redaction for sharing.** A toolbar toggle (**Ctrl/Cmd+Shift+R**, rebindable, or **Settings → Redaction**) masks sensitive values — emails, IPv4/IPv6, JWTs, `Bearer`/`key=secret` pairs, Luhn-checked card numbers, and long opaque tokens — across the view (so screenshots are masked too), the Markdown/HTML report, copy-to-clipboard, and the CSV/JSON export. Each built-in category can be switched off and you can add your own regex patterns, with a live preview. Search and all analysis keep running on the real, unmasked data — only what's shown or exported is masked.",
+          "**Filter breadcrumb.** The active query shows as a funnel of removable chips beneath the search bar — the whole-file count, then each top-level clause with the running match count after it (`194,917 → level:error 24,205 → connection 4,832`). Pop any clause with × to widen the search, or **Clear all**. Counts follow the current grouping and never disturb the active result set; a top-level `OR` query stays a single chip.",
+          "**Ad-hoc capture fields.** Define a throwaway named-regex capture (e.g. `(?<dur>\\d+)ms`) from the columnar column picker — with a live preview of what it extracts — and immediately use it as a column, **filter** on it in the query language (`dur:>500`, `dur:*`, `dur:~…`), and **break it down** in the field panel. Captures are evaluated against the raw line text (reusing the whole-line regex path), so they work on any already-indexed file without committing a full custom parser.",
+          "**Appearance settings: themes and font size.** Settings → Appearance adds a **Theme** choice — Dark (the default), **Light**, and **High contrast** — and a **Font size** for log content (S / M / L / XL), which scales the rows, columnar cells, context peek, and value viewer together. Both persist and are applied before the first paint, so there's no flash on launch.",
+          "**Hotkey for context peek.** Press **C** (rebindable in Settings → Shortcuts) to open the \"grep -C\" surrounding-lines peek for the selected line, in both the single-file and merged timeline views.",
+          "**Open a field value in the visualizer.** Hover a value in the detail panel (flat or JSON view) and click the magnifier to open it in a large reader modal — room for long values like stack traces, payloads, or SQL. The reader has **Copy** and an in-text **search** that highlights every match with next/previous navigation (Enter / Shift+Enter, or the global next/previous-match hotkeys — F3 / Shift+F3 by default)."
+        ]
+      },
+      {
+        "title": "Changed",
+        "items": [
+          "**Clearer columnar grid.** The columnar view now draws visible dividers between every column, shows a grip handle on each column header (with a drop-position indicator while dragging), and a wider, highlight-on-hover resize handle on the column edge — so reordering and resizing columns are easy to find and do.",
+          "**Settings panel, reorganized.** The growing flat list is now grouped into labeled cards — **Appearance**, **Log display**, **Navigation**, and **Manage** — and the sub-panel entry points (shortcuts, parsers, redaction, MCP, cache) are full-row links instead of right-aligned buttons. The panel scrolls if it outgrows the window.",
+          "**Detail panel: one structured view, not two.** The flattened **Fields** table and the JSON tree no longer show the same data side by side. A **Flat / JSON** toggle (remembered across lines) switches between them, and JSON is only offered when the raw line actually is JSON. The verbatim line/record stays below it."
+        ]
+      },
+      {
+        "title": "Fixed",
+        "items": [
+          "**Columnar: a column can be reordered to the rightmost position.** Dropping a column on the last one previously always inserted it *before* the target, so the final slot was unreachable; the drop side now follows the drag direction.",
+          "**Find next/previous match works from the search bar.** The match-navigation hotkeys (F3 / Shift+F3 by default, in highlight mode) now fire while the search input is focused, not only when the row list has focus — so you can type a query and jump straight through its matches. They yield to an open modal (e.g. the value viewer, which has its own match navigation).",
+          "**Search autocomplete matches nested field names anywhere.** Typing `trace` now suggests `error.stack_trace`, not just fields that *start* with the text. Matches are ranked: whole-field prefixes first, then segment-boundary matches (after a `.`/`_`/`-`), then mid-string.",
+          "**Escape now closes one layer at a time.** With several overlays open (e.g. the context peek over the detail panel, or the value visualizer over both), Escape dismisses the top-most floating window first and the docked panel last, instead of collapsing everything at once."
+        ]
+      }
+    ]
+  },
+  {
     "version": "1.4.0",
     "date": "2026-06-22",
     "sections": [

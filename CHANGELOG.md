@@ -12,6 +12,8 @@ date and start a fresh `Unreleased` section.
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-06-24
+
 ### Added
 
 - **Triage on open.** When a file finishes indexing, a "what's wrong" landing
