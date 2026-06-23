@@ -883,15 +883,18 @@ function GridHeader({
     dragCol.current = null;
     setDragOver(null);
     if (!from || from === target) return;
+    // dragging rightward drops *after* the target (so the last slot is reachable),
+    // leftward drops *before* it
+    const after = columns.indexOf(from) < columns.indexOf(target);
     const next = columns.filter((c) => c !== from);
-    next.splice(next.indexOf(target), 0, from);
+    next.splice(next.indexOf(target) + (after ? 1 : 0), 0, from);
     onReorder(next);
   };
 
   return (
-    <div className="sticky top-0 z-10 flex select-none items-stretch gap-2 border-b border-edge bg-surface-1 pr-3 text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+    <div className="sticky top-0 z-10 flex select-none items-stretch gap-2 border-b border-l-2 border-edge border-l-transparent bg-surface-1 pr-3 text-[10px] font-semibold uppercase tracking-wide text-gray-500">
       <span className="w-4 shrink-0" />
-      <span className="flex shrink-0 items-center justify-end py-1" style={{ width: `${gutterWidth}ch` }}>
+      <span className="flex shrink-0 items-center justify-end py-1 font-mono text-[11px] normal-case" style={{ width: `${gutterWidth}ch` }}>
         #
       </span>
       <span className={`flex shrink-0 items-center py-1 ${COL_DIVIDER}`} style={{ width: TIME_W }}>
@@ -917,7 +920,13 @@ function GridHeader({
           onDragLeave={() => setDragOver((d) => (d === c ? null : d))}
           onDrop={() => drop(c)}
         >
-          {dragOver === c && <span className="pointer-events-none absolute inset-y-0 left-0 w-0.5 bg-sky-400" />}
+          {dragOver === c && (
+            <span
+              className={`pointer-events-none absolute inset-y-0 z-10 w-0.5 bg-sky-400 ${
+                dragCol.current && columns.indexOf(dragCol.current) < columns.indexOf(c) ? 'right-0' : 'left-0'
+              }`}
+            />
+          )}
           <span
             draggable
             onDragStart={(e) => {

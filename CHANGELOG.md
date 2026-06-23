@@ -85,6 +85,9 @@ date and start a fresh `Unreleased` section.
 
 ### Fixed
 
+- **Columnar: a column can be reordered to the rightmost position.** Dropping a
+  column on the last one previously always inserted it *before* the target, so the
+  final slot was unreachable; the drop side now follows the drag direction.
 - **Find next/previous match works from the search bar.** The match-navigation
   hotkeys (F3 / Shift+F3 by default, in highlight mode) now fire while the search
   input is focused, not only when the row list has focus — so you can type a query
