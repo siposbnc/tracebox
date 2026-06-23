@@ -76,6 +76,10 @@ date and start a fresh `Unreleased` section.
 
 ### Fixed
 
+- **Search autocomplete matches nested field names anywhere.** Typing `trace` now
+  suggests `error.stack_trace`, not just fields that *start* with the text. Matches
+  are ranked: whole-field prefixes first, then segment-boundary matches (after a
+  `.`/`_`/`-`), then mid-string.
 - **Escape now closes one layer at a time.** With several overlays open (e.g. the
   context peek over the detail panel, or the value visualizer over both), Escape
   dismisses the top-most floating window first and the docked panel last, instead

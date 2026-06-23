@@ -63,13 +63,23 @@ export function computeSuggestions(
     }
   }
 
+  // Match the token anywhere in a (flattened) field name, not just as a prefix —
+  // so "trace" finds "error.stack_trace". Rank whole-field prefixes first, then
+  // matches at a segment boundary (after a "." / "_" / "-"), then mid-string; a
+  // stable sort keeps the backend's by-frequency order within each tier.
   const seen = new Set<string>();
+  const matches: { field: string; score: number }[] = [];
   for (const f of [...BASE_FIELDS, ...fieldNames]) {
     if (seen.has(f)) continue;
     seen.add(f);
-    if (f.toLowerCase().startsWith(lower)) {
-      out.push({ insert: `${f}:`, label: `${f}:`, hint: 'field', trailingSpace: false });
-    }
+    const idx = f.toLowerCase().indexOf(lower);
+    if (idx < 0) continue;
+    const score = idx === 0 ? 0 : '._-'.includes(f[idx - 1]) ? 1 : 2;
+    matches.push({ field: f, score });
+  }
+  matches.sort((a, b) => a.score - b.score);
+  for (const m of matches) {
+    out.push({ insert: `${m.field}:`, label: `${m.field}:`, hint: 'field', trailingSpace: false });
   }
 
   return out.slice(0, MAX);
