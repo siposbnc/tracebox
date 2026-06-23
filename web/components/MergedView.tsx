@@ -5,6 +5,7 @@ import { useOrder, setOrder, useTz, useWrap, setWrap, useRowHeight, getPageJump,
 import { getBookmarks, toggleBookmark, useBookmarkVersion } from '../bookmarks';
 import { matchCommand } from '../keybindings';
 import { extractHighlightTerms, highlightRegexFor } from '../highlightTerms';
+import { useRedactor } from '../redaction';
 import type { HistogramData, MergedRow } from '../types';
 import Histogram from './Histogram';
 import DetailPanel from './DetailPanel';
@@ -40,6 +41,7 @@ export default function MergedView({
   const rowHeight = useRowHeight();
   const rowHeightRef = useRef(rowHeight);
   rowHeightRef.current = rowHeight;
+  const { redact } = useRedactor();
   useBookmarkVersion(); // re-render when bookmarks change anywhere
 
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(() => new Set(files.map((f) => f.id)));
@@ -577,6 +579,7 @@ export default function MergedView({
                         tz={tz}
                         highlightActive={highlightActive}
                         highlightRegex={highlightRegex}
+                        redact={redact}
                         onSelect={() => setSelected(row)}
                         onToggleBookmark={() => toggleBookmark(row.file, row.lineNo)}
                         onContext={() => setContext({ sessionId: sources[row.source].id, lineNo: row.lineNo })}
@@ -641,6 +644,7 @@ const Row = memo(function Row({
   tz,
   highlightActive,
   highlightRegex,
+  redact,
   onSelect,
   onToggleBookmark,
   onContext,
@@ -654,15 +658,17 @@ const Row = memo(function Row({
   tz: Tz;
   highlightActive: boolean;
   highlightRegex: RegExp | null;
+  redact: (text: string) => string;
   onSelect: () => void;
   onToggleBookmark: () => void;
   onContext: () => void;
   onOpen: () => void;
 }) {
   const isMatch = highlightActive && row.match === true;
-  let content: React.ReactNode = row.text;
-  if (highlightRegex && row.text) {
-    const parts = row.text.split(highlightRegex);
+  const rowText = redact(row.text);
+  let content: React.ReactNode = rowText;
+  if (highlightRegex && rowText) {
+    const parts = rowText.split(highlightRegex);
     if (parts.length > 1) content = parts.map((p, i) => (i % 2 === 1 ? <mark key={i}>{p}</mark> : p));
   }
   return (

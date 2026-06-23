@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { formatCount, tzAbbr } from '../api';
 import { useOrder, setOrder, useTz, setTz, useWrap, setWrap, useColumnar, setColumnar } from '../settings';
+import { useRedactOn, setRedactOn } from '../redaction';
 import {
   recordHistory,
   clearHistory,
@@ -151,6 +152,7 @@ export default function SearchBar({
   const tz = useTz();
   const wrap = useWrap();
   const columnar = useColumnar();
+  const redact = useRedactOn();
   const bindings = useBindings();
   const inputRef = useRef<HTMLInputElement>(null);
   const historyRef = useRef<HTMLDivElement>(null);
@@ -586,6 +588,18 @@ export default function SearchBar({
         >
           <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M3 6h18" /><path d="M3 12h13a3 3 0 1 1 0 6h-4" /><path d="m13 16-2 2 2 2" /><path d="M3 18h4" />
+          </svg>
+        </button>
+        <button
+          onClick={() => setRedactOn(!redact)}
+          className={toolCls(redact, 'amber')}
+          title={`${redact ? 'Redaction on — masking sensitive values (click to turn off)' : 'Redact sensitive values (emails, IPs, tokens…) in the view and exports'}${bindings.toggleRedact ? ` (${formatChord(bindings.toggleRedact)})` : ''}`}
+        >
+          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24" />
+            <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68" />
+            <path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61" />
+            <line x1="2" y1="2" x2="22" y2="22" />
           </svg>
         </button>
         <button onClick={() => setColumnar(!columnar)} className={toolCls(columnar)} title="Columnar view: render structured fields as a grid">

@@ -64,6 +64,9 @@ exactly these files:
 - A detail panel shows a line's parsed fields (with one-click "add as filter") and the full
   multi-line record (stack traces fold into one entry).
 - Bookmark and annotate lines, then export a Markdown/HTML report for an incident ticket.
+- **Redaction** — one toggle masks emails, IPs, tokens, secrets, and card numbers across the
+  view, reports, and exports (search still runs on the real data); built-in categories are
+  toggleable and you can add your own regex patterns.
 
 ![Detail panel: a line's extracted fields and pretty-printed JSON record](docs/screenshots/04-detail.png)
 

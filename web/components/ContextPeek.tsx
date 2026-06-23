@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, formatTs } from '../api';
 import { useTz, getContextLines } from '../settings';
+import { useRedactor } from '../redaction';
 import { useEscapeKey } from '../escStack';
 import type { ContextResult } from '../types';
 
@@ -77,14 +78,16 @@ export default function ContextPeek({
     }
   }, [highlightTerms]);
 
+  const { redact } = useRedactor();
   const render = useCallback(
-    (text: string): React.ReactNode => {
+    (raw: string): React.ReactNode => {
+      const text = redact(raw);
       if (!highlightRegex || !text) return text;
       const parts = text.split(highlightRegex);
       if (parts.length <= 1) return text;
       return parts.map((part, i) => (i % 2 === 1 ? <mark key={i}>{part}</mark> : part));
     },
-    [highlightRegex],
+    [highlightRegex, redact],
   );
 
   const atFileStart = data !== null && data.rows.length > 0 && data.rows[0].lineNo === 0;

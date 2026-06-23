@@ -3,6 +3,7 @@ import { api } from '../api';
 import { getBookmarks } from '../bookmarks';
 import { getNotes } from '../notes';
 import { useEscapeKey } from '../escStack';
+import { useRedactor } from '../redaction';
 import { buildMarkdown, buildHtml, type ReportEntry, type ReportMeta } from '../report';
 
 const MAX_ENTRIES = 1000;
@@ -44,6 +45,7 @@ export default function ReportDialog({
   const [copied, setCopied] = useState(false);
 
   useEscapeKey(onClose, 'modal');
+  const { redact } = useRedactor();
 
   useEffect(() => {
     let cancelled = false;
@@ -60,7 +62,7 @@ export default function ReportDialog({
           lineNo,
           bookmarked: bookmarks.has(lineNo),
           note: noteMap.get(lineNo) ?? '',
-          text: d?.record?.text ?? d?.raw ?? '',
+          text: redact(d?.record?.text ?? d?.raw ?? ''),
           ts: d?.ts ?? null,
           level: d?.level ?? null,
         };
@@ -68,7 +70,7 @@ export default function ReportDialog({
     )
       .then((built) => {
         if (cancelled) return;
-        const meta: ReportMeta = { file, lineCount, query, generatedAt: Date.now() };
+        const meta: ReportMeta = { file, lineCount, query: query ? redact(query) : query, generatedAt: Date.now() };
         setEntries(built);
         setTruncated(all.length > lines.length);
         setMarkdown(buildMarkdown(meta, built));
@@ -79,9 +81,9 @@ export default function ReportDialog({
     return () => {
       cancelled = true;
     };
-  }, [sessionId, file, query, lineCount]);
+  }, [sessionId, file, query, lineCount, redact]);
 
-  const meta = (): ReportMeta => ({ file, lineCount, query, generatedAt: Date.now() });
+  const meta = (): ReportMeta => ({ file, lineCount, query: query ? redact(query) : query, generatedAt: Date.now() });
   const empty = markdown !== null && entries.length === 0;
 
   return (

@@ -14,6 +14,13 @@ date and start a fresh `Unreleased` section.
 
 ### Added
 
+- **Redaction for sharing.** A toolbar toggle (**Ctrl/Cmd+Shift+R**, rebindable, or
+  **Settings → Redaction**) masks sensitive values — emails, IPv4/IPv6, JWTs, `Bearer`/`key=secret` pairs,
+  Luhn-checked card numbers, and long opaque tokens — across the view (so
+  screenshots are masked too), the Markdown/HTML report, copy-to-clipboard, and
+  the CSV/JSON export. Each built-in category can be switched off and you can add
+  your own regex patterns, with a live preview. Search and all analysis keep
+  running on the real, unmasked data — only what's shown or exported is masked.
 - **Filter breadcrumb.** The active query shows as a funnel of removable chips
   beneath the search bar — the whole-file count, then each top-level clause with
   the running match count after it (`194,917 → level:error 24,205 → connection

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api, formatTs, tzAbbr } from '../api';
 import { useTz, useDetailView, setDetailView } from '../settings';
+import { useRedactor } from '../redaction';
 import { useNote, setNote } from '../notes';
 import type { LineDetail } from '../types';
 import JsonTree, { tryParseJson } from './JsonTree';
@@ -34,6 +35,7 @@ export default function DetailPanel({
   const [viewer, setViewer] = useState<{ label: string; value: string } | null>(null);
   const tz = useTz();
   const view = useDetailView();
+  const { redact } = useRedactor();
   const note = useNote(file, lineNo);
 
   // the raw line as a JSON tree, when it is a JSON object/array
@@ -152,6 +154,7 @@ export default function DetailPanel({
                       value={json}
                       onFilter={(p, v) => onAddFilter(`${p}:${filterValue(v)}`)}
                       onView={(label, v) => setViewer({ label, value: v })}
+                      redact={redact}
                     />
                   </div>
                 ) : detail.fields.length > 0 ? (
@@ -162,7 +165,7 @@ export default function DetailPanel({
                           <td className="max-w-36 truncate py-1 pr-2 font-mono text-sky-400" title={f.key}>
                             {f.key}
                           </td>
-                          <td className="break-all py-1 font-mono text-gray-300">{f.value}</td>
+                          <td className="break-all py-1 font-mono text-gray-300">{redact(f.value)}</td>
                           <td className="whitespace-nowrap py-0.5 pl-2 text-right">
                             <div className="flex items-center justify-end gap-1">
                               {f.value.length > 0 && (
@@ -170,7 +173,7 @@ export default function DetailPanel({
                               )}
                               <button
                                 className="rounded bg-surface-2 px-1 text-[10px] text-gray-500 opacity-0 transition-opacity hover:text-sky-300 group-hover:opacity-100"
-                                title={`Filter: ${f.key}:${f.value}`}
+                                title={`Filter: ${f.key}:${redact(f.value)}`}
                                 onClick={() => onAddFilter(`${f.key}:${filterValue(f.value)}`)}
                               >
                                 +filter
@@ -195,14 +198,14 @@ export default function DetailPanel({
                 <button
                   className="rounded border border-edge bg-surface-2 px-1.5 py-0.5 text-[11px] text-gray-400 hover:text-gray-100"
                   onClick={() =>
-                    void navigator.clipboard.writeText(detail.record ? detail.record.text : detail.raw)
+                    void navigator.clipboard.writeText(redact(detail.record ? detail.record.text : detail.raw))
                   }
                 >
                   {detail.record ? 'Copy record' : 'Copy raw'}
                 </button>
               </div>
               <pre className="max-h-[50vh] overflow-auto whitespace-pre-wrap break-all rounded-md border border-edge bg-surface-0 p-2 font-mono text-xs leading-5 text-gray-300">
-                {detail.record ? detail.record.text : detail.raw}
+                {redact(detail.record ? detail.record.text : detail.raw)}
               </pre>
             </section>
           </>

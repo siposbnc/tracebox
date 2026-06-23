@@ -21,6 +21,7 @@ import StatusBar from './StatusBar';
 import { getHistogramDefault, useWrap, getWrap, setWrap, getOrder, useColumnar } from '../settings';
 import { useColumns, defaultColumns, setColumns } from '../columns';
 import { useCaptures, upsertCapture, removeCapture, compileExtractors, type Capture } from '../captures';
+import { useRedactor, redactExportParams, getRedactOn, setRedactOn } from '../redaction';
 import { useColumnWidths, setColumnWidth } from '../columnWidths';
 
 /** A `level:` predicate (optionally negated, with a comparison/regex operator). */
@@ -149,6 +150,12 @@ export default function LogView({
   const capturesRef = useRef(captures);
   capturesRef.current = captures;
   const captureExtractors = useMemo(() => compileExtractors(captures), [captures]);
+
+  // redaction (display/export-only masking); a ref so copy/export callbacks see
+  // the current masker without re-creating on every config change
+  const redaction = useRedactor();
+  const redactRef = useRef(redaction);
+  redactRef.current = redaction;
   // a sample line so the capture editor can preview what a regex would extract
   const [sampleText, setSampleText] = useState<string | undefined>(undefined);
 
@@ -286,7 +293,8 @@ export default function LogView({
         if (limit <= 0) break;
         const page = await api.rows(id, off, limit, order, false, grouped);
         if (page.rows.length === 0) break;
-        for (const row of page.rows) texts.push(row.text);
+        const mask = redactRef.current.redact;
+        for (const row of page.rows) texts.push(mask(row.text));
       }
       await navigator.clipboard.writeText(texts.join('\n'));
       return texts.length;
@@ -300,7 +308,7 @@ export default function LogView({
       const total = selRange.to - selRange.from + 1;
       return { count: await copyLinesInRange(selRange.from, total), total };
     }
-    const r = await api.copyText(id, COPY_CAP, getOrder(), groupingActiveRef.current);
+    const r = await api.copyText(id, COPY_CAP, getOrder(), groupingActiveRef.current, redactExportParams());
     await navigator.clipboard.writeText(r.text);
     return { count: r.count, total: r.total };
   }, [id, selRange, copyLinesInRange]);
@@ -580,6 +588,10 @@ export default function LogView({
           e.preventDefault();
           setWrap(!getWrap());
           break;
+        case 'toggleRedact':
+          e.preventDefault();
+          setRedactOn(!getRedactOn());
+          break;
         case 'nextBookmark':
           e.preventDefault();
           jumpBookmark(1);
@@ -636,7 +648,10 @@ export default function LogView({
         onRefresh={() => void refresh()}
         refreshing={refreshing}
         onOpenFile={onOpenFile}
-        exportUrls={{ csv: api.exportUrl(id, 'csv'), json: api.exportUrl(id, 'json') }}
+        exportUrls={{
+          csv: api.exportUrl(id, 'csv', redactExportParams()),
+          json: api.exportUrl(id, 'json', redactExportParams()),
+        }}
         onCopyRows={runCopy}
         copyNote={copyNote}
         histogramOpen={histogramOpen}

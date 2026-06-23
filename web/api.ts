@@ -166,10 +166,11 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ rules }),
     }),
-  exportUrl: (id: string, format: 'csv' | 'json') => `/api/sessions/${id}/export?format=${format}`,
-  copyText: (id: string, limit: number, order: 'asc' | 'desc', grouped: boolean) =>
+  exportUrl: (id: string, format: 'csv' | 'json', redactParams = '') =>
+    `/api/sessions/${id}/export?format=${format}${redactParams}`,
+  copyText: (id: string, limit: number, order: 'asc' | 'desc', grouped: boolean, redactParams = '') =>
     request<{ text: string; count: number; total: number }>(
-      `/api/sessions/${id}/copy?limit=${limit}&order=${order}${grouped ? '&grouped=1' : ''}`,
+      `/api/sessions/${id}/copy?limit=${limit}&order=${order}${grouped ? '&grouped=1' : ''}${redactParams}`,
     ),
 
   // merged timeline across open files

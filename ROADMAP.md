@@ -49,9 +49,6 @@ desktop app is the primary target.
 - **Live filtered tail.** Keep the active query applied while tailing, so a follow
   only streams the new lines that match (`tail -f | grep`). Combines the existing
   live-tail and filtering paths into one continuously-updating filtered view.
-- **Redaction for sharing.** A toggle to mask emails, tokens, IPs, and other
-  sensitive values in the view and in screenshot / report export, so an
-  investigation can be shared without leaking secrets.
 
 ## AI access — let agents drive TraceBox
 

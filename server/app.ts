@@ -17,6 +17,7 @@ import { detectRotationGroup } from './rotation.ts';
 import { RegexParser } from './parsers.ts';
 import { QuerySyntaxError } from './queryParser.ts';
 import { CaptureError, type CaptureField } from './captureField.ts';
+import { redactorFromQuery } from './redaction.ts';
 
 export interface TraceBoxApp {
   server: Server;
@@ -474,7 +475,7 @@ export function createApp(distDir: string): TraceBoxApp {
     const limit = Number(query.get('limit') ?? 10000);
     const order = query.get('order') === 'desc' ? 'desc' : 'asc';
     const grouped = query.get('grouped') === '1';
-    sendJson(res, 200, await s.copyText(limit, order, grouped));
+    sendJson(res, 200, await s.copyText(limit, order, grouped, redactorFromQuery(query) ?? undefined));
   });
 
   router.add('GET', '/api/sessions/:id/next-match', (_req, res, params, query) => {
@@ -591,6 +592,7 @@ export function createApp(distDir: string): TraceBoxApp {
   router.add('GET', '/api/sessions/:id/export', async (_req, res, params, query) => {
     const s = getSession(params.id);
     const format = query.get('format') === 'json' ? 'json' : 'csv';
+    const mask = redactorFromQuery(query) ?? ((t: string): string => t);
     const base = path.basename(s.file).replace(/[^\w.-]/g, '_');
     res.writeHead(200, {
       'Content-Type': format === 'csv' ? 'text/csv; charset=utf-8' : 'application/json; charset=utf-8',
@@ -612,14 +614,15 @@ export function createApp(distDir: string): TraceBoxApp {
       let out = '';
       for (const row of rows) {
         const iso = row.ts !== null ? new Date(row.ts).toISOString() : '';
+        const content = mask(row.text);
         if (format === 'csv') {
-          out += `${row.lineNo + 1},${iso},${row.level ?? ''},${csvEscape(row.text)}\r\n`;
+          out += `${row.lineNo + 1},${iso},${row.level ?? ''},${csvEscape(content)}\r\n`;
         } else {
           out += `${first ? '' : ',\n'}  ${JSON.stringify({
             line: row.lineNo + 1,
             timestamp: iso || null,
             level: row.level,
-            content: row.text,
+            content,
           })}`;
           first = false;
         }

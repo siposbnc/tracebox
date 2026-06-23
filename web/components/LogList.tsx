@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { api, formatTs } from '../api';
 import { useOrder, useTz, useRowHeight, getPageJump, getPageJumpBig, type Tz } from '../settings';
+import { useRedactor } from '../redaction';
 import { useBookmarks, toggleBookmark } from '../bookmarks';
 import { matchCommand, getChord, formatChord } from '../keybindings';
 import type { RowData } from '../types';
@@ -122,6 +123,7 @@ export default function LogList({
   const order = useOrder();
   const tz = useTz();
   const rowHeight = useRowHeight();
+  const { redact } = useRedactor();
   const bookmarks = useBookmarks(file);
   const bookmarkSet = useMemo(() => new Set(bookmarks), [bookmarks]);
   const orderRef = useRef(order);
@@ -486,6 +488,7 @@ export default function LogList({
                       columnWidths={columnWidths}
                       gutterWidth={gutterWidth}
                       tz={tz}
+                      redact={redact}
                     />
                   ) : (
                     <div className="flex h-6 items-center px-3">
@@ -533,6 +536,7 @@ export default function LogList({
                     gutterWidth={gutterWidth}
                     tz={tz}
                     wrap={wrap}
+                    redact={redact}
                   />
                 ) : (
                   <div className="flex h-6 items-center px-3">
@@ -563,6 +567,7 @@ const Row = memo(function Row({
   gutterWidth,
   tz,
   wrap,
+  redact,
 }: {
   row: RowData;
   viewIndex: number;
@@ -578,14 +583,16 @@ const Row = memo(function Row({
   gutterWidth: number;
   tz: Tz;
   wrap: boolean;
+  redact: (text: string) => string;
 }) {
   const levelClass = row.level ? (LEVEL_STYLES[row.level] ?? 'bg-slate-800 text-slate-300') : '';
   const bar = row.level ? LEVEL_BAR[row.level] : undefined;
   const isMatch = highlight && row.match === true;
 
-  let content: React.ReactNode = row.text;
-  if (highlightRegex && row.text) {
-    const parts = row.text.split(highlightRegex);
+  const text = redact(row.text);
+  let content: React.ReactNode = text;
+  if (highlightRegex && text) {
+    const parts = text.split(highlightRegex);
     if (parts.length > 1) {
       content = parts.map((part, i) => (i % 2 === 1 ? <mark key={i}>{part}</mark> : part));
     }
@@ -684,6 +691,7 @@ const GridRow = memo(function GridRow({
   columnWidths,
   gutterWidth,
   tz,
+  redact,
 }: {
   row: RowData;
   viewIndex: number;
@@ -697,6 +705,7 @@ const GridRow = memo(function GridRow({
   columnWidths: Record<string, number>;
   gutterWidth: number;
   tz: Tz;
+  redact: (text: string) => string;
 }) {
   const levelClass = row.level ? (LEVEL_STYLES[row.level] ?? 'bg-slate-800 text-slate-300') : '';
   return (
@@ -738,6 +747,7 @@ const GridRow = memo(function GridRow({
       </span>
       {columns.map((c) => {
         const value = row.cols?.[c];
+        const shown = value ? redact(value) : value;
         return (
           <span key={c} className="shrink-0 truncate px-1" style={{ width: columnWidths[c] ?? COL_W }}>
             {value ? (
@@ -747,9 +757,9 @@ const GridRow = memo(function GridRow({
                   onAddFilter(`${c}:"${value.replace(/"/g, '\\"')}"`);
                 }}
                 className="max-w-full truncate text-left align-bottom text-gray-300 hover:text-sky-300 hover:underline"
-                title={`${value}\n\nClick to filter ${c} to this value`}
+                title={`${shown}\n\nClick to filter ${c} to this value`}
               >
-                {value}
+                {shown}
               </button>
             ) : (
               <span className="text-gray-700">—</span>

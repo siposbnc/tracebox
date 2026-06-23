@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useEscapeKey } from '../escStack';
 import { matchCommand } from '../keybindings';
+import { useRedactor } from '../redaction';
 
 /**
  * Magnifier button shown on hover next to a field value; opens it in the
@@ -48,6 +49,10 @@ export default function ValueViewer({
 
   useEscapeKey(onClose, 'modal');
 
+  // mask sensitive values when redaction is on (this reader is part of the view)
+  const { redact } = useRedactor();
+  const shown = useMemo(() => redact(value), [redact, value]);
+
   // case-insensitive literal search; reset the active match whenever it changes
   const regex = useMemo(() => {
     const term = search.trim();
@@ -60,7 +65,7 @@ export default function ValueViewer({
   }, [search]);
 
   // split the value into alternating [text, match, text, match, …] segments
-  const segments = useMemo(() => (regex ? value.split(regex) : [value]), [regex, value]);
+  const segments = useMemo(() => (regex ? shown.split(regex) : [shown]), [regex, shown]);
   const matchCount = regex ? (segments.length - 1) / 2 : 0;
 
   useEffect(() => {
@@ -98,7 +103,7 @@ export default function ValueViewer({
   }, [step]);
 
   const copy = (): void => {
-    void navigator.clipboard.writeText(value).then(() => {
+    void navigator.clipboard.writeText(shown).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1200);
     });

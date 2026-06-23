@@ -66,12 +66,14 @@ export default function SettingsPanel({
   onManageCache,
   onManageParsers,
   onManageMcp,
+  onManageRedaction,
 }: {
   onClose: () => void;
   onShowShortcuts: () => void;
   onManageCache: () => void;
   onManageParsers: () => void;
   onManageMcp: () => void;
+  onManageRedaction: () => void;
 }) {
   const theme = useTheme();
   const fontSize = useFontSize();
@@ -222,6 +224,15 @@ export default function SettingsPanel({
               className="rounded-md border border-edge bg-surface-2 px-3 py-1 text-xs text-gray-300 hover:text-gray-100"
             >
               Manage parsers
+            </button>
+          </Row>
+
+          <Row label="Redaction" hint="Mask emails, IPs, tokens… for sharing">
+            <button
+              onClick={onManageRedaction}
+              className="rounded-md border border-edge bg-surface-2 px-3 py-1 text-xs text-gray-300 hover:text-gray-100"
+            >
+              Configure
             </button>
           </Row>
 

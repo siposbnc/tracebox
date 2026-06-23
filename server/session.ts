@@ -1453,10 +1453,16 @@ export class LogSession extends EventEmitter {
    * in display order, capped at `limit` rows. For grouped rows this is the head
    * line; for the whole untruncated record use the detail panel.
    */
-  async copyText(limit: number, order: 'asc' | 'desc' = 'asc', grouped = false): Promise<{ text: string; count: number; total: number }> {
+  async copyText(
+    limit: number,
+    order: 'asc' | 'desc' = 'asc',
+    grouped = false,
+    redact?: (text: string) => string,
+  ): Promise<{ text: string; count: number; total: number }> {
     limit = Math.min(Math.max(limit, 1), 100_000);
     const rows = await this.getRows(0, limit, order, false, grouped);
-    return { text: rows.map((r) => r.text).join('\n'), count: rows.length, total: this.displayTotal(grouped) };
+    const mask = redact ?? ((t: string): string => t);
+    return { text: rows.map((r) => mask(r.text)).join('\n'), count: rows.length, total: this.displayTotal(grouped) };
   }
 
   async close(): Promise<void> {

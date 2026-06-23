@@ -14,6 +14,7 @@ import SettingsPanel from './components/SettingsPanel';
 import ShortcutsHelp from './components/ShortcutsHelp';
 import CachePanel from './components/CachePanel';
 import ParsersPanel from './components/ParsersPanel';
+import RedactionPanel from './components/RedactionPanel';
 import McpPanel from './components/McpPanel';
 import { Logo } from './components/Logo';
 import { saveWorkspace, useWorkspaces, type ViewState, type Workspace } from './workspaces';
@@ -45,6 +46,7 @@ export default function App() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [cacheOpen, setCacheOpen] = useState(false);
   const [parsersOpen, setParsersOpen] = useState(false);
+  const [redactionOpen, setRedactionOpen] = useState(false);
   const [mcpOpen, setMcpOpen] = useState(false);
   // pending jump from the merged timeline: open a file's tab at a specific line
   const [jumpTarget, setJumpTarget] = useState<{ id: string; lineNo: number; nonce: number } | null>(null);
@@ -617,11 +619,16 @@ export default function App() {
             setSettingsOpen(false);
             setMcpOpen(true);
           }}
+          onManageRedaction={() => {
+            setSettingsOpen(false);
+            setRedactionOpen(true);
+          }}
         />
       )}
       {shortcutsOpen && <ShortcutsHelp onClose={() => setShortcutsOpen(false)} />}
       {cacheOpen && <CachePanel onClose={() => setCacheOpen(false)} />}
       {parsersOpen && <ParsersPanel onClose={() => setParsersOpen(false)} sessionId={activeId} />}
+      {redactionOpen && <RedactionPanel onClose={() => setRedactionOpen(false)} />}
       {mcpOpen && <McpPanel onClose={() => setMcpOpen(false)} />}
 
       <WatchToasts
