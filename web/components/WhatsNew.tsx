@@ -12,17 +12,41 @@ const CATEGORY_COLOR: Record<string, string> = {
   Security: 'text-fuchsia-300',
 };
 
-/** Render inline `code` spans from a changelog bullet; everything else is plain text. */
+/**
+ * Render the inline markdown used in changelog bullets: `code`, **bold**,
+ * *italic*, and [links](url). Anything else is plain text. Code is matched first
+ * (its contents are literal); bold before italic so `**` wins over `*`.
+ */
 function renderInline(text: string): ReactNode {
-  return text.split(/(`[^`]+`)/g).map((part, i) =>
-    part.startsWith('`') && part.endsWith('`') ? (
-      <code key={i} className="rounded bg-surface-0 px-1 py-0.5 font-mono text-[0.85em] text-sky-300">
-        {part.slice(1, -1)}
-      </code>
-    ) : (
-      part
-    ),
-  );
+  return text.split(/(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*|\[[^\]]+\]\([^)]+\))/g).map((part, i) => {
+    if (!part) return null;
+    if (part.startsWith('`') && part.endsWith('`')) {
+      return (
+        <code key={i} className="rounded bg-surface-0 px-1 py-0.5 font-mono text-[0.85em] text-sky-300">
+          {part.slice(1, -1)}
+        </code>
+      );
+    }
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return (
+        <strong key={i} className="font-semibold text-gray-100">
+          {renderInline(part.slice(2, -2))}
+        </strong>
+      );
+    }
+    if (part.startsWith('*') && part.endsWith('*')) {
+      return <em key={i}>{part.slice(1, -1)}</em>;
+    }
+    const link = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(part);
+    if (link) {
+      return (
+        <a key={i} href={link[2]} target="_blank" rel="noreferrer" className="text-sky-300 underline hover:text-sky-200">
+          {link[1]}
+        </a>
+      );
+    }
+    return part;
+  });
 }
 
 export default function WhatsNew({

@@ -12,6 +12,12 @@ date and start a fresh `Unreleased` section.
 
 ## [Unreleased]
 
+### Fixed
+
+- **"What's new" renders inline markdown.** Bullet lead-ins and emphasis showed
+  raw markdown (`**bold**`, `*italic*`); they now render as bold, italic, code,
+  and links — not just `code` spans.
+
 ## [1.5.0] - 2026-06-24
 
 ### Added
