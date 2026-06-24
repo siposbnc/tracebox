@@ -12,8 +12,23 @@ date and start a fresh `Unreleased` section.
 
 ## [Unreleased]
 
+### Changed
+
+- **Columnar: the built-in columns are now first-class.** The line number, time,
+  and level columns can be hidden (Columns menu → **Built-in columns**) and
+  dragged to reorder in the grid header, just like data columns — so you can drop
+  the columns you don't need or move time/level wherever you want. Existing column
+  layouts are migrated automatically.
+
 ### Fixed
 
+- **Columnar word wrap.** Word wrap now applies in the columnar view too: cells
+  wrap within their column and the row grows to fit, instead of always clipping.
+- **Columnar time column no longer overlaps its divider.** A long timestamp is
+  clipped to the column width (or wraps, with wrap on) instead of bleeding across
+  the divider into the next column.
+- **Columnar Δt is left-aligned.** The Δt column was right-aligned while every
+  other column was left-aligned; it now lines up with the rest.
 - **"What's new" renders inline markdown.** Bullet lead-ins and emphasis showed
   raw markdown (`**bold**`, `*italic*`); they now render as bold, italic, code,
   and links — not just `code` spans.
