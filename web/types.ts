@@ -62,6 +62,63 @@ export interface HistogramData {
   withoutTs: number;
 }
 
+// ---------------------------------------------------------------------------
+// Dashboards — user-configured charts backed by the general aggregation engine
+
+/** A numeric aggregation function over a field's values. */
+export type MetricFn = 'sum' | 'avg' | 'min' | 'max' | 'p50' | 'p95';
+
+/** A general aggregation request: group + optional series split + a metric per cell. */
+export interface AggregateSpec {
+  groupBy:
+    | { type: 'time'; buckets?: number }
+    | { type: 'field'; field: string; limit?: number }
+    | { type: 'none' };
+  splitBy?: { type: 'level' } | { type: 'field'; field: string; limit?: number };
+  metric:
+    | { type: 'count' }
+    | { type: 'unique'; field: string }
+    | { type: 'numeric'; field: string; fn: MetricFn };
+}
+
+/** Tabular result of an {@link AggregateSpec}; one row per group, columns per series. */
+export interface AggregateResult {
+  groupKind: 'time' | 'field' | 'none';
+  minTs?: number;
+  maxTs?: number;
+  bucketMs?: number;
+  /** Series (split) keys, most significant first; `['__all__']` when not split. */
+  series: string[];
+  rows: { key: string | number; values: Record<string, number>; total: number }[];
+  truncated: boolean;
+}
+
+/** The series key used when an aggregation isn't split. */
+export const ALL_SERIES = '__all__';
+
+/** How a panel renders its aggregation. */
+export type ChartType = 'line' | 'area' | 'bar' | 'pie' | 'table' | 'stat';
+
+/** One configured chart on a dashboard. */
+export interface Panel {
+  id: string;
+  title: string;
+  chart: ChartType;
+  /** Scoping query for this panel ('' = whole file). */
+  query: string;
+  spec: AggregateSpec;
+  /** Grid span: 1 = half width, 2 = full width. */
+  w?: 1 | 2;
+}
+
+/** A named, reusable set of panels, runnable against any open file. */
+export interface Dashboard {
+  id: string;
+  name: string;
+  savedAt: number;
+  panels: Panel[];
+}
+
 export interface DirEntry {
   name: string;
   path: string;

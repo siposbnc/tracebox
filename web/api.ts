@@ -1,4 +1,6 @@
 import type {
+  AggregateResult,
+  AggregateSpec,
   BrowseResult,
   CacheInfo,
   ConfigInfo,
@@ -147,6 +149,12 @@ export const api = {
     request<Correlations>(`/api/sessions/${id}/correlate?limit=${limit}`),
   stats: (id: string, grouped = false) =>
     request<StatsResult>(`/api/sessions/${id}/stats${grouped ? '?grouped=1' : ''}`),
+  aggregate: (id: string, query: string, spec: AggregateSpec) =>
+    request<AggregateResult>(`/api/sessions/${id}/aggregate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query, spec }),
+    }),
   setTail: (id: string, on: boolean) =>
     request<{ tail: boolean }>(`/api/sessions/${id}/tail`, {
       method: 'POST',
