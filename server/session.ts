@@ -29,9 +29,9 @@ import {
   templateOf,
   type LogParser,
 } from './parsers.ts';
-import { IndexStore, type Facet } from './indexer.ts';
+import { IndexStore, type Facet, type AggregateSpec, type AggregateResult } from './indexer.ts';
 import { parseQuery, QuerySyntaxError, type QueryNode } from './queryParser.ts';
-import { hasPostFilter, planPostSearch } from './queryCompiler.ts';
+import { compileQuery, hasPostFilter, planPostSearch } from './queryCompiler.ts';
 import { getConfig, parsersSignature } from './config.ts';
 import { CaptureSource, type CaptureStatus } from './capture.ts';
 import {
@@ -986,6 +986,22 @@ export class LogSession extends EventEmitter {
   /** Value breakdown for one field over the current view (search results, or the whole file). */
   facet(field: string, limit?: number): ReturnType<IndexStore['facet']> {
     return this.store.facet(field, this.hasSearch, limit);
+  }
+
+  /**
+   * Run a general aggregation (dashboard panel) scoped by its own `query`,
+   * independent of the active search. An empty query covers the whole file.
+   * Panels use the pure-SQL query subset: whole-line `/regex/` and ad-hoc
+   * capture predicates need the two-phase post-filter path and are rejected.
+   */
+  aggregate(query: string, spec: AggregateSpec): AggregateResult {
+    const trimmed = query.trim();
+    const ast: QueryNode = trimmed === '' ? { type: 'all' } : parseQuery(trimmed);
+    if (hasPostFilter(ast, new Set())) {
+      throw new QuerySyntaxError('Regex and ad-hoc capture queries are not supported in dashboard panels');
+    }
+    const { where, params } = compileQuery(ast);
+    return this.store.aggregate(where, params, spec);
   }
 
   /**

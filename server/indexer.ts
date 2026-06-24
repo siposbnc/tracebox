@@ -95,6 +95,48 @@ export interface Correlations {
   }[];
 }
 
+/** A numeric aggregation function over a field's values. */
+export type MetricFn = 'sum' | 'avg' | 'min' | 'max' | 'p50' | 'p95';
+
+/**
+ * A general aggregation request: group rows into buckets, optionally split each
+ * bucket into series, and compute one metric per cell. Backs every dashboard
+ * chart type — the histogram, facet, and numeric-facet aggregations are special
+ * cases of this shape.
+ */
+export interface AggregateSpec {
+  /** The x-axis: time buckets, the top values of a field, or no grouping (one cell). */
+  groupBy:
+    | { type: 'time'; buckets?: number }
+    | { type: 'field'; field: string; limit?: number }
+    | { type: 'none' };
+  /** Optional series split within each group (stacked/multi-series charts). */
+  splitBy?: { type: 'level' } | { type: 'field'; field: string; limit?: number };
+  /** The y-value per cell. */
+  metric:
+    | { type: 'count' }
+    | { type: 'unique'; field: string }
+    | { type: 'numeric'; field: string; fn: MetricFn };
+}
+
+/** The tabular result of an {@link AggregateSpec}; one row per group, columns per series. */
+export interface AggregateResult {
+  groupKind: 'time' | 'field' | 'none';
+  /** Present when `groupKind === 'time'`: the bucket geometry, as in {@link Histogram}. */
+  minTs?: number;
+  maxTs?: number;
+  bucketMs?: number;
+  /** Series (split) keys present, most significant first; `['__all__']` when not split. */
+  series: string[];
+  /** One row per group: `key` is a bucket-start ts (time), field value, or '' (none). */
+  rows: { key: string | number; values: Record<string, number>; total: number }[];
+  /** Whether the group or series top-N limit dropped some buckets/series. */
+  truncated: boolean;
+}
+
+/** Sentinel series key used when an aggregation isn't split into series. */
+export const ALL_SERIES = '__all__';
+
 /**
  * SQLite-backed search index for one log file. Stores per-line metadata
  * (timestamp, level), an FTS5 full-text index, and a key/value fields table.
@@ -737,6 +779,176 @@ export class IndexStore {
     for (const r of rows) counts[r.b] = r.count;
     out.buckets = counts.map((count, i) => ({ lo: lo + i * width, hi: i === buckets - 1 ? hi : lo + (i + 1) * width, count }));
     return out;
+  }
+
+  /**
+   * General aggregation engine: group the lines matched by a compiled query into
+   * buckets (time / field value / none), optionally split each into series, and
+   * compute one metric per cell. The single engine behind every dashboard panel;
+   * generalizes {@link histogram} (time + count + level split) and {@link facet}
+   * (field + count). Runs entirely over the index — never touches the shared
+   * `results` table, so it doesn't disturb the active search.
+   *
+   * `where`/`params` are the compiled scoping query (alias `l` = `lines`).
+   */
+  aggregate(where: string, params: (string | number)[], spec: AggregateSpec): AggregateResult {
+    const GROUP_LIMIT = 20;
+    const SERIES_LIMIT = 12;
+    const joins: string[] = [];
+    const joinParams: (string | number)[] = [];
+    const conds: string[] = [`(${where})`];
+
+    // ---- group dimension (x-axis) -----------------------------------------
+    let groupExpr: string;
+    let groupKind: AggregateResult['groupKind'];
+    let lo = 0;
+    let hi = 0;
+    let bucketMs = 1;
+    if (spec.groupBy.type === 'time') {
+      groupKind = 'time';
+      const range = this.db
+        .prepare(`SELECT MIN(l.ts) AS lo, MAX(l.ts) AS hi FROM lines l WHERE (${where}) AND l.ts IS NOT NULL`)
+        .get(...params) as { lo: number | null; hi: number | null };
+      if (range.lo === null || range.hi === null) {
+        return { groupKind, minTs: 0, maxTs: 0, bucketMs: 1, series: [], rows: [], truncated: false };
+      }
+      lo = range.lo;
+      hi = range.hi;
+      const bucketCount = Math.min(Math.max(Math.floor(spec.groupBy.buckets ?? 100) || 100, 10), 1000);
+      const span = Math.max(1, hi - lo);
+      // +1 so the maximum timestamp can't land one bucket past the last index (see histogram()).
+      bucketMs = Math.max(1, Math.floor(span / bucketCount) + 1);
+      groupExpr = `CAST((l.ts - ${lo}) / ${bucketMs} AS INTEGER)`;
+      conds.push('l.ts IS NOT NULL');
+    } else if (spec.groupBy.type === 'field') {
+      groupKind = 'field';
+      joins.push('JOIN fields fg ON fg.line_no = l.line_no AND fg.key = ?');
+      joinParams.push(spec.groupBy.field);
+      groupExpr = 'fg.value';
+    } else {
+      groupKind = 'none';
+      groupExpr = '0';
+    }
+
+    // ---- series split -----------------------------------------------------
+    let splitExpr = `'${ALL_SERIES}'`;
+    if (spec.splitBy) {
+      if (spec.splitBy.type === 'level') {
+        splitExpr = `COALESCE(l.level, 'NONE')`;
+      } else {
+        joins.push('LEFT JOIN fields fs ON fs.line_no = l.line_no AND fs.key = ?');
+        joinParams.push(spec.splitBy.field);
+        splitExpr = `COALESCE(fs.value, '(none)')`;
+      }
+    }
+
+    // ---- metric + run -----------------------------------------------------
+    const m = spec.metric;
+    let raw: { gk: string | number | null; sk: string; m: number | null }[];
+    if (m.type === 'numeric' && (m.fn === 'p50' || m.fn === 'p95')) {
+      // Per-cell percentile via a window CTE (one query): rank the values within
+      // each (group, series) partition and pick the row at the quantile offset.
+      joins.push('JOIN fields fm ON fm.line_no = l.line_no AND fm.key = ?');
+      joinParams.push(m.field);
+      conds.push('fm.num IS NOT NULL');
+      const q = m.fn === 'p50' ? 0.5 : 0.95;
+      const sql = `
+        WITH base AS (
+          SELECT ${groupExpr} AS gk, ${splitExpr} AS sk, fm.num AS v
+          FROM lines l ${joins.join(' ')}
+          WHERE ${conds.join(' AND ')}
+        ), ranked AS (
+          SELECT gk, sk, v,
+                 ROW_NUMBER() OVER (PARTITION BY gk, sk ORDER BY v) AS rn,
+                 COUNT(*) OVER (PARTITION BY gk, sk) AS cnt
+          FROM base
+        )
+        SELECT gk, sk, MAX(CASE WHEN rn = CAST(${q} * (cnt - 1) + 0.5 AS INTEGER) + 1 THEN v END) AS m
+        FROM ranked GROUP BY gk, sk`;
+      raw = this.db.prepare(sql).all(...joinParams, ...params) as typeof raw;
+    } else {
+      let metricExpr: string;
+      if (m.type === 'count') {
+        metricExpr = 'COUNT(*)';
+      } else if (m.type === 'unique') {
+        joins.push('JOIN fields fm ON fm.line_no = l.line_no AND fm.key = ?');
+        joinParams.push(m.field);
+        metricExpr = 'COUNT(DISTINCT fm.value)';
+      } else {
+        joins.push('JOIN fields fm ON fm.line_no = l.line_no AND fm.key = ?');
+        joinParams.push(m.field);
+        conds.push('fm.num IS NOT NULL');
+        const fn = { sum: 'SUM', avg: 'AVG', min: 'MIN', max: 'MAX' }[m.fn as 'sum' | 'avg' | 'min' | 'max'];
+        metricExpr = `${fn}(fm.num)`;
+      }
+      const sql = `SELECT ${groupExpr} AS gk, ${splitExpr} AS sk, ${metricExpr} AS m
+        FROM lines l ${joins.join(' ')}
+        WHERE ${conds.join(' AND ')}
+        GROUP BY gk, sk`;
+      raw = this.db.prepare(sql).all(...joinParams, ...params) as typeof raw;
+    }
+
+    // ---- assemble: cells, then top-N groups & series ----------------------
+    const cells = new Map<string, Map<string, number>>();
+    const groupTotals = new Map<string, number>();
+    const seriesTotals = new Map<string, number>();
+    for (const r of raw) {
+      const gk = String(r.gk);
+      const val = r.m ?? 0;
+      let cell = cells.get(gk);
+      if (!cell) {
+        cell = new Map();
+        cells.set(gk, cell);
+      }
+      cell.set(r.sk, val);
+      groupTotals.set(gk, (groupTotals.get(gk) ?? 0) + val);
+      seriesTotals.set(r.sk, (seriesTotals.get(r.sk) ?? 0) + val);
+    }
+
+    let truncated = false;
+    let series: string[];
+    if (!spec.splitBy) {
+      series = [ALL_SERIES];
+    } else {
+      const limit = spec.splitBy.type === 'field' ? spec.splitBy.limit ?? SERIES_LIMIT : 50;
+      const sorted = [...seriesTotals.entries()].sort((a, b) => b[1] - a[1]).map(([k]) => k);
+      series = sorted.slice(0, limit);
+      if (sorted.length > series.length) truncated = true;
+    }
+    const seriesSet = new Set(series);
+
+    let groupKeys: string[];
+    if (groupKind === 'time') {
+      groupKeys = [...cells.keys()].sort((a, b) => Number(a) - Number(b));
+    } else if (groupKind === 'field') {
+      const limit = spec.groupBy.type === 'field' ? spec.groupBy.limit ?? GROUP_LIMIT : GROUP_LIMIT;
+      const sorted = [...groupTotals.entries()].sort((a, b) => b[1] - a[1]).map(([k]) => k);
+      groupKeys = sorted.slice(0, limit);
+      if (sorted.length > groupKeys.length) truncated = true;
+    } else {
+      groupKeys = [...cells.keys()];
+    }
+
+    const rows = groupKeys.map((gk) => {
+      const cell = cells.get(gk)!;
+      const values: Record<string, number> = {};
+      let total = 0;
+      for (const [sk, v] of cell) {
+        if (!seriesSet.has(sk)) continue;
+        values[sk] = v;
+        total += v;
+      }
+      const key = groupKind === 'time' ? lo + Number(gk) * bucketMs : groupKind === 'none' ? '' : gk;
+      return { key, values, total };
+    });
+
+    const result: AggregateResult = { groupKind, series, rows, truncated };
+    if (groupKind === 'time') {
+      result.minTs = lo;
+      result.maxTs = hi;
+      result.bucketMs = bucketMs;
+    }
+    return result;
   }
 
   /**

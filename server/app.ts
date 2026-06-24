@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { Router, sendJson, readJsonBody, serveStatic, SseConnection } from './http.ts';
 import { LogSession, indexCacheDir } from './session.ts';
+import type { AggregateSpec } from './indexer.ts';
 import { CaptureSource } from './capture.ts';
 import { MergedTimeline } from './merged.ts';
 import { listCache, evictCache, clearCache, pruneStaleCache, sweepCaptureFiles } from './cache.ts';
@@ -24,6 +25,26 @@ export interface TraceBoxApp {
   sessions: Map<string, LogSession>;
   /** Close all open sessions and the HTTP server. */
   shutdown(): Promise<void>;
+}
+
+const METRIC_FNS = new Set(['sum', 'avg', 'min', 'max', 'p50', 'p95']);
+
+/** Validate an aggregate spec from an untrusted request body; returns an error message or null. */
+function validateAggregateSpec(spec: AggregateSpec | undefined): string | null {
+  if (!spec || typeof spec !== 'object') return 'Missing "spec"';
+  const g = spec.groupBy;
+  if (!g || (g.type !== 'time' && g.type !== 'field' && g.type !== 'none')) return 'Invalid groupBy';
+  if (g.type === 'field' && !g.field) return 'groupBy field requires a "field"';
+  if (spec.splitBy) {
+    const sb = spec.splitBy;
+    if (sb.type !== 'level' && sb.type !== 'field') return 'Invalid splitBy';
+    if (sb.type === 'field' && !sb.field) return 'splitBy field requires a "field"';
+  }
+  const m = spec.metric;
+  if (!m || (m.type !== 'count' && m.type !== 'unique' && m.type !== 'numeric')) return 'Invalid metric';
+  if (m.type === 'unique' && !m.field) return 'unique metric requires a "field"';
+  if (m.type === 'numeric' && (!m.field || !METRIC_FNS.has(m.fn))) return 'numeric metric requires a "field" and valid "fn"';
+  return null;
 }
 
 /**
@@ -407,6 +428,22 @@ export function createApp(distDir: string): TraceBoxApp {
 
   router.add('GET', '/api/sessions/:id/stats', (_req, res, params, query) => {
     sendJson(res, 200, getSession(params.id).stats(query.get('grouped') === '1'));
+  });
+
+  router.add('POST', '/api/sessions/:id/aggregate', async (req, res, params) => {
+    const s = getSession(params.id);
+    const body = (await readJsonBody(req)) as { query?: string; spec?: AggregateSpec };
+    const err = validateAggregateSpec(body.spec);
+    if (err) {
+      sendJson(res, 400, { error: err });
+      return;
+    }
+    try {
+      sendJson(res, 200, s.aggregate(body.query ?? '', body.spec as AggregateSpec));
+    } catch (e) {
+      if (e instanceof QuerySyntaxError) sendJson(res, 400, { error: e.message });
+      else throw e;
+    }
   });
 
   // ---------------------------------------------------------------------------
