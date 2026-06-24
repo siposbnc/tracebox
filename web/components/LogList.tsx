@@ -462,15 +462,29 @@ export default function LogList({
   };
 
   const widthOf = useCallback((c: string): number => columnWidths[c] ?? defaultColWidth(c), [columnWidths]);
-  // The line-number column is sized in ch (to fit the largest number); every other
-  // column is a pixel width. Δt is glued to the time column, so it only shows when
-  // time is visible.
+  // CSS width for styling a column. Every column is a stored/default pixel width,
+  // except the line number, which defaults to a ch width that fits its digit count
+  // (until the user resizes it, after which a pixel override applies like the rest).
+  const colWidth = useCallback(
+    (c: string): string | number => {
+      const stored = columnWidths[c];
+      if (stored != null) return stored;
+      if (c === LINE_COL) return `${gutterWidth + 1}ch`;
+      return defaultColWidth(c);
+    },
+    [columnWidths, gutterWidth],
+  );
+  // Δt is glued to the time column, so it only shows when time is visible.
   const timeShown = columns.includes(TIME_COL);
   const deltaShown = deltaColumn && timeShown;
-  const lineCh = gutterWidth + 1;
+  const lineStored = columnWidths[LINE_COL];
   const colsPx = columns.filter((c) => c !== LINE_COL).reduce((sum, c) => sum + widthOf(c), 0);
-  // 16px bookmark gutter + 12px right padding; the line column (if shown) adds its ch width.
-  const gridMinWidth = `calc(${columns.includes(LINE_COL) ? `${lineCh}ch + ` : ''}${16 + 12 + colsPx + (deltaShown ? DELTA_W : 0)}px)`;
+  // 16px bookmark gutter + 12px right padding; the line column (if shown) adds its
+  // stored px width, or its ch default when never resized.
+  const lineCssPart = columns.includes(LINE_COL)
+    ? `${lineStored != null ? `${lineStored}px` : `${gutterWidth + 1}ch`} + `
+    : '';
+  const gridMinWidth = `calc(${lineCssPart}${16 + 12 + colsPx + (deltaShown ? DELTA_W : 0)}px)`;
 
   return (
     <div
@@ -501,8 +515,7 @@ export default function LogList({
         <div style={{ minWidth: gridMinWidth }}>
           <GridHeader
             columns={columns}
-            widthOf={widthOf}
-            gutterWidth={gutterWidth}
+            colWidth={colWidth}
             showDelta={deltaShown}
             onResize={onColumnResize}
             onReorder={onReorderColumns}
@@ -535,8 +548,7 @@ export default function LogList({
                       onAddFilter={onAddFilter}
                       onToggleBookmark={() => toggleBookmark(file, row.lineNo)}
                       columns={columns}
-                      widthOf={widthOf}
-                      gutterWidth={gutterWidth}
+                      colWidth={colWidth}
                       tz={tz}
                       redact={redact}
                       wrap={wrap}
@@ -759,8 +771,7 @@ const GridRow = memo(function GridRow({
   onAddFilter,
   onToggleBookmark,
   columns,
-  widthOf,
-  gutterWidth,
+  colWidth,
   tz,
   redact,
   wrap,
@@ -776,8 +787,7 @@ const GridRow = memo(function GridRow({
   onAddFilter: (clause: string) => void;
   onToggleBookmark: () => void;
   columns: string[];
-  widthOf: (c: string) => number;
-  gutterWidth: number;
+  colWidth: (c: string) => string | number;
   tz: Tz;
   redact: (text: string) => string;
   wrap: boolean;
@@ -798,7 +808,7 @@ const GridRow = memo(function GridRow({
         <span
           key={c}
           className={`flex shrink-0 select-none ${align} justify-end pl-2 pr-1.5 text-[11px] text-gray-600 ${divider}`}
-          style={{ width: `${gutterWidth + 1}ch` }}
+          style={{ width: colWidth(c) }}
         >
           {row.lineNo + 1}
         </span>
@@ -809,7 +819,7 @@ const GridRow = memo(function GridRow({
         <span
           key={c}
           className={`flex shrink-0 ${align} overflow-hidden pl-2 pr-1 text-xs text-gray-500 ${divider}`}
-          style={{ width: widthOf(c) }}
+          style={{ width: colWidth(c) }}
         >
           <span className={`min-w-0 ${wrap ? 'break-all' : 'truncate'}`}>{formatTs(row.ts, tz)}</span>
         </span>
@@ -829,7 +839,7 @@ const GridRow = memo(function GridRow({
     }
     if (c === LEVEL_COL) {
       return (
-        <span key={c} className={`flex shrink-0 ${align} pl-2 ${divider}`} style={{ width: widthOf(c) }}>
+        <span key={c} className={`flex shrink-0 ${align} pl-2 ${divider}`} style={{ width: colWidth(c) }}>
           {row.level && (
             <span className={`rounded px-1 text-[10px] font-semibold leading-4 ${levelClass}`}>{row.level}</span>
           )}
@@ -842,7 +852,7 @@ const GridRow = memo(function GridRow({
       <span
         key={c}
         className={`flex shrink-0 ${align} ${wrap ? '' : 'overflow-hidden'} pl-2 pr-1 ${divider}`}
-        style={{ width: widthOf(c) }}
+        style={{ width: colWidth(c) }}
       >
         {value ? (
           <button
@@ -898,19 +908,17 @@ const GridRow = memo(function GridRow({
 });
 
 /** Columnar header: every column — the built-in #/time/level and the data fields —
- *  can be dragged to reorder and (except the line number) resized by dragging its
- *  right edge; widths and order persist per file. Δt rides along beside `time`. */
+ *  can be dragged to reorder and resized by dragging its right edge; widths and
+ *  order persist per file. Δt rides along beside `time`. */
 function GridHeader({
   columns,
-  widthOf,
-  gutterWidth,
+  colWidth,
   showDelta,
   onResize,
   onReorder,
 }: {
   columns: string[];
-  widthOf: (c: string) => number;
-  gutterWidth: number;
+  colWidth: (c: string) => string | number;
   showDelta: boolean;
   onResize: (col: string, width: number) => void;
   onReorder: (cols: string[]) => void;
@@ -924,7 +932,11 @@ function GridHeader({
     e.stopPropagation();
     resizing.current = true;
     const startX = e.clientX;
-    const startW = widthOf(col);
+    // Measure the column's current rendered width from the DOM (the resize handle's
+    // parent is the column cell), so this works whether the width is a px override
+    // or the line column's ch default — no ch→px conversion needed.
+    const cell = (e.currentTarget as HTMLElement).parentElement;
+    const startW = cell ? cell.getBoundingClientRect().width : 0;
     const onMove = (m: MouseEvent): void => onResize(col, startW + (m.clientX - startX));
     const onUp = (): void => {
       resizing.current = false;
@@ -952,17 +964,16 @@ function GridHeader({
   // label, drop indicator, and (for resizable columns) a right-edge resize handle.
   const headerCell = (c: string, first: boolean): React.ReactNode => {
     const isLine = c === LINE_COL;
-    const style = isLine ? { width: `${gutterWidth + 1}ch` } : { width: widthOf(c) };
     return (
       <div
         key={c}
-        // The line column's width is in `ch`, so this wrapper must carry the same
-        // font as the row's line cell (mono, 11px) or 1ch differs and every divider
-        // after it drifts out of alignment with the rows.
+        // The line column defaults to a `ch` width, so this wrapper must carry the
+        // same font as the row's line cell (mono, 11px) or 1ch differs and every
+        // divider after it drifts out of alignment with the rows.
         className={`group/col relative flex shrink-0 items-stretch ${first ? '' : COL_DIVIDER} ${
           isLine ? 'font-mono text-[11px]' : ''
         } ${dragOver === c ? 'bg-sky-500/15' : ''}`}
-        style={style}
+        style={{ width: colWidth(c) }}
         onDragOver={(e) => {
           e.preventDefault();
           if (dragCol.current && dragCol.current !== c && dragOver !== c) setDragOver(c);
@@ -1003,19 +1014,16 @@ function GridHeader({
             {columnLabel(c)}
           </span>
         </span>
-        {/* line numbers are content-sized, so only data/time/level columns resize.
-            The handle is a wide hit zone straddling the right edge, with a line that
+        {/* resize handle: a wide hit zone straddling the right edge, with a line that
             brightens on hover so the grab point is easy to find. */}
-        {!isLine && (
-          <span
-            onMouseDown={(e) => startResize(c, e)}
-            onClick={(e) => e.stopPropagation()}
-            title="Drag to resize this column"
-            className="group/rs absolute -right-1.5 top-0 z-20 flex h-full w-3 cursor-col-resize items-center justify-center"
-          >
-            <span className="h-full w-0.5 bg-transparent transition-colors group-hover/rs:bg-sky-400" />
-          </span>
-        )}
+        <span
+          onMouseDown={(e) => startResize(c, e)}
+          onClick={(e) => e.stopPropagation()}
+          title="Drag to resize this column"
+          className="group/rs absolute -right-1.5 top-0 z-20 flex h-full w-3 cursor-col-resize items-center justify-center"
+        >
+          <span className="h-full w-0.5 bg-transparent transition-colors group-hover/rs:bg-sky-400" />
+        </span>
       </div>
     );
   };

@@ -15,10 +15,10 @@ date and start a fresh `Unreleased` section.
 ### Changed
 
 - **Columnar: the built-in columns are now first-class.** The line number, time,
-  and level columns can be hidden (Columns menu → **Built-in columns**) and
-  dragged to reorder in the grid header, just like data columns — so you can drop
-  the columns you don't need or move time/level wherever you want. Existing column
-  layouts are migrated automatically.
+  and level columns can be hidden (Columns menu → **Built-in columns**), dragged to
+  reorder, and resized in the grid header, just like data columns — so you can drop
+  the columns you don't need or move time/level wherever you want. The line-number
+  column is now resizable too. Existing column layouts are migrated automatically.
 
 ### Fixed
 
