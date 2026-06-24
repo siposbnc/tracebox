@@ -956,9 +956,12 @@ function GridHeader({
     return (
       <div
         key={c}
+        // The line column's width is in `ch`, so this wrapper must carry the same
+        // font as the row's line cell (mono, 11px) or 1ch differs and every divider
+        // after it drifts out of alignment with the rows.
         className={`group/col relative flex shrink-0 items-stretch ${first ? '' : COL_DIVIDER} ${
-          dragOver === c ? 'bg-sky-500/15' : ''
-        }`}
+          isLine ? 'font-mono text-[11px]' : ''
+        } ${dragOver === c ? 'bg-sky-500/15' : ''}`}
         style={style}
         onDragOver={(e) => {
           e.preventDefault();
