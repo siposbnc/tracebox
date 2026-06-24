@@ -60,7 +60,7 @@ test('initialize negotiates protocol and advertises the tool capability', async 
 test('tools/list exposes the toolkit', async () => {
   const res = await rpc('tools/list');
   const names = res.result.tools.map((t: any) => t.name);
-  for (const expected of ['open_log', 'list_sessions', 'close_log', 'search', 'table', 'get_lines', 'get_context', 'get_record', 'fields', 'facet', 'stats', 'histogram', 'clusters', 'build_report', 'list_parsers', 'test_parser', 'add_parser', 'remove_parser']) {
+  for (const expected of ['open_log', 'list_sessions', 'close_log', 'search', 'table', 'get_lines', 'get_context', 'get_record', 'fields', 'facet', 'stats', 'histogram', 'aggregate', 'clusters', 'build_report', 'list_parsers', 'test_parser', 'add_parser', 'remove_parser']) {
     assert.ok(names.includes(expected), `missing tool ${expected}`);
   }
   // every tool has a JSON-schema input
@@ -245,6 +245,38 @@ test('histogram caps the number of buckets it returns', async () => {
 
   const dflt = await call('histogram', { sessionId });
   assert.ok(dflt.buckets.length <= 50, `default should cap at 50, got ${dflt.buckets.length}`);
+
+  await call('close_log', { sessionId });
+});
+
+test('aggregate groups, splits, scopes, and computes metrics over the index', async () => {
+  const file = makeLog('agg.log', appLogLines(120)); // status=500 on even i (60), 200 on odd i (60); took=i%900=i
+  const opened = await call('open_log', { path: file });
+  const sessionId = opened.sessionId;
+
+  // count grouped by a field value, whole file
+  const byStatus = await call('aggregate', { sessionId, query: '', groupBy: 'field', groupField: 'status', metric: 'count' });
+  assert.equal(byStatus.groupKind, 'field');
+  const counts = Object.fromEntries(byStatus.rows.map((r: any) => [r.key, r.total]));
+  assert.equal(counts['200'], 60);
+  assert.equal(counts['500'], 60);
+
+  // single-stat numeric, scoped by query (max of took over status:500 lines = even i, max 118)
+  const mx = await call('aggregate', { sessionId, query: 'status:500', groupBy: 'none', metric: 'max', metricField: 'took' });
+  assert.equal(mx.rows[0].total, 118);
+
+  // time grouping returns ISO bucket keys covering every line
+  const overTime = await call('aggregate', { sessionId, query: '', groupBy: 'time', buckets: 10, metric: 'count' });
+  assert.equal(overTime.groupKind, 'time');
+  assert.ok(!Number.isNaN(Date.parse(overTime.rows[0].key)));
+  assert.equal(overTime.rows.reduce((a: number, r: any) => a + r.total, 0), 120);
+
+  // split into series by level
+  const split = await call('aggregate', { sessionId, query: '', groupBy: 'field', groupField: 'status', split: 'level', metric: 'count' });
+  assert.ok(split.series.length >= 1);
+
+  // regex scoping query is rejected
+  await assert.rejects(call('aggregate', { sessionId, query: '/request/', groupBy: 'none', metric: 'count' }));
 
   await call('close_log', { sessionId });
 });

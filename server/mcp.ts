@@ -7,6 +7,7 @@ import { RegexParser } from './parsers.ts';
 import { addParser, getConfig, removeParser, validateParser } from './config.ts';
 import { renderReportMarkdown, renderReportHtml, type ReportSection } from './report.ts';
 import type { RowData } from './session.ts';
+import type { AggregateSpec, MetricFn } from './indexer.ts';
 
 /**
  * Hand-rolled Model Context Protocol (MCP) server exposing TraceBox's index and
@@ -637,6 +638,74 @@ export class McpServer {
             bucketMs: h.bucketMs,
             withoutTs: h.withoutTs,
             buckets: h.buckets.map((b) => ({ start: new Date(b.start).toISOString(), total: b.total, counts: b.counts })),
+          };
+        },
+      },
+
+      {
+        name: 'aggregate',
+        description:
+          'General aggregation — the one engine behind every dashboard chart. Group log lines into time buckets, a field\'s top ' +
+          'values, or a single overall cell; optionally split each group into series; and compute a metric per cell: count, ' +
+          'unique (distinct count of a field), or a numeric field with sum/avg/min/max/p50/p95. Scope it with query ' +
+          '(query:"" or omit for the whole file). Runs over the index without disturbing the active search. Regex/capture ' +
+          'scoping queries are not supported.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            sessionId: prop('string', 'The session.'),
+            query: prop('string', 'Optional scoping query (query language). Omit or "" for the whole file.'),
+            groupBy: prop('string', 'X-axis grouping.', { enum: ['time', 'field', 'none'], default: 'none' }),
+            groupField: prop('string', 'Field to group by when groupBy="field" (e.g. status, service, host).'),
+            buckets: prop('integer', 'Number of time buckets when groupBy="time" (10–1000).', { default: 100 }),
+            metric: prop('string', 'Value per cell.', {
+              enum: ['count', 'unique', 'sum', 'avg', 'min', 'max', 'p50', 'p95'],
+              default: 'count',
+            }),
+            metricField: prop('string', 'Field for the metric (required unless metric="count"; numeric fns need a numeric field).'),
+            split: prop('string', 'Optional series split: "level" or a field name. Omit for one series.'),
+          },
+          required: ['sessionId'],
+        },
+        handler: async (args) => {
+          const s = this.getSession(args);
+          const must = (v: string, name: string): string => {
+            if (!v) throw new ToolError(`Missing "${name}"`);
+            return v;
+          };
+          const gb = str(args.groupBy) || 'none';
+          const groupBy: AggregateSpec['groupBy'] =
+            gb === 'time'
+              ? { type: 'time', buckets: intArg(args.buckets, 100, 10) }
+              : gb === 'field'
+                ? { type: 'field', field: must(str(args.groupField), 'groupField') }
+                : { type: 'none' };
+          const mt = str(args.metric) || 'count';
+          const metric: AggregateSpec['metric'] =
+            mt === 'count'
+              ? { type: 'count' }
+              : mt === 'unique'
+                ? { type: 'unique', field: must(str(args.metricField), 'metricField') }
+                : { type: 'numeric', field: must(str(args.metricField), 'metricField'), fn: mt as MetricFn };
+          const split = str(args.split);
+          const splitBy: AggregateSpec['splitBy'] = !split
+            ? undefined
+            : split === 'level'
+              ? { type: 'level' }
+              : { type: 'field', field: split };
+          const r = s.aggregate(str(args.query), { groupBy, splitBy, metric });
+          return {
+            groupKind: r.groupKind,
+            ...(r.groupKind === 'time'
+              ? { minTs: new Date(r.minTs!).toISOString(), maxTs: new Date(r.maxTs!).toISOString(), bucketMs: r.bucketMs }
+              : {}),
+            series: r.series,
+            truncated: r.truncated,
+            rows: r.rows.map((row) => ({
+              key: r.groupKind === 'time' ? new Date(Number(row.key)).toISOString() : row.key,
+              values: row.values,
+              total: row.total,
+            })),
           };
         },
       },

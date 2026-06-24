@@ -75,6 +75,7 @@ run with `--allow` for dev). Tools:
 | `fields` | Detected structured fields with counts |
 | `facet` | Value breakdown for a field over the current view |
 | `stats` / `histogram` / `clusters` | Summary metrics, time-volume histogram, and top log patterns |
+| `aggregate` | General group-by (time / field / none) + optional series split + metric (count / unique / numeric sum·avg·min·max·p50·p95), scoped by a query — the engine behind dashboard panels |
 | `test_parser` / `add_parser` / `remove_parser` / `list_parsers` | Build, save, and manage user-defined parsers |
 | `build_report` | Assemble a Markdown or HTML report; cited line numbers are filled with the real indexed lines |
 
