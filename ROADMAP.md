@@ -31,12 +31,32 @@ desktop app is the primary target.
   level) down one axis, time across the other, each cell shaded by count — so you
   can see *which* value started spiking *when*. Fuses the histogram and faceting
   code; bucket on the server so it holds up on big files.
+- **Annotated histogram lane.** Today the histogram only shows stacked per-level
+  *volume*. Add a marker lane beneath it: ticks for bookmarks and watch-rule hits
+  along the timeline, click-to-jump. Turns the histogram from a read-only chart
+  into a navigation surface, reusing the existing time-bucket math.
+- **Dashboards — user-configured diagrams.** A Kibana-style visualization builder:
+  let the user assemble a panel of charts they define themselves — pick a chart
+  type (line / bar / stacked area / pie / table / single-stat), a metric
+  (count, or a numeric field with p50/p95/sum/avg), a bucket (time, or a faceted
+  field), and a scoping query per panel. Saved with the workspace and re-runnable
+  on reopen. Big feature: needs a server-side aggregation endpoint general enough
+  to back any panel (group-by + bucket + metric, computed over the index so it
+  holds on multi-GB files), a panel-config model, and a chart-rendering layer in
+  the UI. Builds on the histogram, faceting, numeric-trend, and stats code rather
+  than starting from scratch — those become special cases of one engine.
 
 ## Workflow — keep an investigation
 
 - **Richer workspaces.** Saved workspaces capture the open files and their searches
   today; also persist the column layout and open-panel state so a workspace
   restores the full view, not just the filters.
+- **Line tags & group-by-tag.** Bookmarks today are a single on/off flag plus a
+  note. Add a categorization layer on top: apply multiple named, colored tags to
+  lines (or to a whole pattern/cluster at once), then filter or group the view by
+  tag. Lets you organize a long incident dig — "auth-related", "suspect",
+  "root-cause" — instead of one undifferentiated bookmark list. Persisted per file
+  alongside bookmarks; surfaces as a tag filter and a group-by-tag view.
 
 ## AI access — let agents drive TraceBox
 
