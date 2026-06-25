@@ -11,3 +11,4 @@ certs/
 *.pfx
 *.p12
 *.b64.txt
+.playwright-mcp/

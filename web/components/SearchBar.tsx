@@ -73,6 +73,8 @@ export default function SearchBar({
   onToggleClusters,
   statsOpen,
   onToggleStats,
+  dashboardOpen,
+  onToggleDashboard,
   watchOpen,
   onToggleWatch,
   watchUnseen,
@@ -121,6 +123,8 @@ export default function SearchBar({
   onToggleClusters: () => void;
   statsOpen: boolean;
   onToggleStats: () => void;
+  dashboardOpen: boolean;
+  onToggleDashboard: () => void;
   watchOpen: boolean;
   onToggleWatch: () => void;
   /** Number of watch-rule alerts not yet seen (drives the toolbar badge). */
@@ -546,6 +550,12 @@ export default function SearchBar({
           <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M21 12a9 9 0 1 1-9-9v9z" />
             <path d="M21 8a9 9 0 0 0-4-4" />
+          </svg>
+        </button>
+        <button onClick={onToggleDashboard} className={toolCls(dashboardOpen)} title="Dashboards — user-configured charts">
+          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <rect x="3" y="3" width="7" height="9" rx="1" /><rect x="14" y="3" width="7" height="5" rx="1" />
+            <rect x="14" y="12" width="7" height="9" rx="1" /><rect x="3" y="16" width="7" height="5" rx="1" />
           </svg>
         </button>
         <button
