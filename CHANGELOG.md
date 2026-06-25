@@ -12,6 +12,8 @@ date and start a fresh `Unreleased` section.
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-06-25
+
 ### Added
 
 - **Dashboards.** A new toolbar view turns the main area into a grid of

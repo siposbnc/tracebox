@@ -3,6 +3,34 @@ import type { PatchNote } from './types';
 
 export const patchNotes: PatchNote[] = [
   {
+    "version": "1.6.0",
+    "date": "2026-06-25",
+    "sections": [
+      {
+        "title": "Added",
+        "items": [
+          "**Dashboards.** A new toolbar view turns the main area into a grid of user-configured charts. Each panel picks a chart type (line, area, bar, pie, table, or single-stat), a metric (count, unique count, or a numeric field with sum/avg/min/max/p50/p95), a grouping (time buckets, a field's top values, or none), an optional series split (by level or a field), and its own scoping query — all computed server-side over the index so it holds on multi-gigabyte files. Dashboards are saved by name and re-runnable against any open file. Backed by one general aggregation engine, also exposed to AI agents as an `aggregate` MCP tool."
+        ]
+      },
+      {
+        "title": "Changed",
+        "items": [
+          "**Columnar: the built-in columns are now first-class.** The line number, time, and level columns can be hidden (Columns menu → **Built-in columns**), dragged to reorder, and resized in the grid header, just like data columns — so you can drop the columns you don't need or move time/level wherever you want. The line-number column is now resizable too. Existing column layouts are migrated automatically."
+        ]
+      },
+      {
+        "title": "Fixed",
+        "items": [
+          "**Live tail no longer flashes the rows.** Following a busy live source (a command like `docker logs`, or stdin) refreshed the visible rows on every append, blanking them to placeholders for a frame before they reappeared — a constant, distracting flicker. Appended data now refetches the affected rows in place, leaving the current lines on screen until the fresh ones replace them.",
+          "**Columnar word wrap.** Word wrap now applies in the columnar view too: cells wrap within their column and the row grows to fit, instead of always clipping.",
+          "**Columnar time column no longer overlaps its divider.** A long timestamp is clipped to the column width (or wraps, with wrap on) instead of bleeding across the divider into the next column.",
+          "**Columnar Δt is left-aligned.** The Δt column was right-aligned while every other column was left-aligned; it now lines up with the rest.",
+          "**\"What's new\" renders inline markdown.** Bullet lead-ins and emphasis showed raw markdown (`**bold**`, `*italic*`); they now render as bold, italic, code, and links — not just `code` spans."
+        ]
+      }
+    ]
+  },
+  {
     "version": "1.5.0",
     "date": "2026-06-24",
     "sections": [
