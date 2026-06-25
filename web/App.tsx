@@ -527,7 +527,10 @@ export default function App() {
           )}
           {sessions.length >= 2 && (
             <button
-              onClick={() => setTimelineOpen(true)}
+              onClick={() => {
+                setTimelineOpen(true);
+                setDashboardOpen(false);
+              }}
               className={`mb-1.5 ml-auto self-center rounded-md px-2.5 py-1 text-sm ${
                 timelineOpen ? 'bg-surface-0 text-sky-300' : 'text-gray-400 hover:bg-surface-2 hover:text-gray-100'
               }`}
@@ -539,7 +542,10 @@ export default function App() {
           <div className={`flex items-stretch gap-1 ${sessions.length >= 2 ? 'ml-1' : 'ml-auto'}`}>
             <WorkspacesMenu canSave={sessions.length > 0} onSave={saveCurrentWorkspace} onOpen={(ws) => void openWorkspace(ws)} />
             <button
-              onClick={() => setWhatsNewOpen(true)}
+              onClick={() => {
+                setWhatsNewOpen(true);
+                setDashboardOpen(false);
+              }}
               className={`mb-1.5 self-center rounded-md px-2.5 py-1 text-sm ${
                 whatsNewOpen
                   ? 'bg-surface-0 text-sky-300'

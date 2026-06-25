@@ -19,8 +19,11 @@ const CHARTS: { value: ChartType; label: string }[] = [
 
 type GroupType = 'time' | 'field' | 'none';
 
-/** Which group-by dimensions each chart type supports (first is its default). */
-function allowedGroups(chart: ChartType): GroupType[] {
+/**
+ * Preferred group-by dimensions per chart type — the first is applied as the
+ * default when you switch chart, but any group-by stays selectable afterward.
+ */
+function preferredGroups(chart: ChartType): GroupType[] {
   switch (chart) {
     case 'line':
     case 'area':
@@ -78,10 +81,10 @@ export default function PanelEditor({
   const splitType = !draft.spec.splitBy ? 'none' : draft.spec.splitBy.type;
 
   const changeChart = (chart: ChartType): void => {
-    const allowed = allowedGroups(chart);
+    const preferred = preferredGroups(chart);
     let groupBy = draft.spec.groupBy;
-    if (!allowed.includes(groupBy.type)) {
-      const t = allowed[0];
+    if (!preferred.includes(groupBy.type)) {
+      const t = preferred[0];
       groupBy =
         t === 'time'
           ? { type: 'time', buckets: 60 }
@@ -124,7 +127,6 @@ export default function PanelEditor({
   };
 
   const needsMetricField = draft.spec.metric.type !== 'count';
-  const allowed = allowedGroups(draft.chart);
   const canSplit = canSplitChart(draft.chart);
 
   return (
@@ -186,17 +188,10 @@ export default function PanelEditor({
 
           <label>
             <span className={labelCls}>Group by</span>
-            <select
-              className={inputCls}
-              value={groupType}
-              disabled={allowed.length === 1}
-              onChange={(e) => changeGroupType(e.target.value as GroupType)}
-            >
-              {allowed.map((t) => (
-                <option key={t} value={t}>
-                  {t === 'time' ? 'Time' : t === 'field' ? 'Field value' : 'Nothing (single value)'}
-                </option>
-              ))}
+            <select className={inputCls} value={groupType} onChange={(e) => changeGroupType(e.target.value as GroupType)}>
+              <option value="time">Time</option>
+              <option value="field">Field value</option>
+              <option value="none">Nothing (single value)</option>
             </select>
           </label>
 
