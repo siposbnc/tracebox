@@ -6,6 +6,7 @@ import { useRedactor } from '../redaction';
 import { useBookmarks, toggleBookmark } from '../bookmarks';
 import { matchCommand, getChord, formatChord } from '../keybindings';
 import { isModalOpen } from '../escStack';
+import { LINE_COL, TIME_COL, LEVEL_COL, isBuiltinCol, columnLabel } from '../columns';
 import type { RowData } from '../types';
 
 const BLOCK = 256;
@@ -17,6 +18,13 @@ const COL_W = 190;
 const DELTA_W = 64;
 /** Vertical divider between columnar cells (header + rows), so column edges read. */
 const COL_DIVIDER = 'border-l border-edge';
+
+/** Default pixel width for a columnar column (built-in time/level, or a data field). */
+function defaultColWidth(c: string): number {
+  if (c === TIME_COL) return TIME_W;
+  if (c === LEVEL_COL) return LEVEL_W;
+  return COL_W;
+}
 
 /** Tint the Δt value by magnitude so stalls/latency jumps stand out. */
 function deltaClass(ms: number): string {
@@ -124,6 +132,10 @@ export default function LogList({
   const parentRef = useRef<HTMLDivElement>(null);
   const blocksRef = useRef(new Map<number, Block>());
   const loadingRef = useRef(new Set<number>());
+  // Blocks whose cached rows are stale after a live append but are kept on screen
+  // until a fresh fetch overwrites them in place — so tailing never blanks the
+  // visible rows (which read as a distracting flash on every append).
+  const pendingRefetchRef = useRef(new Set<number>());
   // multi-row selection anchors (display indices); the range itself lives in the parent
   const rangeAnchorRef = useRef<number | null>(null);
   const rangeFocusRef = useRef<number | null>(null);
@@ -147,6 +159,7 @@ export default function LogList({
     orderRef.current = order;
     blocksRef.current.clear();
     loadingRef.current.clear();
+    pendingRefetchRef.current.clear();
   }
 
   // A full reset (new search, grouping change, refresh, finalize) replaces the
@@ -158,24 +171,28 @@ export default function LogList({
     epochRef.current = epoch;
     appendEpochRef.current = appendEpoch;
     if (wasAppend) {
+      // Live append: keep the cached rows on screen and mark the blocks whose
+      // contents shifted for an in-place refetch (overwritten when the fresh data
+      // lands, never blanked first) — otherwise the visible rows flash on every
+      // tail tick. In-flight fetches from the previous epoch are discarded by the
+      // epoch guard in fetchBlock, so clearing loadingRef lets the refetch start.
       if (order === 'desc') {
         // Newest-first: an append remaps every display position (display index d
-        // shows line total-1-d), so every cached block is now stale — drop them
-        // all and let the visible window refetch. Without this the top (newest)
-        // rows freeze while the file keeps growing.
-        blocksRef.current.clear();
-        loadingRef.current.clear();
+        // shows line total-1-d), so every cached block is stale.
+        for (const idx of blocksRef.current.keys()) pendingRefetchRef.current.add(idx);
       } else {
-        // Oldest-first: appended lines only extend the tail, so keep earlier
-        // blocks and refetch just the last (now-grown) block and any partials.
+        // Oldest-first: appended lines only extend the tail, so only the last
+        // (now-grown) block and any partials changed.
         const lastBlock = Math.floor(Math.max(0, prevTotalRef.current - 1) / BLOCK);
         for (const [idx, block] of blocksRef.current) {
-          if (idx >= lastBlock || block.rows.length < BLOCK) blocksRef.current.delete(idx);
+          if (idx >= lastBlock || block.rows.length < BLOCK) pendingRefetchRef.current.add(idx);
         }
       }
+      loadingRef.current.clear();
     } else {
       blocksRef.current.clear();
       loadingRef.current.clear();
+      pendingRefetchRef.current.clear();
     }
   }
   prevTotalRef.current = total;
@@ -221,14 +238,16 @@ export default function LogList({
 
   const fetchBlock = useCallback(
     (blockIdx: number) => {
-      if (blocksRef.current.has(blockIdx) || loadingRef.current.has(blockIdx)) return;
+      if (loadingRef.current.has(blockIdx)) return;
+      // skip blocks already loaded, unless a live append marked them for refetch
+      if (blocksRef.current.has(blockIdx) && !pendingRefetchRef.current.has(blockIdx)) return;
       loadingRef.current.add(blockIdx);
       const requestEpoch = epochRef.current;
       const requestOrder = orderRef.current;
       // capture columns are computed client-side from the row text — the backend
       // only projects real indexed fields, so don't ask it for capture names
       const backendCols = columnar
-        ? columns.filter((c) => !captureExtractors?.has(c))
+        ? columns.filter((c) => !isBuiltinCol(c) && !captureExtractors?.has(c))
         : undefined;
       void api
         .rows(sessionId, blockIdx * BLOCK, BLOCK, requestOrder, highlight, grouped, backendCols)
@@ -245,6 +264,7 @@ export default function LogList({
             }
           }
           blocksRef.current.set(blockIdx, { epoch: requestEpoch, rows: r.rows });
+          pendingRefetchRef.current.delete(blockIdx);
           forceRender((n) => n + 1);
         })
         .finally(() => loadingRef.current.delete(blockIdx));
@@ -453,9 +473,30 @@ export default function LogList({
     return prev && prev.ts != null ? row.ts - prev.ts : null;
   };
 
-  const widthOf = useCallback((c: string): number => columnWidths[c] ?? COL_W, [columnWidths]);
-  const columnsPx = columns.reduce((sum, c) => sum + widthOf(c), 0);
-  const gridMinWidth = `calc(${gutterWidth + 2}ch + ${16 + TIME_W + (deltaColumn ? DELTA_W : 0) + LEVEL_W + columnsPx}px)`;
+  const widthOf = useCallback((c: string): number => columnWidths[c] ?? defaultColWidth(c), [columnWidths]);
+  // CSS width for styling a column. Every column is a stored/default pixel width,
+  // except the line number, which defaults to a ch width that fits its digit count
+  // (until the user resizes it, after which a pixel override applies like the rest).
+  const colWidth = useCallback(
+    (c: string): string | number => {
+      const stored = columnWidths[c];
+      if (stored != null) return stored;
+      if (c === LINE_COL) return `${gutterWidth + 1}ch`;
+      return defaultColWidth(c);
+    },
+    [columnWidths, gutterWidth],
+  );
+  // Δt is glued to the time column, so it only shows when time is visible.
+  const timeShown = columns.includes(TIME_COL);
+  const deltaShown = deltaColumn && timeShown;
+  const lineStored = columnWidths[LINE_COL];
+  const colsPx = columns.filter((c) => c !== LINE_COL).reduce((sum, c) => sum + widthOf(c), 0);
+  // 16px bookmark gutter + 12px right padding; the line column (if shown) adds its
+  // stored px width, or its ch default when never resized.
+  const lineCssPart = columns.includes(LINE_COL)
+    ? `${lineStored != null ? `${lineStored}px` : `${gutterWidth + 1}ch`} + `
+    : '';
+  const gridMinWidth = `calc(${lineCssPart}${16 + 12 + colsPx + (deltaShown ? DELTA_W : 0)}px)`;
 
   return (
     <div
@@ -486,9 +527,8 @@ export default function LogList({
         <div style={{ minWidth: gridMinWidth }}>
           <GridHeader
             columns={columns}
-            widthOf={widthOf}
-            gutterWidth={gutterWidth}
-            showDelta={deltaColumn}
+            colWidth={colWidth}
+            showDelta={deltaShown}
             onResize={onColumnResize}
             onReorder={onReorderColumns}
           />
@@ -498,12 +538,14 @@ export default function LogList({
               return (
                 <div
                   key={item.key}
+                  ref={wrap ? virtualizer.measureElement : undefined}
+                  data-index={item.index}
                   style={{
                     position: 'absolute',
                     top: 0,
                     left: 0,
                     width: '100%',
-                    height: item.size,
+                    ...(wrap ? { minHeight: rowHeight } : { height: item.size }),
                     transform: `translateY(${item.start}px)`,
                   }}
                 >
@@ -518,11 +560,11 @@ export default function LogList({
                       onAddFilter={onAddFilter}
                       onToggleBookmark={() => toggleBookmark(file, row.lineNo)}
                       columns={columns}
-                      columnWidths={columnWidths}
-                      gutterWidth={gutterWidth}
+                      colWidth={colWidth}
                       tz={tz}
                       redact={redact}
-                      showDelta={deltaColumn}
+                      wrap={wrap}
+                      showDelta={deltaShown}
                       delta={deltaFor(item.index, row)}
                     />
                   ) : (
@@ -741,10 +783,10 @@ const GridRow = memo(function GridRow({
   onAddFilter,
   onToggleBookmark,
   columns,
-  columnWidths,
-  gutterWidth,
+  colWidth,
   tz,
   redact,
+  wrap,
   showDelta,
   delta,
 }: {
@@ -757,21 +799,102 @@ const GridRow = memo(function GridRow({
   onAddFilter: (clause: string) => void;
   onToggleBookmark: () => void;
   columns: string[];
-  columnWidths: Record<string, number>;
-  gutterWidth: number;
+  colWidth: (c: string) => string | number;
   tz: Tz;
   redact: (text: string) => string;
+  wrap: boolean;
   showDelta: boolean;
   delta: number | null;
 }) {
   const levelClass = row.level ? (LEVEL_STYLES[row.level] ?? 'bg-slate-800 text-slate-300') : '';
+  // top-align cells when wrapping (rows grow tall), centre them otherwise
+  const align = wrap ? 'items-start' : 'items-center';
+
+  // Render one columnar cell for a column key. The time column also emits the Δt
+  // cell beside it (when enabled). `first` suppresses the left divider on the
+  // leading column so it sits flush against the line gutter.
+  const cellFor = (c: string, first: boolean): React.ReactNode => {
+    const divider = first ? '' : COL_DIVIDER;
+    if (c === LINE_COL) {
+      return (
+        <span
+          key={c}
+          className={`flex shrink-0 select-none ${align} justify-end pl-2 pr-1.5 text-[11px] text-gray-600 ${divider}`}
+          style={{ width: colWidth(c) }}
+        >
+          {row.lineNo + 1}
+        </span>
+      );
+    }
+    if (c === TIME_COL) {
+      const time = (
+        <span
+          key={c}
+          className={`flex shrink-0 ${align} overflow-hidden pl-2 pr-1 text-xs text-gray-500 ${divider}`}
+          style={{ width: colWidth(c) }}
+        >
+          <span className={`min-w-0 ${wrap ? 'break-all' : 'truncate'}`}>{formatTs(row.ts, tz)}</span>
+        </span>
+      );
+      if (!showDelta) return time;
+      return [
+        time,
+        <span
+          key={`${c}-delta`}
+          className={`flex shrink-0 ${align} pl-2 pr-1 text-[11px] ${COL_DIVIDER} ${delta == null ? 'text-gray-700' : deltaClass(delta)}`}
+          style={{ width: DELTA_W }}
+          title={delta == null ? undefined : `${formatDelta(delta)} since the previous row`}
+        >
+          {delta == null ? '' : formatDelta(delta)}
+        </span>,
+      ];
+    }
+    if (c === LEVEL_COL) {
+      return (
+        <span key={c} className={`flex shrink-0 ${align} pl-2 ${divider}`} style={{ width: colWidth(c) }}>
+          {row.level && (
+            <span className={`rounded px-1 text-[10px] font-semibold leading-4 ${levelClass}`}>{row.level}</span>
+          )}
+        </span>
+      );
+    }
+    const value = row.cols?.[c];
+    const shown = value ? redact(value) : value;
+    return (
+      <span
+        key={c}
+        className={`flex shrink-0 ${align} ${wrap ? '' : 'overflow-hidden'} pl-2 pr-1 ${divider}`}
+        style={{ width: colWidth(c) }}
+      >
+        {value ? (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onAddFilter(`${c}:"${value.replace(/"/g, '\\"')}"`);
+            }}
+            className={`min-w-0 max-w-full text-left text-gray-300 hover:text-sky-300 hover:underline ${
+              wrap ? 'whitespace-pre-wrap break-all' : 'truncate'
+            }`}
+            title={`${shown}\n\nClick to filter ${c} to this value`}
+          >
+            {shown}
+          </button>
+        ) : (
+          <span className="text-gray-700">—</span>
+        )}
+      </span>
+    );
+  };
+
   return (
     <div
       onClick={(e) => onClickRow(viewIndex, row.lineNo, e.shiftKey)}
       onMouseDown={(e) => {
         if (e.shiftKey) e.preventDefault();
       }}
-      className={`group tb-log-text flex h-full cursor-pointer items-stretch border-l-2 pr-3 font-mono ${
+      className={`group tb-log-text flex cursor-pointer border-l-2 pr-3 font-mono ${
+        wrap ? 'items-start' : 'h-full items-stretch'
+      } ${
         selected
           ? 'border-sky-400 bg-sky-950/60'
           : inRange
@@ -791,69 +914,23 @@ const GridRow = memo(function GridRow({
       >
         {bookmarked ? '⚑' : '⚐'}
       </button>
-      <span className="flex shrink-0 select-none items-center justify-end pr-1.5 text-[11px] text-gray-600" style={{ width: `${gutterWidth}ch` }}>
-        {row.lineNo + 1}
-      </span>
-      <span className={`flex shrink-0 items-center whitespace-nowrap pl-2 text-xs text-gray-500 ${COL_DIVIDER}`} style={{ width: TIME_W }}>
-        {formatTs(row.ts, tz)}
-      </span>
-      {showDelta && (
-        <span
-          className={`flex shrink-0 items-center justify-end pl-2 text-[11px] ${COL_DIVIDER} ${delta == null ? 'text-gray-700' : deltaClass(delta)}`}
-          style={{ width: DELTA_W }}
-          title={delta == null ? undefined : `${formatDelta(delta)} since the previous row`}
-        >
-          {delta == null ? '' : formatDelta(delta)}
-        </span>
-      )}
-      <span className={`flex shrink-0 items-center pl-2 ${COL_DIVIDER}`} style={{ width: LEVEL_W }}>
-        {row.level && (
-          <span className={`rounded px-1 text-[10px] font-semibold leading-4 ${levelClass}`}>{row.level}</span>
-        )}
-      </span>
-      {columns.map((c) => {
-        const value = row.cols?.[c];
-        const shown = value ? redact(value) : value;
-        return (
-          <span
-            key={c}
-            className={`flex shrink-0 items-center overflow-hidden pl-2 pr-1 ${COL_DIVIDER}`}
-            style={{ width: columnWidths[c] ?? COL_W }}
-          >
-            {value ? (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onAddFilter(`${c}:"${value.replace(/"/g, '\\"')}"`);
-                }}
-                className="min-w-0 max-w-full truncate text-left text-gray-300 hover:text-sky-300 hover:underline"
-                title={`${shown}\n\nClick to filter ${c} to this value`}
-              >
-                {shown}
-              </button>
-            ) : (
-              <span className="text-gray-700">—</span>
-            )}
-          </span>
-        );
-      })}
+      {columns.map((c, i) => cellFor(c, i === 0))}
     </div>
   );
 });
 
-/** Columnar header: fixed #/time/level columns, then the data columns which can be
- *  dragged to reorder and resized by dragging their right edge (widths persist). */
+/** Columnar header: every column — the built-in #/time/level and the data fields —
+ *  can be dragged to reorder and resized by dragging its right edge; widths and
+ *  order persist per file. Δt rides along beside `time`. */
 function GridHeader({
   columns,
-  widthOf,
-  gutterWidth,
+  colWidth,
   showDelta,
   onResize,
   onReorder,
 }: {
   columns: string[];
-  widthOf: (c: string) => number;
-  gutterWidth: number;
+  colWidth: (c: string) => string | number;
   showDelta: boolean;
   onResize: (col: string, width: number) => void;
   onReorder: (cols: string[]) => void;
@@ -867,7 +944,11 @@ function GridHeader({
     e.stopPropagation();
     resizing.current = true;
     const startX = e.clientX;
-    const startW = widthOf(col);
+    // Measure the column's current rendered width from the DOM (the resize handle's
+    // parent is the column cell), so this works whether the width is a px override
+    // or the line column's ch default — no ch→px conversion needed.
+    const cell = (e.currentTarget as HTMLElement).parentElement;
+    const startW = cell ? cell.getBoundingClientRect().width : 0;
     const onMove = (m: MouseEvent): void => onResize(col, startW + (m.clientX - startX));
     const onUp = (): void => {
       resizing.current = false;
@@ -891,74 +972,94 @@ function GridHeader({
     onReorder(next);
   };
 
-  return (
-    <div className="sticky top-0 z-10 flex select-none items-stretch border-b border-l-2 border-edge border-l-transparent bg-surface-1 pr-3 text-[10px] font-semibold uppercase tracking-wide text-gray-500">
-      <span className="w-4 shrink-0" />
-      <span className="flex shrink-0 items-center justify-end py-1 pr-1.5 font-mono text-[11px] normal-case" style={{ width: `${gutterWidth}ch` }}>
-        #
-      </span>
-      <span className={`flex shrink-0 items-center py-1 ${COL_DIVIDER}`} style={{ width: TIME_W }}>
-        time
-      </span>
-      {showDelta && (
-        <span className={`flex shrink-0 items-center justify-end py-1 ${COL_DIVIDER}`} style={{ width: DELTA_W }} title="Time since the previous row">
-          Δt
-        </span>
-      )}
-      <span className={`flex shrink-0 items-center py-1 ${COL_DIVIDER}`} style={{ width: LEVEL_W }}>
-        level
-      </span>
-      {columns.map((c) => (
-        <div
-          key={c}
-          className={`group/col relative flex shrink-0 items-stretch ${COL_DIVIDER} ${dragOver === c ? 'bg-sky-500/15' : ''}`}
-          style={{ width: widthOf(c) }}
-          onDragOver={(e) => {
-            e.preventDefault();
-            if (dragCol.current && dragCol.current !== c && dragOver !== c) setDragOver(c);
-          }}
-          onDragLeave={() => setDragOver((d) => (d === c ? null : d))}
-          onDrop={() => drop(c)}
-        >
-          {dragOver === c && (
-            <span
-              className={`pointer-events-none absolute inset-y-0 z-10 w-0.5 bg-sky-400 ${
-                dragCol.current && columns.indexOf(dragCol.current) < columns.indexOf(c) ? 'right-0' : 'left-0'
-              }`}
-            />
-          )}
+  // A header cell for one column: a draggable/droppable wrapper with a grip handle,
+  // label, drop indicator, and (for resizable columns) a right-edge resize handle.
+  const headerCell = (c: string, first: boolean): React.ReactNode => {
+    const isLine = c === LINE_COL;
+    return (
+      <div
+        key={c}
+        // The line column defaults to a `ch` width, so this wrapper must carry the
+        // same font as the row's line cell (mono, 11px) or 1ch differs and every
+        // divider after it drifts out of alignment with the rows.
+        className={`group/col relative flex shrink-0 items-stretch ${first ? '' : COL_DIVIDER} ${
+          isLine ? 'font-mono text-[11px]' : ''
+        } ${dragOver === c ? 'bg-sky-500/15' : ''}`}
+        style={{ width: colWidth(c) }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          if (dragCol.current && dragCol.current !== c && dragOver !== c) setDragOver(c);
+        }}
+        onDragLeave={() => setDragOver((d) => (d === c ? null : d))}
+        onDrop={() => drop(c)}
+      >
+        {dragOver === c && (
           <span
-            draggable
-            onDragStart={(e) => {
-              dragCol.current = c;
-              e.dataTransfer.effectAllowed = 'move';
-            }}
-            onDragEnd={() => {
-              dragCol.current = null;
-              setDragOver(null);
-            }}
-            className="flex min-w-0 flex-1 cursor-grab items-center gap-1 py-1 pl-2 active:cursor-grabbing"
-            title={`${c} — drag to reorder`}
-          >
+            className={`pointer-events-none absolute inset-y-0 z-10 w-0.5 bg-sky-400 ${
+              dragCol.current && columns.indexOf(dragCol.current) < columns.indexOf(c) ? 'right-0' : 'left-0'
+            }`}
+          />
+        )}
+        <span
+          draggable
+          onDragStart={(e) => {
+            dragCol.current = c;
+            e.dataTransfer.effectAllowed = 'move';
+          }}
+          onDragEnd={() => {
+            dragCol.current = null;
+            setDragOver(null);
+          }}
+          className={`flex min-w-0 flex-1 cursor-grab items-center gap-1 py-1 pl-2 active:cursor-grabbing ${
+            isLine ? 'justify-end pr-1.5' : ''
+          }`}
+          title={`${columnLabel(c)} — drag to reorder`}
+        >
+          {!isLine && (
             <svg className="h-3 w-1.5 shrink-0 text-gray-600 group-hover/col:text-gray-400" viewBox="0 0 4 12" fill="currentColor" aria-hidden>
               <circle cx="1" cy="2" r="0.8" /><circle cx="3" cy="2" r="0.8" />
               <circle cx="1" cy="6" r="0.8" /><circle cx="3" cy="6" r="0.8" />
               <circle cx="1" cy="10" r="0.8" /><circle cx="3" cy="10" r="0.8" />
             </svg>
-            <span className="truncate font-mono normal-case">{c}</span>
+          )}
+          <span className={`truncate ${isLine ? 'font-mono text-[11px] normal-case' : isBuiltinCol(c) ? '' : 'font-mono normal-case'}`}>
+            {columnLabel(c)}
           </span>
-          {/* resize handle: a wide hit zone straddling the right edge, with a line
-              that brightens on hover so the grab point is easy to find */}
-          <span
-            onMouseDown={(e) => startResize(c, e)}
-            onClick={(e) => e.stopPropagation()}
-            title="Drag to resize this column"
-            className="group/rs absolute -right-1.5 top-0 z-20 flex h-full w-3 cursor-col-resize items-center justify-center"
-          >
-            <span className="h-full w-0.5 bg-transparent transition-colors group-hover/rs:bg-sky-400" />
-          </span>
-        </div>
-      ))}
+        </span>
+        {/* resize handle: a wide hit zone straddling the right edge, with a line that
+            brightens on hover so the grab point is easy to find. */}
+        <span
+          onMouseDown={(e) => startResize(c, e)}
+          onClick={(e) => e.stopPropagation()}
+          title="Drag to resize this column"
+          className="group/rs absolute -right-1.5 top-0 z-20 flex h-full w-3 cursor-col-resize items-center justify-center"
+        >
+          <span className="h-full w-0.5 bg-transparent transition-colors group-hover/rs:bg-sky-400" />
+        </span>
+      </div>
+    );
+  };
+
+  return (
+    <div className="sticky top-0 z-10 flex select-none items-stretch border-b border-l-2 border-edge border-l-transparent bg-surface-1 pr-3 text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+      <span className="w-4 shrink-0" />
+      {columns.flatMap((c, i) => {
+        const cell = headerCell(c, i === 0);
+        if (c === TIME_COL && showDelta) {
+          return [
+            cell,
+            <span
+              key={`${c}-delta`}
+              className={`flex shrink-0 items-center py-1 pl-2 pr-1 ${COL_DIVIDER}`}
+              style={{ width: DELTA_W }}
+              title="Time since the previous row"
+            >
+              Δt
+            </span>,
+          ];
+        }
+        return [cell];
+      })}
     </div>
   );
 }

@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { type Capture, validateCapture, extractValue } from '../captures';
+import { BUILTIN_COLS, LINE_COL, TIME_COL, addColumn } from '../columns';
+
+/** Friendly labels for the built-in (non-field) columns in the picker. */
+const BUILTIN_LABEL: Record<string, string> = {
+  [LINE_COL]: 'Line number',
+  [TIME_COL]: 'Time',
+};
+const builtinLabel = (c: string): string => BUILTIN_LABEL[c] ?? 'Level';
 
 /** The inline "+ Add capture" form. Validates name + regex and previews the value. */
 function AddCaptureForm({
@@ -119,7 +127,7 @@ export default function ColumnsMenu({
 
   const selected = new Set(columns);
   const toggle = (key: string): void =>
-    onChange(selected.has(key) ? columns.filter((c) => c !== key) : [...columns, key]);
+    onChange(selected.has(key) ? columns.filter((c) => c !== key) : addColumn(columns, key));
 
   // sorted A→Z, then filtered by the search box
   const q = query.toLowerCase().trim();
@@ -144,6 +152,24 @@ export default function ColumnsMenu({
       </button>
       {open && (
         <div className="absolute right-0 top-full z-30 mt-1 w-72 rounded-lg border border-edge bg-surface-2 shadow-2xl">
+          {/* Built-in columns: line number, time, level — hideable and (in the grid
+              header) drag-reorderable like any data column */}
+          <div className="border-b border-edge px-2 py-1.5">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Built-in columns</div>
+            <div className="mt-1 space-y-0.5">
+              {BUILTIN_COLS.map((c) => (
+                <label key={c} className="flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 hover:bg-surface-3">
+                  <input
+                    type="checkbox"
+                    checked={selected.has(c)}
+                    onChange={() => toggle(c)}
+                    className="accent-sky-600"
+                  />
+                  <span className="min-w-0 flex-1 truncate text-xs text-gray-200">{builtinLabel(c)}</span>
+                </label>
+              ))}
+            </div>
+          </div>
           {/* Captures section */}
           <div className="border-b border-edge px-2 py-1.5">
             <div className="flex items-center justify-between">
