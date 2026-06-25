@@ -2,7 +2,9 @@
 
 **A fast, fully offline log reader for multi-gigabyte files** — index a huge log in
 seconds, then search, filter, and analyze it like a database. A real full-text search
-engine, structured field analysis, live tail, and time histograms, in a desktop app (or a local web app) that keeps everything on your machine.
+engine, structured field analysis, a "what's wrong" triage view, custom dashboards, live
+tail, and time histograms — in a desktop app (or a local web app) that keeps everything on
+your machine.
 
 ![TraceBox indexing a 210k-line log: time histogram, level badges, and structured rows](docs/screenshots/01-overview.png)
 
@@ -35,7 +37,12 @@ exactly these files:
 - Kibana-style query language: `AND`/`OR`/`NOT`, parentheses, `"exact phrases"`, field
   filters (`level:error`), numeric comparisons (`status:>=500`), time ranges
   (`timestamp:>2024-01-31`), wildcards (`path:/api/*`), and field-exists (`user:*`).
-- Match highlighting, "find next", and regex search when you need it.
+- Match highlighting, "find next/previous", and whole-line `/regex/` search when you need it.
+- **Filter breadcrumb** — the active query renders as a funnel of removable chips beneath the
+  search bar, each showing the running match count (`194,917 → level:error 24,205 →
+  connection 4,832`). Pop any clause with × to widen the search, or clear it all.
+- **Autocomplete** for field names (including nested `dot.paths`) and a parser-aware value
+  list, plus **saved searches** so a query you reach for often is one click away.
 
 ![Searching with the query language — http.status:>=500 AND duration_ms:>1000, 5,515 hits in under a second, histogram of matches](docs/screenshots/02-search.png)
 
@@ -45,11 +52,14 @@ exactly these files:
 - **Log patterns (clustering)** — collapses near-identical lines into templates so you can
   see "what kinds of lines are in here" at a glance.
 - **Time histogram** — stacked per-level volume over time; drag to filter to a range.
-- **Dashboards** — assemble your own charts (line/area, bar, pie, table, single-stat) over a
-  metric (count or a numeric field with p50/p95/sum/avg), grouped by time or a field and
-  scoped by a per-panel query; aggregated server-side so it holds on huge files, and saved by
-  name to re-run on any file.
 - **Summary stats** and a per-level breakdown with one-click filters.
+- **Columnar (grid) view** — render structured logs as a real table of the fields you pick.
+  Columns — including the built-in line / time / level — can be shown or hidden, dragged to
+  reorder, and resized; click a cell to filter to that `field:value`. The layout is
+  remembered per file.
+- **Δt column** — an optional column shows the time gap to the previous (matching) row, so
+  stalls and latency jumps stand out inline, colour-graded amber past 1 s / 5 s and red past
+  a minute.
 - **User-defined parsers** — teach TraceBox a proprietary format with a regex (named groups
   become fields), with a live tester.
 - **Ad-hoc capture fields** — pull a value out of raw lines with a one-off regex
@@ -64,9 +74,35 @@ exactly these files:
 
 ![Near-identical lines collapsed into templates with counts](docs/screenshots/05-clusters.png)
 
+**Triage: what's wrong, at a glance**
+
+When a file finishes indexing, a triage dashboard tells you where to look first: the level
+breakdown, the top log-pattern clusters *among the errors*, activity spikes and quiet gaps on
+the timeline, and a slowest-field summary (p50 / p95 / max). Every finding is clickable and
+drills straight into the matching filtered view. It auto-opens by default (toggle in
+**Settings → Triage on open**) and reopens from the toolbar.
+
+**Dashboards**
+
+A dedicated dashboards view turns the main area into a grid of charts you assemble yourself.
+Each panel picks a **chart type** (line, area, bar, pie, table, or single-stat), a **metric**
+(count, unique count, or a numeric field reduced with sum / avg / min / max / p50 / p95), a
+**grouping** (time buckets, a field's top values, or none), an optional **series split** (by
+level or a field), and its own **scoping query**. Everything is aggregated server-side over
+the index — one general aggregation engine — so it stays responsive on multi-gigabyte files,
+and dashboards are saved by name to re-run against any file you open. (The same engine is
+exposed to AI agents as the `aggregate` MCP tool.)
+
 **Inspect any line**
 - A detail panel shows a line's parsed fields (with one-click "add as filter") and the full
-  multi-line record (stack traces fold into one entry).
+  multi-line record, with a **Flat / JSON** toggle; stack traces fold into one entry.
+- **Context peek (`grep -C`)** — pop the surrounding lines for any hit inline (press **C**)
+  without losing your place in the result set, matches flagged.
+- **Value visualizer** — open any field value in a large reader modal with room for long
+  payloads, stack traces, or SQL, with copy and an in-text search that highlights and steps
+  through every match.
+- **Multi-row selection** — Shift+click or Shift+Arrow to select a span of rows, then copy or
+  export just those.
 - Bookmark and annotate lines, then export a Markdown/HTML report for an incident ticket.
 - **Redaction** — one toggle masks emails, IPs, tokens, secrets, and card numbers across the
   view, reports, and exports (search still runs on the real data); built-in categories are
@@ -89,6 +125,17 @@ exactly these files:
 - Read from a live command (`docker logs`, `journalctl`, …) as a streaming source.
 - Persistent index cache — reopening an unchanged file is instant.
 - Export filtered rows to CSV / JSON.
+
+**Make it yours**
+- **Themes & font size** — Dark, Light, and High-contrast themes plus an S/M/L/XL font size
+  for log content; both apply before the first paint, so there's no flash on launch.
+- **Rebindable keyboard shortcuts** — TraceBox is keyboard-driven (navigation, match jumps,
+  context peek, bookmarks, wrap, redaction, …) and every shortcut can be remapped in
+  **Settings → Shortcuts**.
+- **Workspaces** — save and restore a whole session of open files with their queries and
+  view state, so you can pick a triage back up where you left it.
+- **Quality-of-life** — word wrap, oldest/newest-first order, per-level accent bars, a
+  configurable timezone, and a generated "What's new" view, all remembered between launches.
 
 **AI-ready**
 - An opt-in [MCP](https://modelcontextprotocol.io) server lets AI agents (Claude, IDE
