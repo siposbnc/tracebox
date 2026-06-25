@@ -132,6 +132,10 @@ export default function LogList({
   const parentRef = useRef<HTMLDivElement>(null);
   const blocksRef = useRef(new Map<number, Block>());
   const loadingRef = useRef(new Set<number>());
+  // Blocks whose cached rows are stale after a live append but are kept on screen
+  // until a fresh fetch overwrites them in place — so tailing never blanks the
+  // visible rows (which read as a distracting flash on every append).
+  const pendingRefetchRef = useRef(new Set<number>());
   // multi-row selection anchors (display indices); the range itself lives in the parent
   const rangeAnchorRef = useRef<number | null>(null);
   const rangeFocusRef = useRef<number | null>(null);
@@ -155,6 +159,7 @@ export default function LogList({
     orderRef.current = order;
     blocksRef.current.clear();
     loadingRef.current.clear();
+    pendingRefetchRef.current.clear();
   }
 
   // A full reset (new search, grouping change, refresh, finalize) replaces the
@@ -166,24 +171,28 @@ export default function LogList({
     epochRef.current = epoch;
     appendEpochRef.current = appendEpoch;
     if (wasAppend) {
+      // Live append: keep the cached rows on screen and mark the blocks whose
+      // contents shifted for an in-place refetch (overwritten when the fresh data
+      // lands, never blanked first) — otherwise the visible rows flash on every
+      // tail tick. In-flight fetches from the previous epoch are discarded by the
+      // epoch guard in fetchBlock, so clearing loadingRef lets the refetch start.
       if (order === 'desc') {
         // Newest-first: an append remaps every display position (display index d
-        // shows line total-1-d), so every cached block is now stale — drop them
-        // all and let the visible window refetch. Without this the top (newest)
-        // rows freeze while the file keeps growing.
-        blocksRef.current.clear();
-        loadingRef.current.clear();
+        // shows line total-1-d), so every cached block is stale.
+        for (const idx of blocksRef.current.keys()) pendingRefetchRef.current.add(idx);
       } else {
-        // Oldest-first: appended lines only extend the tail, so keep earlier
-        // blocks and refetch just the last (now-grown) block and any partials.
+        // Oldest-first: appended lines only extend the tail, so only the last
+        // (now-grown) block and any partials changed.
         const lastBlock = Math.floor(Math.max(0, prevTotalRef.current - 1) / BLOCK);
         for (const [idx, block] of blocksRef.current) {
-          if (idx >= lastBlock || block.rows.length < BLOCK) blocksRef.current.delete(idx);
+          if (idx >= lastBlock || block.rows.length < BLOCK) pendingRefetchRef.current.add(idx);
         }
       }
+      loadingRef.current.clear();
     } else {
       blocksRef.current.clear();
       loadingRef.current.clear();
+      pendingRefetchRef.current.clear();
     }
   }
   prevTotalRef.current = total;
@@ -229,7 +238,9 @@ export default function LogList({
 
   const fetchBlock = useCallback(
     (blockIdx: number) => {
-      if (blocksRef.current.has(blockIdx) || loadingRef.current.has(blockIdx)) return;
+      if (loadingRef.current.has(blockIdx)) return;
+      // skip blocks already loaded, unless a live append marked them for refetch
+      if (blocksRef.current.has(blockIdx) && !pendingRefetchRef.current.has(blockIdx)) return;
       loadingRef.current.add(blockIdx);
       const requestEpoch = epochRef.current;
       const requestOrder = orderRef.current;
@@ -253,6 +264,7 @@ export default function LogList({
             }
           }
           blocksRef.current.set(blockIdx, { epoch: requestEpoch, rows: r.rows });
+          pendingRefetchRef.current.delete(blockIdx);
           forceRender((n) => n + 1);
         })
         .finally(() => loadingRef.current.delete(blockIdx));
