@@ -8,6 +8,7 @@ import WelcomeScreen from './components/WelcomeScreen';
 import UpdateBanner from './components/UpdateBanner';
 import WhatsNew from './components/WhatsNew';
 import MergedView from './components/MergedView';
+import DashboardView from './components/DashboardView';
 import WatchToasts, { type Toast } from './components/WatchToasts';
 import WorkspacesMenu from './components/WorkspacesMenu';
 import SettingsPanel from './components/SettingsPanel';
@@ -22,7 +23,7 @@ import { clientStore } from './clientStore';
 import { getWatchRules, useWatchRulesVersion } from './watchRules';
 import { patchNotes } from './patchnotes';
 import { compareVersions } from './version';
-import { matchCommand } from './keybindings';
+import { matchCommand, getChord, formatChord } from './keybindings';
 
 const LAST_SEEN_VERSION_KEY = 'tracebox.lastSeenVersion';
 
@@ -40,6 +41,9 @@ export default function App() {
   const [rotationOffer, setRotationOffer] = useState<{ path: string; count: number; sessionId: string; siblings: string[] } | null>(null);
   const [whatsNewOpen, setWhatsNewOpen] = useState(false);
   const [timelineOpen, setTimelineOpen] = useState(false);
+  // Dashboard mode — a whole separate view of the active file (a grid of custom
+  // charts), a peer of the timeline, not a per-file side panel.
+  const [dashboardOpen, setDashboardOpen] = useState(false);
   // Settings (and the dialogs it links to) live at the app level so they're
   // reachable without a file open — from the welcome screen or the top bar.
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -158,6 +162,18 @@ export default function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       const cmd = matchCommand(e);
+      if (cmd === 'toggleDashboard') {
+        e.preventDefault();
+        if (sessions.length === 0) return; // nothing to chart
+        setDashboardOpen((v) => {
+          if (!v) {
+            setTimelineOpen(false);
+            setWhatsNewOpen(false);
+          }
+          return !v;
+        });
+        return;
+      }
       if (cmd !== 'nextTab' && cmd !== 'prevTab') return;
       e.preventDefault();
       if (sessions.length < 2) return;
@@ -173,6 +189,11 @@ export default function App() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [sessions]);
+
+  // leave dashboard mode when the last file closes, so reopening lands on the logs
+  useEffect(() => {
+    if (sessions.length === 0) setDashboardOpen(false);
+  }, [sessions.length]);
 
   const openFile = useCallback(async (path: string) => {
     setRotationOffer(null);
@@ -477,6 +498,33 @@ export default function App() {
           >
             ▸ Run command
           </button>
+          {active && (
+            <button
+              onClick={() =>
+                setDashboardOpen((v) => {
+                  if (!v) {
+                    setTimelineOpen(false);
+                    setWhatsNewOpen(false);
+                  }
+                  return !v;
+                })
+              }
+              className={`mb-1.5 ml-1 flex items-center gap-1.5 self-center rounded-md px-2.5 py-1 text-sm ${
+                dashboardOpen ? 'bg-surface-0 text-sky-300' : 'text-gray-400 hover:bg-surface-2 hover:text-gray-100'
+              }`}
+              title={`Dashboards — custom charts${
+                getChord('toggleDashboard') ? ` (${formatChord(getChord('toggleDashboard'))})` : ''
+              }`}
+            >
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="3" y="3" width="7" height="9" rx="1" />
+                <rect x="14" y="3" width="7" height="5" rx="1" />
+                <rect x="14" y="12" width="7" height="9" rx="1" />
+                <rect x="3" y="16" width="7" height="5" rx="1" />
+              </svg>
+              Dashboard
+            </button>
+          )}
           {sessions.length >= 2 && (
             <button
               onClick={() => setTimelineOpen(true)}
@@ -564,6 +612,13 @@ export default function App() {
           />
         ) : whatsNewOpen ? (
           <WhatsNew onClose={() => setWhatsNewOpen(false)} sinceVersion={sinceVersion} />
+        ) : dashboardOpen && active ? (
+          <DashboardView
+            sessionId={active.id}
+            fileName={active.file}
+            fields={active.fieldNames.map((f) => f.key)}
+            onClose={() => setDashboardOpen(false)}
+          />
         ) : active ? (
           <LogView
             key={active.id}

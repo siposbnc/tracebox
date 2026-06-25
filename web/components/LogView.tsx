@@ -18,7 +18,6 @@ import ContextPeek from './ContextPeek';
 import GoToLine from './GoToLine';
 import ShortcutsHelp from './ShortcutsHelp';
 import Histogram from './Histogram';
-import DashboardView from './DashboardView';
 import StatusBar from './StatusBar';
 import { getHistogramDefault, getTriageOnOpen, useWrap, getWrap, setWrap, getOrder, useColumnar } from '../settings';
 import { useColumns, defaultColumns, setColumns } from '../columns';
@@ -114,7 +113,6 @@ export default function LogView({
   const [facetsOpen, setFacetsOpen] = useState(false);
   const [clustersOpen, setClustersOpen] = useState(false);
   const [statsOpen, setStatsOpen] = useState(false);
-  const [dashboardOpen, setDashboardOpen] = useState(false);
   const [triageOpen, setTriageOpen] = useState(false);
   const triageShownRef = useRef(false);
   const [watchOpen, setWatchOpen] = useState(false);
@@ -676,8 +674,6 @@ export default function LogView({
         onToggleClusters={() => setClustersOpen((v) => !v)}
         statsOpen={statsOpen}
         onToggleStats={() => setStatsOpen((v) => !v)}
-        dashboardOpen={dashboardOpen}
-        onToggleDashboard={() => setDashboardOpen((v) => !v)}
         watchOpen={watchOpen}
         onToggleWatch={() => setWatchOpen((v) => !v)}
         watchUnseen={watchUnseen}
@@ -717,10 +713,6 @@ export default function LogView({
         />
       )}
 
-      {dashboardOpen ? (
-        <DashboardView sessionId={id} fields={status.fieldNames.map((f) => f.key)} />
-      ) : (
-       <>
       {histogramOpen && histogram && histogram.buckets.length > 0 && (
         <Histogram
           data={histogram}
@@ -821,8 +813,6 @@ export default function LogView({
           />
         )}
       </div>
-       </>
-      )}
 
       <StatusBar
         status={status}

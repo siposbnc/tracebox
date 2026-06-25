@@ -34,6 +34,7 @@ export const COMMANDS: Command[] = [
   { id: 'copySelection', label: 'Copy selected line(s)', defaultChord: 'Mod+C' },
   { id: 'toggleWrap', label: 'Toggle word wrap', defaultChord: 'Mod+W' },
   { id: 'toggleRedact', label: 'Toggle redaction (mask sensitive values)', defaultChord: 'Mod+Shift+R' },
+  { id: 'toggleDashboard', label: 'Toggle dashboard view', defaultChord: 'Mod+D' },
   { id: 'nextTab', label: 'Next file tab', defaultChord: 'Mod+Tab' },
   { id: 'prevTab', label: 'Previous file tab', defaultChord: 'Mod+Shift+Tab' },
   { id: 'showShortcuts', label: 'Show keyboard shortcuts', defaultChord: 'Mod+/' },

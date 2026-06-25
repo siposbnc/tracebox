@@ -24,6 +24,11 @@ function specSummary(panel: Panel): string {
   return `${metricLabel(metric)} ${by}${split}${scope}`.trim();
 }
 
+/** Last path segment of a file path, for a compact "on <file>" label. */
+function baseName(p: string): string {
+  return p.split(/[\\/]/).pop() || p;
+}
+
 function loadDraft(): Dashboard {
   try {
     const raw = clientStore.getItem(DRAFT_KEY);
@@ -39,7 +44,19 @@ function loadDraft(): Dashboard {
  * file. Working state is held here (persisted as a draft so toggling the view
  * keeps it) and can be saved as a named, reusable dashboard.
  */
-export default function DashboardView({ sessionId, fields }: { sessionId: string; fields: string[] }) {
+export default function DashboardView({
+  sessionId,
+  fields,
+  fileName,
+  onClose,
+}: {
+  sessionId: string;
+  fields: string[];
+  /** The active file the panels run against (shown for context). */
+  fileName?: string;
+  /** Leave the dashboard view (back to the log list). */
+  onClose?: () => void;
+}) {
   const saved = useDashboards();
   const [dash, setDash] = useState<Dashboard>(loadDraft);
   const [editing, setEditing] = useState<Panel | null>(null);
@@ -97,6 +114,11 @@ export default function DashboardView({ sessionId, fields }: { sessionId: string
             ))}
           </select>
         )}
+        {fileName && (
+          <span className="truncate text-xs text-gray-500" title={fileName}>
+            on <span className="text-gray-400">{baseName(fileName)}</span>
+          </span>
+        )}
         <div className="ml-auto flex items-center gap-1.5">
           <button
             onClick={() => setDash(newDashboard('Untitled dashboard'))}
@@ -135,6 +157,15 @@ export default function DashboardView({ sessionId, fields }: { sessionId: string
           >
             + Add panel
           </button>
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="ml-1 rounded px-2 py-1 text-sm text-gray-400 hover:bg-surface-2 hover:text-gray-200"
+              title="Back to the log view"
+            >
+              ✕
+            </button>
+          )}
         </div>
       </div>
 
