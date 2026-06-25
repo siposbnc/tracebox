@@ -45,6 +45,10 @@ exactly these files:
 - **Log patterns (clustering)** — collapses near-identical lines into templates so you can
   see "what kinds of lines are in here" at a glance.
 - **Time histogram** — stacked per-level volume over time; drag to filter to a range.
+- **Dashboards** — assemble your own charts (line/area, bar, pie, table, single-stat) over a
+  metric (count or a numeric field with p50/p95/sum/avg), grouped by time or a field and
+  scoped by a per-panel query; aggregated server-side so it holds on huge files, and saved by
+  name to re-run on any file.
 - **Summary stats** and a per-level breakdown with one-click filters.
 - **User-defined parsers** — teach TraceBox a proprietary format with a regex (named groups
   become fields), with a live tester.

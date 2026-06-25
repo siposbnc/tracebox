@@ -7,7 +7,7 @@ This file lists only what's **left to build**. For everything already shipped, s
 `CHANGELOG.md` — the original backlog (search, navigation, reading, analysis,
 merged timeline, desktop builds, compressed/rotation ingest, gap/spike detection,
 cluster correlation, saved workspaces, notes & report export, JSON tree, numeric
-faceting, …) is largely done.
+faceting, user-configured dashboards, …) is largely done.
 
 When picking up an item, keep the core constraints in mind: `server/` stays
 zero-dependency and `127.0.0.1`-only, and the design has to hold up on
@@ -35,16 +35,6 @@ desktop app is the primary target.
   *volume*. Add a marker lane beneath it: ticks for bookmarks and watch-rule hits
   along the timeline, click-to-jump. Turns the histogram from a read-only chart
   into a navigation surface, reusing the existing time-bucket math.
-- **Dashboards — user-configured diagrams.** A Kibana-style visualization builder:
-  let the user assemble a panel of charts they define themselves — pick a chart
-  type (line / bar / stacked area / pie / table / single-stat), a metric
-  (count, or a numeric field with p50/p95/sum/avg), a bucket (time, or a faceted
-  field), and a scoping query per panel. Saved with the workspace and re-runnable
-  on reopen. Big feature: needs a server-side aggregation endpoint general enough
-  to back any panel (group-by + bucket + metric, computed over the index so it
-  holds on multi-GB files), a panel-config model, and a chart-rendering layer in
-  the UI. Builds on the histogram, faceting, numeric-trend, and stats code rather
-  than starting from scratch — those become special cases of one engine.
 
 ## Workflow — keep an investigation
 

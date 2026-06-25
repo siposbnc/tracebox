@@ -12,6 +12,18 @@ date and start a fresh `Unreleased` section.
 
 ## [Unreleased]
 
+### Added
+
+- **Dashboards.** A new toolbar view turns the main area into a grid of
+  user-configured charts. Each panel picks a chart type (line, area, bar, pie,
+  table, or single-stat), a metric (count, unique count, or a numeric field with
+  sum/avg/min/max/p50/p95), a grouping (time buckets, a field's top values, or
+  none), an optional series split (by level or a field), and its own scoping
+  query — all computed server-side over the index so it holds on multi-gigabyte
+  files. Dashboards are saved by name and re-runnable against any open file.
+  Backed by one general aggregation engine, also exposed to AI agents as an
+  `aggregate` MCP tool.
+
 ### Fixed
 
 - **"What's new" renders inline markdown.** Bullet lead-ins and emphasis showed
