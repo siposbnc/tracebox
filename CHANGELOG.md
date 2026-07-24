@@ -15,9 +15,10 @@ date and start a fresh `Unreleased` section.
 ### Added
 
 - **Windows retro theme.** A new "Retro" color theme (Settings → Appearance)
-  dresses the UI in classic Win95/98 silver chrome — 3D grey panels, navy
-  selection, DOS-yellow highlights, square corners, the Tahoma UI font, and
-  beveled scrollbars — while keeping the log surface white for crisp reading.
+  makes TraceBox look like a native Win95/98/NT application: `#c0c0c0`
+  button-face silver chrome, an off-white client area, real 3D bevels (raised
+  push-buttons, sunken input wells, pressed toggle states), native checkboxes,
+  navy selection, beveled scrollbars, square corners, and the Tahoma UI font.
 
 - **Dashboards.** A new toolbar view turns the main area into a grid of
   user-configured charts. Each panel picks a chart type (line, area, bar, pie,

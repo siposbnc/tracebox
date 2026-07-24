@@ -40,7 +40,7 @@ function Segmented<T extends string>({
   onChange: (v: T) => void;
 }) {
   return (
-    <div className="flex overflow-hidden rounded-md border border-edge">
+    <div className="tb-segmented flex overflow-hidden rounded-md border border-edge">
       {options.map((o) => (
         <button
           key={o.value}

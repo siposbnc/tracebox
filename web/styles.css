@@ -125,44 +125,58 @@ html[data-theme='hc'] {
   --color-emerald-400: oklch(84.5% 0.143 164.978);
 }
 
-/* ---- Windows retro (Win95/98 silver) -------------------------------------- */
+/* ---- Windows retro (Win95/98/NT native look) ------------------------------
+ * Goal: look like a real Win32 "classic" application, not a recolor. Two things
+ * do that: the system palette (button-face #c0c0c0 silver, off-white client
+ * area — never pure white) and the 3D bevels — the double light/dark border
+ * that makes buttons look raised and fields look carved in. The bevels are
+ * reproduced with layered inset box-shadows (the same technique 98.css uses)
+ * and applied to the real chrome elements further down. Highlight colors:
+ *   #ffffff face-highlight · #dfdfdf light · #808080 shadow · #0a0a0a dk-shadow
+ */
 html[data-theme='retro'] {
-  /* Chrome is the classic 3D silver; the reading surface stays white so log text
-     is crisp. Higher surface numbers step darker (raised panels / hover). */
-  --color-surface-0: #ffffff;
-  --color-surface-1: #d4d0c8;
-  --color-surface-2: #c0c0c0;
-  --color-surface-3: #a8a49c;
+  --color-surface-0: #d9d7cf; /* client area — warm light silver, NOT white */
+  --color-surface-1: #c0c0c0; /* button-face — menu/tool/status bars */
+  --color-surface-2: #c0c0c0; /* raised chrome (chips, panels) */
+  --color-surface-3: #b8b4ac; /* pressed / recessed */
   --color-edge: #808080;
   --color-accent: #000080;
   --tb-body-text: #000000;
   --tb-scroll-thumb: #c0c0c0;
-  --tb-scroll-thumb-hover: #b4b0a8;
-  --tb-mark-bg: #ffff00; /* DOS-yellow highlight */
-  --tb-mark-fg: #000000;
+  --tb-scroll-thumb-hover: #c0c0c0;
+  --tb-mark-bg: #000080; /* native highlight: navy field, white text */
+  --tb-mark-fg: #ffffff;
+
+  /* Reusable 3D bevels (outer→inner corners). */
+  --w98-raise: inset -1px -1px #0a0a0a, inset 1px 1px #ffffff, inset -2px -2px #808080,
+    inset 2px 2px #dfdfdf;
+  --w98-press: inset -1px -1px #ffffff, inset 1px 1px #0a0a0a, inset -2px -2px #dfdfdf,
+    inset 2px 2px #808080;
+  --w98-field: inset -1px -1px #ffffff, inset 1px 1px #808080, inset -2px -2px #dfdfdf,
+    inset 2px 2px #0a0a0a;
+  --w98-sunk: inset 1px 1px #808080, inset -1px -1px #ffffff; /* thin recessed well */
 
   /* Dark text ramp on light chrome (same inversion the light theme uses). */
   --color-gray-100: oklch(18% 0 0);
   --color-gray-200: oklch(24% 0 0);
-  --color-gray-300: oklch(32% 0 0);
-  --color-gray-400: oklch(40% 0 0);
-  --color-gray-500: oklch(46% 0 0);
-  --color-gray-600: oklch(52% 0 0);
-  --color-gray-700: oklch(60% 0 0);
+  --color-gray-300: oklch(30% 0 0);
+  --color-gray-400: oklch(34% 0 0);
+  --color-gray-500: oklch(40% 0 0);
+  --color-gray-600: oklch(46% 0 0);
+  --color-gray-700: oklch(52% 0 0);
 
-  --color-slate-300: oklch(32% 0.01 257);
-  --color-slate-400: oklch(42% 0.02 257);
+  --color-slate-300: oklch(30% 0.01 257);
+  --color-slate-400: oklch(38% 0.02 257);
   --color-slate-800: oklch(85% 0.01 256);
 
-  /* Accent is navy — the iconic Windows selection/title-bar blue. Solid fills
-     (selected buttons/rows) go navy with white labels; tints go pale lavender. */
+  /* Accent is navy — the iconic Windows selection/title-bar blue. */
   --color-sky-200: #000080;
   --color-sky-300: #000080;
   --color-sky-400: #000080;
   --color-sky-700: #000080;
   --color-sky-800: #b8b8e0;
   --color-sky-900: #cfcfef;
-  --color-sky-950: #e2e2f6;
+  --color-sky-950: #d6d6ee;
 
   /* Status colors — darkened for a light background (mirrors the light theme). */
   --color-red-200: oklch(50.5% 0.213 27.518);
@@ -185,24 +199,120 @@ html[data-theme='retro'] {
   --color-fuchsia-950: #f2ddf2;
 }
 
-/* Retro chrome touches: square everything, classic UI font, beveled scrollbars. */
+/* Square every corner; classic UI font. */
 html[data-theme='retro'] *:not(svg):not(svg *) {
   border-radius: 0 !important;
 }
 html[data-theme='retro'] body {
   font-family: 'Tahoma', 'MS Sans Serif', 'Segoe UI', sans-serif;
 }
+
+/* -- Raised push-buttons: the rounded-md/rounded-lg buttons are the chrome
+ *    (toolbar, menu bar, dialog actions). Give them a silver face + 3D bevel;
+ *    press them in on :active. Accent buttons keep their navy fill. -- */
+html[data-theme='retro'] button.rounded-md,
+html[data-theme='retro'] button.rounded-lg {
+  border-color: transparent !important;
+  box-shadow: var(--w98-raise);
+}
+html[data-theme='retro'] button.rounded-md:not([class*='bg-sky']):not([class*='bg-surface-3']),
+html[data-theme='retro'] button.rounded-lg:not([class*='bg-sky']):not([class*='bg-surface-3']) {
+  background-color: #c0c0c0 !important;
+  color: #000 !important;
+}
+/* Active/depressed toggles (bg-surface-3) read as pressed. */
+html[data-theme='retro'] button.rounded-md[class*='bg-surface-3'],
+html[data-theme='retro'] button.rounded-lg[class*='bg-surface-3'] {
+  background-color: #c0c0c0 !important;
+  box-shadow: var(--w98-press);
+}
+html[data-theme='retro'] button.rounded-md:active,
+html[data-theme='retro'] button.rounded-lg:active {
+  box-shadow: var(--w98-press);
+}
+
+/* -- Segmented control → a joined group of raised buttons; selected = pressed. -- */
+html[data-theme='retro'] .tb-segmented {
+  overflow: visible;
+  border: none !important;
+  gap: 2px;
+  background: transparent !important;
+  box-shadow: none;
+}
+html[data-theme='retro'] .tb-segmented > button {
+  background-color: #c0c0c0 !important;
+  color: #000 !important;
+  box-shadow: var(--w98-raise);
+}
+html[data-theme='retro'] .tb-segmented > button[class*='bg-sky'] {
+  box-shadow: var(--w98-press);
+  font-weight: 700;
+}
+
+/* -- Text fields → carved-in (sunken) with a near-white well. -- */
+html[data-theme='retro'] input,
+html[data-theme='retro'] textarea {
+  border-color: transparent !important;
+  box-shadow: var(--w98-field);
+  background-color: #f7f6f1 !important;
+}
+html[data-theme='retro'] input:focus,
+html[data-theme='retro'] textarea:focus {
+  border-color: transparent !important;
+}
+
+/* -- On/off toggles → native 13px checkboxes (sunken well + drawn checkmark). -- */
+html[data-theme='retro'] button[role='switch'] {
+  width: 14px !important;
+  height: 14px !important;
+  background-color: #f7f6f1 !important;
+  box-shadow: var(--w98-field);
+  box-sizing: border-box;
+}
+html[data-theme='retro'] button[role='switch'] > span {
+  display: none !important;
+}
+html[data-theme='retro'] button[role='switch'][aria-checked='true']::after {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 4px;
+  height: 8px;
+  border: solid #000000;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+/* -- Floating surfaces (menus, dialogs, popovers) → raised silver windows.
+ *    They carry a drop-shadow class; chips/rows don't, so this stays scoped. -- */
+html[data-theme='retro'] div[class*='shadow'][class*='border-edge'],
+html[data-theme='retro'] div[class*='shadow-xl'],
+html[data-theme='retro'] div[class*='shadow-2xl'] {
+  background-color: #c0c0c0 !important;
+  border-color: transparent !important;
+  box-shadow: var(--w98-raise), 2px 2px 0 rgba(0, 0, 0, 0.35);
+}
+
+/* -- Beveled scrollbars: raised silver thumb in a sunken track. -- */
 html[data-theme='retro'] ::-webkit-scrollbar {
   width: 16px;
   height: 16px;
 }
+html[data-theme='retro'] ::-webkit-scrollbar-track {
+  background: #dfdfdf;
+  box-shadow: var(--w98-sunk);
+}
 html[data-theme='retro'] ::-webkit-scrollbar-thumb {
   background: #c0c0c0;
-  border: 1px solid;
-  border-color: #ffffff #808080 #808080 #ffffff; /* raised 3D bevel */
+  border: none;
+  box-shadow: var(--w98-raise);
 }
 html[data-theme='retro'] ::-webkit-scrollbar-thumb:hover {
-  background: #c9c5bc;
+  background: #c0c0c0;
+}
+html[data-theme='retro'] ::-webkit-scrollbar-corner {
+  background: #c0c0c0;
 }
 
 html,
