@@ -54,19 +54,18 @@ date and start a fresh `Unreleased` section.
 ### Changed
 
 - **Columnar: the built-in columns are now first-class.** The line number, time,
-  and level columns can be hidden (Columns menu → Built-in columns), dragged to
-  reorder, and resized in the grid header, just like data columns — so you can
-  drop the columns you don't need or move time/level wherever you want. The
-  line-number column is now resizable too. Existing column layouts are migrated
-  automatically.
+  and level columns can be hidden (Columns menu → **Built-in columns**), dragged to
+  reorder, and resized in the grid header, just like data columns — so you can drop
+  the columns you don't need or move time/level wherever you want. The line-number
+  column is now resizable too. Existing column layouts are migrated automatically.
 
 ### Fixed
 
-- **Live tail no longer flashes the rows.** Following a busy live source (a
-  command like `docker logs`, or stdin) refreshed the visible rows on every
-  append, blanking them to placeholders for a frame before they reappeared — a
-  constant, distracting flicker. Appended data now refetches the affected rows in
-  place, leaving the current lines on screen until the fresh ones replace them.
+- **Live tail no longer flashes the rows.** Following a busy live source (a command
+  like `docker logs`, or stdin) refreshed the visible rows on every append, blanking
+  them to placeholders for a frame before they reappeared — a constant, distracting
+  flicker. Appended data now refetches the affected rows in place, leaving the
+  current lines on screen until the fresh ones replace them.
 - **Columnar word wrap.** Word wrap now applies in the columnar view too: cells
   wrap within their column and the row grows to fit, instead of always clipping.
 - **Columnar time column no longer overlaps its divider.** A long timestamp is
