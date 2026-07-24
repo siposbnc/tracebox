@@ -823,11 +823,13 @@ const GridRow = memo(function GridRow({
             {value ? (
               <button
                 onClick={(e) => {
+                  // Plain clicks fall through to row selection; only Ctrl/Cmd+Click filters.
+                  if (!e.ctrlKey && !e.metaKey) return;
                   e.stopPropagation();
                   onAddFilter(`${c}:"${value.replace(/"/g, '\\"')}"`);
                 }}
-                className="min-w-0 max-w-full truncate text-left text-gray-300 hover:text-sky-300 hover:underline"
-                title={`${shown}\n\nClick to filter ${c} to this value`}
+                className="min-w-0 max-w-full truncate text-left text-gray-300 hover:text-gray-100"
+                title={`${shown}\n\nCtrl+Click to filter ${c} to this value`}
               >
                 {shown}
               </button>

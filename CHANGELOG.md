@@ -24,6 +24,13 @@ date and start a fresh `Unreleased` section.
   Backed by one general aggregation engine, also exposed to AI agents as an
   `aggregate` MCP tool.
 
+### Changed
+
+- **Columnar cells filter on Ctrl+Click, not plain click.** In the columnar
+  (grid) view a plain click on a cell now selects the row like any other click;
+  hold **Ctrl** (or **⌘** on macOS) and click to filter the query to that
+  field's value. This stops accidental filtering while browsing.
+
 ### Fixed
 
 - **"What's new" renders inline markdown.** Bullet lead-ins and emphasis showed
