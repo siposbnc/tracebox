@@ -192,6 +192,25 @@ export default function LogList({
     virtualizer.measure();
   }, [rowHeight, virtualizer]);
 
+  // In columnar mode a cell filters on Ctrl/Cmd+Click. Toggle a body class while
+  // the modifier is held so cells can show an underline on hover as a hint (CSS).
+  useEffect(() => {
+    if (!columnar) return;
+    const sync = (e: KeyboardEvent | MouseEvent): void => {
+      document.body.classList.toggle('tb-ctrl-held', e.ctrlKey || e.metaKey);
+    };
+    const clear = (): void => document.body.classList.remove('tb-ctrl-held');
+    window.addEventListener('keydown', sync);
+    window.addEventListener('keyup', sync);
+    window.addEventListener('blur', clear);
+    return () => {
+      window.removeEventListener('keydown', sync);
+      window.removeEventListener('keyup', sync);
+      window.removeEventListener('blur', clear);
+      clear();
+    };
+  }, [columnar]);
+
   // a reset (new search, grouping/order change, append) invalidates display
   // positions, so drop any multi-row selection
   useEffect(() => {
@@ -828,7 +847,7 @@ const GridRow = memo(function GridRow({
                   e.stopPropagation();
                   onAddFilter(`${c}:"${value.replace(/"/g, '\\"')}"`);
                 }}
-                className="min-w-0 max-w-full truncate text-left text-gray-300 hover:text-gray-100"
+                className="tb-filter-cell min-w-0 max-w-full truncate text-left text-gray-300 hover:text-gray-100"
                 title={`${shown}\n\nCtrl+Click to filter ${c} to this value`}
               >
                 {shown}

@@ -29,10 +29,17 @@ date and start a fresh `Unreleased` section.
 - **Columnar cells filter on Ctrl+Click, not plain click.** In the columnar
   (grid) view a plain click on a cell now selects the row like any other click;
   hold **Ctrl** (or **⌘** on macOS) and click to filter the query to that
-  field's value. This stops accidental filtering while browsing.
+  field's value — while the modifier is held, hovering a cell underlines it as a
+  hint. This stops accidental filtering while browsing.
+- **Open recent files with a file already open.** The header now has a **Recent**
+  menu, so a recently-opened file can be reopened without first closing back to
+  the welcome screen.
 
 ### Fixed
 
+- **Each file remembers its own search.** Switching between file tabs no longer
+  clears the search box — every tab restores its own query (and result count),
+  including a query typed but not yet run.
 - **"What's new" renders inline markdown.** Bullet lead-ins and emphasis showed
   raw markdown (`**bold**`, `*italic*`); they now render as bold, italic, code,
   and links — not just `code` spans.

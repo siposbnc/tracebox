@@ -11,6 +11,7 @@ import MergedView from './components/MergedView';
 import DashboardView from './components/DashboardView';
 import WatchToasts, { type Toast } from './components/WatchToasts';
 import WorkspacesMenu from './components/WorkspacesMenu';
+import RecentsMenu from './components/RecentsMenu';
 import SettingsPanel from './components/SettingsPanel';
 import ShortcutsHelp from './components/ShortcutsHelp';
 import CachePanel from './components/CachePanel';
@@ -69,6 +70,12 @@ export default function App() {
   // keep the tab's live-tailing indicator in sync with the active view
   const handleTailChange = useCallback((id: string, tail: boolean) => {
     setSessions((prev) => prev.map((s) => (s.id === id && s.tail !== tail ? { ...s, tail } : s)));
+  }, []);
+  // remember each tab's current search on its session, so switching away and back
+  // restores the query + result count (LogView is remounted per tab, so it seeds
+  // from this). Draft (unsubmitted) text is kept in viewStateRef and seeds too.
+  const handleSearchChange = useCallback((id: string, search: SessionStatus['search']) => {
+    setSessions((prev) => prev.map((s) => (s.id === id ? { ...s, search } : s)));
   }, []);
   const workspaces = useWorkspaces();
   const watchRulesVersion = useWatchRulesVersion();
@@ -491,6 +498,7 @@ export default function App() {
           >
             +
           </button>
+          <RecentsMenu onOpenPath={openFileSafe} />
           <button
             onClick={() => setCommandOpen(true)}
             className="mb-1.5 self-center rounded-md px-2.5 py-1 text-sm text-gray-400 hover:bg-surface-2 hover:text-gray-100"
@@ -629,9 +637,11 @@ export default function App() {
           <LogView
             key={active.id}
             initial={active}
+            initialQuery={viewStateRef.current.get(active.id)?.query}
             onOpenFile={requestOpenFile}
             onViewState={captureViewState}
             onTailChange={handleTailChange}
+            onSearchChange={handleSearchChange}
             jumpTo={jumpTarget && jumpTarget.id === active.id ? jumpTarget : null}
             watchTriggers={activeTriggers}
             watchUnseen={watchUnseen[active.id] ?? 0}

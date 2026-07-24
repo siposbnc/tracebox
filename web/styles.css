@@ -164,6 +164,14 @@ body {
   background: transparent;
 }
 
+/* Columnar cells filter on Ctrl/Cmd+Click; while that modifier is held (body gets
+   `tb-ctrl-held`) hovering a cell underlines it in the accent color as a hint. */
+body.tb-ctrl-held .tb-filter-cell:hover {
+  color: var(--color-sky-300);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .row-text mark {
   background: var(--tb-mark-bg);
   color: var(--tb-mark-fg);

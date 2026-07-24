@@ -63,20 +63,28 @@ function currentRange(query: string): { start: number; end: number } | null {
 
 export default function LogView({
   initial,
+  initialQuery,
   onOpenFile,
   onViewState,
   onTailChange,
+  onSearchChange,
   jumpTo,
   watchTriggers = [],
   watchUnseen = 0,
   onWatchSeen,
 }: {
   initial: SessionStatus;
+  /** Seed for the search box: the tab's remembered query (incl. unsubmitted
+   *  drafts) so switching tabs and back restores it. Falls back to the session's
+   *  last applied search. */
+  initialQuery?: string;
   onOpenFile: () => void;
   /** Reports the file's search state up to the app for workspace saving. */
   onViewState?: (id: string, vs: { query: string; regex: boolean; grouped: boolean }) => void;
   /** Reports tail (live-follow) state up so the tab can show a live indicator. */
   onTailChange?: (id: string, tail: boolean) => void;
+  /** Reports the applied search up so the tab remembers it across switches. */
+  onSearchChange?: (id: string, search: SessionStatus['search']) => void;
   jumpTo?: { lineNo: number; nonce: number } | null;
   /** This file's recent watch-rule alerts, newest first. */
   watchTriggers?: WatchTrigger[];
@@ -87,7 +95,7 @@ export default function LogView({
 }) {
   const id = initial.id;
   const [status, setStatus] = useState<SessionStatus>(initial);
-  const [query, setQuery] = useState(initial.search?.query ?? '');
+  const [query, setQuery] = useState(initialQuery ?? initial.search?.query ?? '');
   const [searchError, setSearchError] = useState<string | null>(null);
   const [searching, setSearching] = useState(false);
   /** Bumped whenever the visible data set changes (new search, appended lines). */
@@ -264,6 +272,7 @@ export default function LogView({
         setEpoch((e) => e + 1);
         const s = await api.session(id);
         setStatus(s);
+        onSearchChange?.(id, s.search);
         refreshHistogram();
       } catch (err) {
         setSearchError(err instanceof Error ? err.message : String(err));
@@ -271,7 +280,7 @@ export default function LogView({
         setSearching(false);
       }
     },
-    [id, refreshHistogram],
+    [id, refreshHistogram, onSearchChange],
   );
 
   const submitQuery = useCallback(
