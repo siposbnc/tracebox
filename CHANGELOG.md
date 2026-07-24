@@ -20,16 +20,6 @@ date and start a fresh `Unreleased` section.
   push-buttons, sunken input wells, pressed toggle states), native checkboxes,
   navy selection, beveled scrollbars, square corners, and the Tahoma UI font.
 
-- **Dashboards.** A new toolbar view turns the main area into a grid of
-  user-configured charts. Each panel picks a chart type (line, area, bar, pie,
-  table, or single-stat), a metric (count, unique count, or a numeric field with
-  sum/avg/min/max/p50/p95), a grouping (time buckets, a field's top values, or
-  none), an optional series split (by level or a field), and its own scoping
-  query — all computed server-side over the index so it holds on multi-gigabyte
-  files. Dashboards are saved by name and re-runnable against any open file.
-  Backed by one general aggregation engine, also exposed to AI agents as an
-  `aggregate` MCP tool.
-
 ### Changed
 
 - **Columnar cells filter on Ctrl+Click, not plain click.** In the columnar
@@ -46,6 +36,44 @@ date and start a fresh `Unreleased` section.
 - **Each file remembers its own search.** Switching between file tabs no longer
   clears the search box — every tab restores its own query (and result count),
   including a query typed but not yet run.
+
+## [1.6.0] - 2026-06-25
+
+### Added
+
+- **Dashboards.** A new toolbar view turns the main area into a grid of
+  user-configured charts. Each panel picks a chart type (line, area, bar, pie,
+  table, or single-stat), a metric (count, unique count, or a numeric field with
+  sum/avg/min/max/p50/p95), a grouping (time buckets, a field's top values, or
+  none), an optional series split (by level or a field), and its own scoping
+  query — all computed server-side over the index so it holds on multi-gigabyte
+  files. Dashboards are saved by name and re-runnable against any open file.
+  Backed by one general aggregation engine, also exposed to AI agents as an
+  `aggregate` MCP tool.
+
+### Changed
+
+- **Columnar: the built-in columns are now first-class.** The line number, time,
+  and level columns can be hidden (Columns menu → Built-in columns), dragged to
+  reorder, and resized in the grid header, just like data columns — so you can
+  drop the columns you don't need or move time/level wherever you want. The
+  line-number column is now resizable too. Existing column layouts are migrated
+  automatically.
+
+### Fixed
+
+- **Live tail no longer flashes the rows.** Following a busy live source (a
+  command like `docker logs`, or stdin) refreshed the visible rows on every
+  append, blanking them to placeholders for a frame before they reappeared — a
+  constant, distracting flicker. Appended data now refetches the affected rows in
+  place, leaving the current lines on screen until the fresh ones replace them.
+- **Columnar word wrap.** Word wrap now applies in the columnar view too: cells
+  wrap within their column and the row grows to fit, instead of always clipping.
+- **Columnar time column no longer overlaps its divider.** A long timestamp is
+  clipped to the column width (or wraps, with wrap on) instead of bleeding across
+  the divider into the next column.
+- **Columnar Δt is left-aligned.** The Δt column was right-aligned while every
+  other column was left-aligned; it now lines up with the rest.
 - **"What's new" renders inline markdown.** Bullet lead-ins and emphasis showed
   raw markdown (`**bold**`, `*italic*`); they now render as bold, italic, code,
   and links — not just `code` spans.
@@ -535,7 +563,12 @@ date and start a fresh `Unreleased` section.
   double-click / drag-and-drop / native picker open, single-instance tabs.
 - 100% offline operation — the server binds to `127.0.0.1` only.
 
-[Unreleased]: https://github.com/siposbnc/tracebox/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/siposbnc/tracebox/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/siposbnc/tracebox/compare/v1.5.0...v1.6.0
+[1.5.0]: https://github.com/siposbnc/tracebox/compare/v1.4.0...v1.5.0
+[1.4.0]: https://github.com/siposbnc/tracebox/compare/v1.3.1...v1.4.0
+[1.3.1]: https://github.com/siposbnc/tracebox/compare/v1.3.0...v1.3.1
+[1.3.0]: https://github.com/siposbnc/tracebox/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/siposbnc/tracebox/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/siposbnc/tracebox/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/siposbnc/tracebox/releases/tag/v1.0.0
