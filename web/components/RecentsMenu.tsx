@@ -37,7 +37,7 @@ export default function RecentsMenu({
         }`}
         title="Open a recent file"
       >
-        🕘 Recent
+        Recent
       </button>
       {open && (
         <div className="absolute left-0 top-full z-30 mt-1 w-80 rounded-lg border border-edge bg-surface-2 shadow-2xl">
