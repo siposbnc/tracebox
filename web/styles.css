@@ -207,16 +207,18 @@ html[data-theme='retro'] body {
   font-family: 'Tahoma', 'MS Sans Serif', 'Segoe UI', sans-serif;
 }
 
-/* -- Raised push-buttons: the rounded-md/rounded-lg buttons are the chrome
- *    (toolbar, menu bar, dialog actions). Give them a silver face + 3D bevel;
- *    press them in on :active. Accent buttons keep their navy fill. -- */
+/* -- Raised push-buttons: the rounded-md/lg/xl buttons are the chrome (toolbar,
+ *    menu bar, dialog actions, welcome screen). Give them a silver face + 3D
+ *    bevel; press them in on :active. Accent buttons keep their navy fill. -- */
 html[data-theme='retro'] button.rounded-md,
-html[data-theme='retro'] button.rounded-lg {
+html[data-theme='retro'] button.rounded-lg,
+html[data-theme='retro'] button.rounded-xl {
   border-color: transparent !important;
   box-shadow: var(--w98-raise);
 }
 html[data-theme='retro'] button.rounded-md:not([class*='bg-sky']):not([class*='bg-surface-3']),
-html[data-theme='retro'] button.rounded-lg:not([class*='bg-sky']):not([class*='bg-surface-3']) {
+html[data-theme='retro'] button.rounded-lg:not([class*='bg-sky']):not([class*='bg-surface-3']),
+html[data-theme='retro'] button.rounded-xl:not([class*='bg-sky']):not([class*='bg-surface-3']) {
   background-color: #c0c0c0 !important;
   color: #000 !important;
 }
@@ -227,8 +229,35 @@ html[data-theme='retro'] button.rounded-lg[class*='bg-surface-3'] {
   box-shadow: var(--w98-press);
 }
 html[data-theme='retro'] button.rounded-md:active,
-html[data-theme='retro'] button.rounded-lg:active {
+html[data-theme='retro'] button.rounded-lg:active,
+html[data-theme='retro'] button.rounded-xl:active {
   box-shadow: var(--w98-press);
+}
+
+/* -- File tabs → native raised tabs (light top/left, dark right, open bottom
+ *    so the tab reads as connected to the workspace below). -- */
+html[data-theme='retro'] div[class*='rounded-t-md'][class*='border-b-0'] {
+  background-color: #c0c0c0 !important;
+  border-color: transparent !important;
+  box-shadow: inset 1px 1px #ffffff, inset 2px 0 #dfdfdf, inset -1px 0 #0a0a0a,
+    inset -2px 0 #808080;
+}
+
+/* -- Recent-files list on the home screen → a sunken listbox with navy
+ *    highlight rows, like a native list control. -- */
+html[data-theme='retro'] .overflow-hidden.rounded-xl.border-edge {
+  border-color: transparent !important;
+  box-shadow: var(--w98-field);
+  background-color: #f7f6f1 !important;
+}
+html[data-theme='retro'] .overflow-hidden.rounded-xl.border-edge > button {
+  background-color: transparent !important;
+}
+html[data-theme='retro'] .overflow-hidden.rounded-xl.border-edge > button:hover {
+  background-color: #000080 !important;
+}
+html[data-theme='retro'] .overflow-hidden.rounded-xl.border-edge > button:hover span {
+  color: #ffffff !important;
 }
 
 /* -- Segmented control → a joined group of raised buttons; selected = pressed. -- */
