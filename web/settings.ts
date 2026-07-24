@@ -11,7 +11,7 @@ export type Tz = 'utc' | 'local';
 export type DetailView = 'flat' | 'json';
 
 /** Color theme for the whole UI. */
-export type Theme = 'dark' | 'light' | 'hc';
+export type Theme = 'dark' | 'light' | 'hc' | 'retro';
 
 /** Reading font size for log content (rows, detail, context). */
 export type FontSize = 'sm' | 'md' | 'lg' | 'xl';
@@ -56,7 +56,7 @@ let detailView: DetailView = clientStore.getItem(DETAIL_VIEW_KEY) === 'json' ? '
 
 function loadTheme(): Theme {
   const raw = clientStore.getItem(THEME_KEY);
-  return raw === 'light' || raw === 'hc' ? raw : 'dark';
+  return raw === 'light' || raw === 'hc' || raw === 'retro' ? raw : 'dark';
 }
 function loadFontSize(): FontSize {
   const raw = clientStore.getItem(FONT_SIZE_KEY);

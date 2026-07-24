@@ -14,6 +14,11 @@ date and start a fresh `Unreleased` section.
 
 ### Added
 
+- **Windows retro theme.** A new "Retro" color theme (Settings → Appearance)
+  dresses the UI in classic Win95/98 silver chrome — 3D grey panels, navy
+  selection, DOS-yellow highlights, square corners, the Tahoma UI font, and
+  beveled scrollbars — while keeping the log surface white for crisp reading.
+
 - **Dashboards.** A new toolbar view turns the main area into a grid of
   user-configured charts. Each panel picks a chart type (line, area, bar, pie,
   table, or single-stat), a metric (count, unique count, or a numeric field with

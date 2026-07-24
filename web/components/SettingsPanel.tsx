@@ -202,6 +202,7 @@ export default function SettingsPanel({
                   { value: 'dark', label: 'Dark' },
                   { value: 'light', label: 'Light' },
                   { value: 'hc', label: 'High contrast' },
+                  { value: 'retro', label: 'Retro' },
                 ]}
               />
             </Row>

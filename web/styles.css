@@ -125,6 +125,86 @@ html[data-theme='hc'] {
   --color-emerald-400: oklch(84.5% 0.143 164.978);
 }
 
+/* ---- Windows retro (Win95/98 silver) -------------------------------------- */
+html[data-theme='retro'] {
+  /* Chrome is the classic 3D silver; the reading surface stays white so log text
+     is crisp. Higher surface numbers step darker (raised panels / hover). */
+  --color-surface-0: #ffffff;
+  --color-surface-1: #d4d0c8;
+  --color-surface-2: #c0c0c0;
+  --color-surface-3: #a8a49c;
+  --color-edge: #808080;
+  --color-accent: #000080;
+  --tb-body-text: #000000;
+  --tb-scroll-thumb: #c0c0c0;
+  --tb-scroll-thumb-hover: #b4b0a8;
+  --tb-mark-bg: #ffff00; /* DOS-yellow highlight */
+  --tb-mark-fg: #000000;
+
+  /* Dark text ramp on light chrome (same inversion the light theme uses). */
+  --color-gray-100: oklch(18% 0 0);
+  --color-gray-200: oklch(24% 0 0);
+  --color-gray-300: oklch(32% 0 0);
+  --color-gray-400: oklch(40% 0 0);
+  --color-gray-500: oklch(46% 0 0);
+  --color-gray-600: oklch(52% 0 0);
+  --color-gray-700: oklch(60% 0 0);
+
+  --color-slate-300: oklch(32% 0.01 257);
+  --color-slate-400: oklch(42% 0.02 257);
+  --color-slate-800: oklch(85% 0.01 256);
+
+  /* Accent is navy — the iconic Windows selection/title-bar blue. Solid fills
+     (selected buttons/rows) go navy with white labels; tints go pale lavender. */
+  --color-sky-200: #000080;
+  --color-sky-300: #000080;
+  --color-sky-400: #000080;
+  --color-sky-700: #000080;
+  --color-sky-800: #b8b8e0;
+  --color-sky-900: #cfcfef;
+  --color-sky-950: #e2e2f6;
+
+  /* Status colors — darkened for a light background (mirrors the light theme). */
+  --color-red-200: oklch(50.5% 0.213 27.518);
+  --color-red-300: oklch(50.5% 0.213 27.518);
+  --color-red-400: oklch(50.5% 0.213 27.518);
+  --color-red-900: #f3d0d0;
+  --color-red-950: #fbecec;
+
+  --color-amber-300: oklch(52% 0.15 60);
+  --color-amber-400: oklch(52% 0.15 60);
+  --color-amber-900: #f0e6c8;
+  --color-amber-950: #faf3dd;
+
+  --color-emerald-200: oklch(46% 0.11 165);
+  --color-emerald-300: oklch(46% 0.11 165);
+  --color-emerald-400: oklch(52% 0.13 163);
+  --color-emerald-950: #dff0e6;
+
+  --color-fuchsia-300: oklch(46% 0.2 324);
+  --color-fuchsia-950: #f2ddf2;
+}
+
+/* Retro chrome touches: square everything, classic UI font, beveled scrollbars. */
+html[data-theme='retro'] *:not(svg):not(svg *) {
+  border-radius: 0 !important;
+}
+html[data-theme='retro'] body {
+  font-family: 'Tahoma', 'MS Sans Serif', 'Segoe UI', sans-serif;
+}
+html[data-theme='retro'] ::-webkit-scrollbar {
+  width: 16px;
+  height: 16px;
+}
+html[data-theme='retro'] ::-webkit-scrollbar-thumb {
+  background: #c0c0c0;
+  border: 1px solid;
+  border-color: #ffffff #808080 #808080 #ffffff; /* raised 3D bevel */
+}
+html[data-theme='retro'] ::-webkit-scrollbar-thumb:hover {
+  background: #c9c5bc;
+}
+
 html,
 body,
 #root {
